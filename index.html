@@ -1,0 +1,1718 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>RDeRandom Studio — Gestor de contenido</title>
+<!-- PWA / iPhone -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RDeRandom">
+<meta name="theme-color" content="#000000">
+<meta name="format-detection" content="telephone=no">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Crect width='64' height='64' rx='14' fill='%23000'/%3E%3Crect width='64' height='64' rx='14' fill='none' stroke='%23D4AF37' stroke-width='2'/%3E%3Ctext x='50%25' y='54%25' font-family='Arial,sans-serif' font-size='38' font-weight='bold' fill='%23D4AF37' text-anchor='middle' dominant-baseline='central'%3ER%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAHXElEQVR42u3da2xb1QHA8fvw417bceOENHHS5lHSpuorCoOyhoIEbZfRjtKVDrTSdRGUdZNo+TA6mBBCokgd0sqopk0Dwjo2CWkiDQV1qCoTj44GEaCPBVpIu5Jmtd28mpfj2Il9vQ+g7mUB4dzS3NP/71M+RCc59j/n3vheH6v1dWEFyEXjIQBxYNJcF75qPRLj4YCiKBfONFg5wGEFxAHiAHGAOEAcIA4QB4gDxAEQB4gDxAHiAHGAOEAcIA4QB4gDIA4QB4gDxAHiAHGAOEAcIA4QB0AcIA4QB4gDxAHiAHGAOEAcIA4QB0AcmATX1P8VZ5ebL+5a9DX8oEwmO5HOpjPZibQVT2SG45mheHoonj7XNx7tSUV6Ul2xZFcsaWWJ4/Kj66quq59+GQq6c37PWNLqOJP44FS8rX34nfbheCJDHPiMaWi1NYHamsCdq0osK3usI/6Xg/373+ofHEkTB/7jfE1T6+bm1c3Ne/DuigOt55taoh2dCU5I8d9/Ybq68vrCPU8s3PXgnNIiL3Hgf6mqsuza0Mu/XtS4JqyqxIH/Y3i1+39Y/sS22aahEQdyWLGkYPf2eX5TJw7ksKDa/5uH5njdGnEgh6vnB3/aWE4cyG39yuKldfnEgdweuLtc01TiQA5VZeatN15BHMjtzlUlxIHc5lb5aip9xIHcvlVf4Ljf+XK58Fa7ri2TyX0jhqYqPlP3Gbrf1CvLjCtnmPOu9N/wjXzDa+dfztXzg8ThPFZWiScyn96Z8Ulk7PW2AUVRDK+2/NqCrRtm2HUhbeFsv8etjU9YHFYcL5my9h3sW73l7y1/7bVlQI9bm1HssAu2xPEFiTzy29P73uyzZbSZJcQhl2xWeezpTltu9AoXEYd04onMH/bGxMdx3EVa4vhSXmsbEB/E9GrEIaHTZ8d6BybEz0mJQ05nu5OCIzjr/1jimITBYdFz0kQyQxxyGhV+avsGJ4hDTkG/6KvJ5/rGiUNO0/JE4zh5Zow4JKSqSkXYEFw2BoY5rMioptKXL7ZytLUPO27WxPGlrFgiejeGLS+jEceUk5/nErzPb2Q087f3B4lDNpqmPnrvrIBP6LJI86s9Kae9AqZws8/n85v6Iz+pumlxSGSQsaT1x5djTpw+ceTmM/SG6wq2rJ8xvcAjOFRTS1T8ugxxXKIDh6qYhu4ztIDPVVlmVM80F1QHll41zeux4Zh7/PTosy1Rhz4yl0scx5oXf/0/dHAkff8vT6UzTt1hjhPSi2UsaW3d0dEVSzp3CsRxUYyMZn68/aPDJ0YcPQvOOezXGUneu+PjzkjS6RMhDjtZWeXP+7t3PteVTFkSTIc4bHP4xMjjvz/z4alRaWZEHKKyWeXQ0cHdL8beceClNeK4WE6fHdt/6PxLr/dGulNSTpD/Vr46VVXcLtXwSPsYEsdXV1Vm3nNb6d5di3Zum11VZhIHcqwfDfUFzb9a8INbSuTYuJg4bOZ1aw/cVfHkz+Z43BpxIIdl3wz97uEan6ETB3JYvDC4c1u1Q/eWJI6L7vqr8n++qYI4kNv3by6+eWmh02dx+W4Yp2lqnk8P+PWKsDFvlv+aBcEltUEbDwcPb648fGKku3+clcN5LCs7FE9HulOtR4eaWqKbH/1o2aYjTS1Ru94LHwy4Htsyi8OKJHoHJp780z/X3Ndu18WzJbXTGq4rJA55dMWSGx86/vaxIVtG29ZYbng14pBHatza+ouO4/+wYf0oucJzz22lxCGVsaR13+MdQ3EbNhHceEu4YJqbOKQS6x3f/lSn+DimoTl08SCOz7P/rf433xsUH+f2b0+fXughDtnsaOqcSIu+8cTrduTiQRxf4Gx36vlXzomPs3Z5UVHITRyyadoTFd8I0OvWGteEiUM2A8Pp51/pFh/njobiUNBFHLJ57qVz4m9FMbzaxtVh4pBv8Zh44UCP+DjrVxYHAy7ikM3uvTHxa3J+U9+wqpg4ZNNzfnzvazZ8Ks+G75Q45bM1iGMSnm2JZoQ32wgGXOtXFhOHbCI9qX0H+8XH2bi6xBGXaoljcp5pjljCG/WEgu47GoqJQzad0eSBQzYsHo1rwt4p/w4X4pi0p5qjWeHFoyjkXru8iDhkc/JM4o13bdir+q7vlrp0lTikWzxeiIgPEi7y3HpTEXHI5oNTo61HbbjJdNPa8FR+bxxxXMrFY2aJseqGQuKQzfvHR9770IadJH+0rnTKrh3EcYkXj6oyc0V9IXHI5u1jQ+0n4+LjbF5XOjV3fSEOIU8327Dp/ZxK343XhIhDNm+8O/BxZ8KGxeN7ZcQhm2zWnsVjfrV/aV0+ccjm1db+TyI2fGDs5ttLiUM2VlZ5Zo8Ni0fd3LzFC4NTampqfd1nt7y2HonxTENRlAtJsHKAwwqIA8QB4gBxgDhAHCAOEAeIAyAOEAeIA8QB4gBxgDhAHCAOEAdAHCAOEAeIA8QB4gBxgDhAHCAOgDhAHCAOEAeIA8QB4gBxgDhAHCAOgDgwCf/e+xxg5QBxQNi/AGAqGUR6tdScAAAAAElFTkSuQmCC">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000000;
+    --bg-2: #0A0A0A;
+    --card: #141414;
+    --card-2: #1A1A1A;
+    --card-hover: #1F1F1F;
+    --border: #262626;
+    --border-gold: #3a3119;
+    --gold: #D4AF37;
+    --gold-bright: #FFD700;
+    --gold-dim: #8a7320;
+    --text: #F5F5F5;
+    --text-2: #A3A3A3;
+    --text-3: #6B6B6B;
+    --green: #4ade80;
+    --blue: #60a5fa;
+    --purple: #a78bfa;
+    --red: #f87171;
+    --orange: #fb923c;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    /* Respeta el notch y la barra inferior del iPhone */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+    overscroll-behavior-y: none; /* evita el rebote raro al hacer scroll en modo app */
+  }
+  /* Evita el zoom de iOS al enfocar inputs (fuente mínima 16px) y mejora el tacto */
+  input, textarea, select { font-size: 16px; }
+  button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  /* Fantasma que sigue al dedo al arrastrar en móvil */
+  .touch-ghost {
+    position: fixed; z-index: 4000; pointer-events: none; left: 0; top: 0;
+    width: 190px; max-width: 70vw; opacity: 0.92; transform: translate(-9999px,-9999px) scale(1.04) rotate(-1.5deg);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.6), 0 0 0 1px var(--border-gold); border-radius: 11px;
+  }
+  .lifted { opacity: 0.35 !important; }
+  h1, h2, h3, h4, .display { font-family: 'Sora', sans-serif; }
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track { background: var(--bg-2); }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gold-dim); }
+
+  .gold-glow { box-shadow: 0 0 0 1px rgba(212,175,55,0.25), 0 0 18px -4px rgba(212,175,55,0.35); }
+  .gold-glow-strong { box-shadow: 0 0 0 1px rgba(212,175,55,0.45), 0 0 26px -2px rgba(212,175,55,0.5); }
+  .gold-text { color: var(--gold); }
+  .grad-gold { background: linear-gradient(135deg, #FFD700 0%, #D4AF37 55%, #b8941f 100%); }
+
+  button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  input, textarea, select { font-family: inherit; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--gold-dim) !important; }
+
+  .fade-in { animation: fadeIn 0.35s ease both; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px);} to { opacity: 1; transform: translateY(0);} }
+  .slide-in { animation: slideIn 0.3s cubic-bezier(.2,.8,.2,1) both; }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(14px);} to { opacity: 1; transform: translateX(0);} }
+  .pop { animation: pop 0.4s cubic-bezier(.2,.9,.3,1.4) both; }
+  @keyframes pop { 0% { opacity:0; transform: scale(.92);} 100% { opacity:1; transform: scale(1);} }
+  .pulse-gold { animation: pulseGold 1.4s ease-in-out infinite; }
+  @keyframes pulseGold { 0%,100% { box-shadow: 0 0 0 1px rgba(212,175,55,0.3), 0 0 10px -2px rgba(212,175,55,0.3);} 50% { box-shadow: 0 0 0 1px rgba(212,175,55,0.6), 0 0 24px 0px rgba(212,175,55,0.55);} }
+  .spin { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg);} }
+
+  .drag-over { background: rgba(212,175,55,0.07) !important; border-color: var(--gold) !important; }
+  .dragging { opacity: 0.4; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+  textarea { resize: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  kbd { background: var(--card); border:1px solid var(--border); border-radius:5px; padding:1px 6px; font-size:11px; font-family:inherit; color:var(--text-2);}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+/* ============================ DATOS BASE ============================ */
+const DEFAULT_FORMATS = {
+  competitivo: { label: "Competitivo 1v1", color: "#60a5fa", score: 95, ideal: ["Lun","Mar","Vie","Dom"] },
+  cajas:       { label: "Cajas / Recompensas", color: "#a78bfa", score: 88, ideal: ["Mar","Jue","Sab"] },
+  retos:       { label: "Retos y Dinámicas", color: "#4ade80", score: 98, ideal: ["Lun","Mie","Vie","Dom"] },
+  educativo:   { label: "Educativo Rápido", color: "#9ca3af", score: 72, ideal: ["Jue","Sab"] },
+  mix:         { label: "Mix (2 temáticas)", color: "#fb923c", score: 90, ideal: ["Mie","Jue","Sab"] },
+  reacciones:  { label: "Reacciones (nuevo)", color: "#f472b6", score: 75, ideal: ["Mar","Mie","Dom"] },
+};
+const PALETTE = [
+  // Rojos / corales
+  "#ef4444","#f87171","#fb7185","#e11d48",
+  // Naranjas / ámbar
+  "#f97316","#fb923c","#fdba74","#ea580c",
+  // Amarillos / dorados
+  "#facc15","#fde047","#eab308","#D4AF37",
+  // Limas / verdes
+  "#a3e635","#84cc16","#4ade80","#22c55e","#16a34a",
+  // Esmeralda / teal / cian
+  "#10b981","#2dd4bf","#14b8a6","#22d3ee","#06b6d4",
+  // Azules
+  "#38bdf8","#60a5fa","#3b82f6","#2563eb","#1d4ed8",
+  // Índigos / violetas
+  "#818cf8","#6366f1","#a78bfa","#8b5cf6","#7c3aed",
+  // Morados / fucsias / rosas
+  "#c084fc","#a855f7","#d946ef","#e879f9","#f472b6","#ec4899",
+  // Marrones / neutros
+  "#b45309","#92400e","#a8a29e","#94a3b8","#64748b",
+];
+
+const STATUSES = {
+  idea:       { label: "Idea", color: "#6B6B6B" },
+  grabacion:  { label: "Grabado", color: "#fb923c" },
+  edicion:    { label: "Editados", color: "#a78bfa" },
+  programado: { label: "Programado", color: "#60a5fa" },
+  publicado:  { label: "Publicado", color: "#4ade80" },
+};
+const CHECKLIST_TEMPLATE = [
+  { id:"guion", label:"Guion / Gancho", done:false },
+  { id:"grabacion", label:"Grabación", done:false },
+  { id:"edicion", label:"Edición", done:false },
+  { id:"miniatura", label:"Miniatura / Título", done:false },
+  { id:"descripcion", label:"Descripción / Tags", done:false },
+];
+const DAYS = ["Lun","Mar","Mie","Jue","Vie","Sab","Dom"];
+const DAY_FULL = { Lun:"Lunes", Mar:"Martes", Mie:"Miércoles", Jue:"Jueves", Vie:"Viernes", Sab:"Sábado", Dom:"Domingo" };
+
+let _id = 100;
+const uid = () => "v" + (++_id);
+const clone = o => JSON.parse(JSON.stringify(o));
+// Devuelve los pares [clave, formato] ordenados alfabéticamente por su etiqueta
+const sortedFormats = (formats) => Object.entries(formats).sort((a,b)=>a[1].label.localeCompare(b[1].label, "es", {sensitivity:"base"}));
+
+function makeVideo(opts={}, formats) {
+  const firstFormat = Object.keys(formats||DEFAULT_FORMATS)[0];
+  return {
+    id: uid(),
+    title: opts.title || "Nueva idea",
+    format: opts.format || firstFormat,
+    type: opts.type || "short",
+    status: opts.status || "idea",
+    date: opts.date || null,
+    time: opts.time || "22:00",
+    checklist: clone(CHECKLIST_TEMPLATE),
+    notes: opts.notes || "",
+  };
+}
+
+/* ============================ SEED ============================ */
+const todayObj = new Date();
+const Y = todayObj.getFullYear(), M = todayObj.getMonth();
+const iso = (y,m,d) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+
+const SEED = [
+  makeVideo({title:"1v1 vs el suscriptor más nuevo", format:"competitivo", status:"programado", date:iso(Y,M,todayObj.getDate()), type:"short"}),
+  makeVideo({title:"Abrí 10 bolsas doradas en 1 minuto", format:"cajas", status:"edicion", date:iso(Y,M,todayObj.getDate()+1), type:"short"}),
+  makeVideo({title:"Reto: no puedes hablar antes de ganar", format:"retos", status:"grabacion", date:iso(Y,M,todayObj.getDate()+2), type:"short"}),
+  makeVideo({title:"Mundial de equipaciones — capítulo 4", format:"competitivo", status:"idea", type:"largo"}),
+  makeVideo({title:"Reacciono a los mejores clips de Rivals", format:"reacciones", status:"idea", type:"short"}),
+  makeVideo({title:"¿Para qué sirve esta skin escondida?", format:"educativo", status:"idea", type:"short"}),
+  makeVideo({title:"1 like = 1 caja (camino al millón)", format:"retos", status:"idea", type:"short"}),
+];
+
+/* ============================ ICONOS ============================ */
+const Icon = ({d, size=18, fill="none", stroke="currentColor", sw=1.8, style}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={style}>{d}</svg>
+);
+const Icons = {
+  calendar: <Icon d={<><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></>}/>,
+  kanban: <Icon d={<><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></>}/>,
+  tag: <Icon d={<><path d="M2 10V4a2 2 0 012-2h6l10 10-8 8L2 10z"/><circle cx="7" cy="7" r="1.4" fill="currentColor" stroke="none"/></>}/>,
+  plus: <Icon d={<path d="M12 5v14M5 12h14"/>}/>,
+  sparkle: <Icon d={<path d="M12 3l1.6 4.8L18 9.4l-4.4 1.6L12 16l-1.6-4.8L6 9.4l4.4-1.6z"/>}/>,
+  x: <Icon d={<path d="M18 6L6 18M6 6l12 12"/>}/>,
+  check: <Icon d={<path d="M20 6L9 17l-5-5"/>}/>,
+  clock: <Icon d={<><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>}/>,
+  camera: <Icon d={<><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></>}/>,
+  scissors: <Icon d={<><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></>}/>,
+  short: <Icon d={<><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M10.5 8.5l4 2.5-4 2.5z"/></>}/>,
+  largo: <Icon d={<><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></>}/>,
+  trash: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>} size={16}/>,
+  drag: <Icon d={<path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/>} size={16}/>,
+  expand: <Icon d={<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>} size={15}/>,
+  collapse: <Icon d={<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>} size={15}/>,
+  search: <Icon d={<><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></>} size={16}/>,
+  copy: <Icon d={<><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></>} size={15}/>,
+  restore: <Icon d={<><path d="M3 12a9 9 0 109-9 9 9 0 00-7.5 4M3 3v4h4"/></>} size={16}/>,
+  inbox: <Icon d={<><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 01-2 2H4a2 2 0 01-2-2v-6z"/></>} size={17}/>,
+  cloud: <Icon d={<path d="M17.5 19a4.5 4.5 0 100-9 6 6 0 00-11.6-1.5A4 4 0 006 19z"/>} size={17}/>,
+  cloudCheck: <Icon d={<><path d="M17.5 19a4.5 4.5 0 100-9 6 6 0 00-11.6-1.5A4 4 0 006 19z"/><path d="M9 14.5l1.8 1.8L14 13" stroke="currentColor"/></>} size={17}/>,
+  link: <Icon d={<><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1"/></>} size={16}/>,
+  download: <Icon d={<><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></>} size={16}/>,
+  upload: <Icon d={<><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></>} size={16}/>,
+  trashBig: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>}/>,
+};
+
+/* ============================ TOAST ============================ */
+function useToast() {
+  const [toasts, setToasts] = useState([]);
+  const push = (msg, kind="gold") => {
+    const id = Math.random();
+    setToasts(t => [...t, {id, msg, kind}]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
+  };
+  const node = (
+    <div style={{position:"fixed", bottom:24, right:24, zIndex:9999, display:"flex", flexDirection:"column", gap:10}}>
+      {toasts.map(t => (
+        <div key={t.id} className="pop" style={{
+          background:"var(--card-2)", border:`1px solid ${t.kind==="gold"?"var(--border-gold)":"var(--border)"}`,
+          padding:"12px 16px", borderRadius:12, maxWidth:340, fontSize:13.5, display:"flex", gap:10, alignItems:"center",
+          boxShadow:"0 8px 30px rgba(0,0,0,0.6)"
+        }}>
+          <span style={{color:"var(--gold)",flexShrink:0}}>{Icons.sparkle}</span>
+          <span style={{color:"var(--text)"}}>{t.msg}</span>
+        </div>
+      ))}
+    </div>
+  );
+  return [push, node];
+}
+
+/* ============================ BADGE / PILL ============================ */
+const FormatPill = ({fmt, small}) => {
+  if(!fmt) return null;
+  return (
+    <span style={{
+      display:"inline-flex", alignItems:"center", gap:6, fontSize: small?10.5:11.5, fontWeight:600,
+      color:fmt.color, background:`${fmt.color}14`, border:`1px solid ${fmt.color}33`,
+      padding: small?"2px 7px":"3px 9px", borderRadius:7, whiteSpace:"nowrap"
+    }}>
+      <span style={{width:6, height:6, borderRadius:"50%", background:fmt.color}}/>{fmt.label}
+    </span>
+  );
+};
+const StatusDot = ({status}) => {
+  const s = STATUSES[status];
+  return <span style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,color:s.color,fontWeight:600}}>
+    <span style={{width:7,height:7,borderRadius:"50%",background:s.color,boxShadow:`0 0 8px ${s.color}99`}}/>{s.label}
+  </span>;
+};
+
+/* ============================ VIDEO CARD ============================ */
+/* ============================ ARRASTRE TÁCTIL (iPhone/Android) ============================ */
+// Puente entre las tarjetas y las acciones de mover de App.
+const dnd = { moveToDate:null, moveToStatus:null, moveToUnassign:null, suppressClickUntil:0 };
+
+const touchDrag = {
+  active:false, id:null, ghost:null, lastZone:null, lpTimer:null,
+  startX:0, startY:0, moved:false, cardEl:null,
+
+  onStart(e, v, cardEl){
+    if(e.touches.length!==1) return;
+    const t = e.touches[0];
+    this.id = v.id; this.startX = t.clientX; this.startY = t.clientY;
+    this.moved = false; this.cardEl = cardEl;
+    clearTimeout(this.lpTimer);
+    // Mantén pulsado ~300ms (sin mover) para "levantar" la tarjeta
+    this.lpTimer = setTimeout(()=>this.begin(t.clientX, t.clientY), 300);
+  },
+  onMovePre(e){
+    // Antes de levantar: si el dedo se desplaza, es un scroll → cancelamos el "levantar"
+    if(this.active) return;
+    const t = e.touches[0]; if(!t) return;
+    if(Math.abs(t.clientX-this.startX)>10 || Math.abs(t.clientY-this.startY)>10){
+      clearTimeout(this.lpTimer);
+    }
+  },
+  onEndPre(){
+    if(!this.active) clearTimeout(this.lpTimer);
+  },
+  begin(x,y){
+    this.active = true; this.moved = false;
+    if(navigator.vibrate) { try{ navigator.vibrate(12); }catch(_){} }
+    if(this.cardEl){
+      const clone = this.cardEl.cloneNode(true);
+      clone.className = "touch-ghost";
+      clone.style.width = this.cardEl.offsetWidth+"px";
+      document.body.appendChild(clone);
+      this.ghost = clone;
+      this.cardEl.classList.add("lifted");
+    }
+    this.moveGhost(x,y);
+    document.addEventListener("touchmove", this._move, { passive:false });
+    document.addEventListener("touchend", this._end, { passive:false });
+    document.addEventListener("touchcancel", this._end, { passive:false });
+  },
+  moveGhost(x,y){
+    if(this.ghost) this.ghost.style.transform = `translate(${x-this.ghost.offsetWidth/2}px, ${y-28}px) scale(1.04) rotate(-1.5deg)`;
+  },
+  _move: function(e){
+    if(!touchDrag.active) return;
+    e.preventDefault(); // bloquea el scroll mientras se arrastra
+    const t = e.touches[0]; if(!t) return;
+    touchDrag.moved = true;
+    touchDrag.moveGhost(t.clientX, t.clientY);
+    const el = document.elementFromPoint(t.clientX, t.clientY);
+    const zone = el && el.closest ? el.closest("[data-drop]") : null;
+    if(zone !== touchDrag.lastZone){
+      if(touchDrag.lastZone) touchDrag.lastZone.classList.remove("drag-over");
+      if(zone) zone.classList.add("drag-over");
+      touchDrag.lastZone = zone;
+    }
+  },
+  _end: function(e){
+    if(!touchDrag.active) return;
+    const zone = touchDrag.lastZone;
+    const id = touchDrag.id;
+    if(zone && id){
+      const kind = zone.getAttribute("data-drop");
+      const val = zone.getAttribute("data-dropval");
+      if(kind==="date" && dnd.moveToDate) dnd.moveToDate(id, val);
+      else if(kind==="status" && dnd.moveToStatus) dnd.moveToStatus(id, val);
+      else if(kind==="unassign" && dnd.moveToUnassign) dnd.moveToUnassign(id);
+      dnd.suppressClickUntil = Date.now()+500; // evita que se abra el editor tras soltar
+    }
+    touchDrag.cleanup();
+  },
+  cleanup(){
+    if(this.ghost){ this.ghost.remove(); this.ghost=null; }
+    if(this.cardEl){ this.cardEl.classList.remove("lifted"); this.cardEl=null; }
+    if(this.lastZone){ this.lastZone.classList.remove("drag-over"); this.lastZone=null; }
+    this.active=false; this.id=null;
+    document.removeEventListener("touchmove", this._move, { passive:false });
+    document.removeEventListener("touchend", this._end, { passive:false });
+    document.removeEventListener("touchcancel", this._end, { passive:false });
+  }
+};
+
+function VideoCard({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
+  const f = formats[v.format] || { color:"#6B6B6B", label:"Sin formato" };
+  const done = v.checklist.filter(c=>c.done).length;
+  const pct = Math.round(done/v.checklist.length*100);
+  const ref = useRef(null);
+  const handleClick = () => {
+    if(Date.now() < dnd.suppressClickUntil) return; // veníamos de arrastrar: no abrir
+    onOpen(v);
+  };
+  return (
+    <div draggable ref={ref}
+      onDragStart={e=>onDragStart(e,v)} onDragEnd={onDragEnd}
+      onTouchStart={e=>touchDrag.onStart(e, v, ref.current)}
+      onTouchMove={e=>touchDrag.onMovePre(e)}
+      onTouchEnd={()=>touchDrag.onEndPre()}
+      onClick={handleClick}
+      className="fade-in"
+      style={{
+        background:"var(--card)", border:`1px solid var(--border)`, borderLeft:`3px solid ${f.color}`,
+        borderRadius:10, padding: compact?"9px 11px":"12px 13px", cursor:"pointer", position:"relative",
+        transition:"background .15s, border-color .15s"
+      }}
+      onMouseEnter={e=>{e.currentTarget.style.background="var(--card-hover)";e.currentTarget.style.borderColor="var(--border-gold)";e.currentTarget.style.borderLeftColor=f.color;}}
+      onMouseLeave={e=>{e.currentTarget.style.background="var(--card)";e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.borderLeftColor=f.color;}}
+    >
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:7, color:"var(--text-3)"}}>
+          <span style={{color:f.color, display:"flex"}}>{v.type==="short"?Icons.short:Icons.largo}</span>
+          {!compact && <span style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:".06em", color:"var(--text-3)"}}>{v.type==="short"?"Short":"Vídeo largo"}</span>}
+        </div>
+        <span style={{color:"var(--text-3)", display:"flex"}}>{Icons.drag}</span>
+      </div>
+      <div style={{fontSize: compact?12.5:13.5, fontWeight:600, color:"var(--text)", margin:"7px 0 8px", lineHeight:1.35}}>{v.title}</div>
+      <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
+        <FormatPill fmt={f} small/>
+        {v.date && <span style={{fontSize:10.5,color:"var(--text-3)",display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{v.time}</span>}
+      </div>
+      {!compact && (
+        <div style={{marginTop:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-3)",marginBottom:4}}>
+            <StatusDot status={v.status}/><span>{done}/{v.checklist.length}</span>
+          </div>
+          <div style={{height:4, background:"#0a0a0a", borderRadius:4, overflow:"hidden"}}>
+            <div style={{height:"100%", width:`${pct}%`, background: pct===100?"var(--green)":"linear-gradient(90deg,#D4AF37,#FFD700)", transition:"width .3s", borderRadius:4}}/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ MODAL EDITOR ============================ */
+// Botoncito de copiar con confirmación visual (para título y notas)
+function CopyMini({ text, what }) {
+  const [ok, setOk] = useState(false);
+  const doCopy = async () => {
+    if(!text){ return; }
+    try { await navigator.clipboard.writeText(text); }
+    catch(e){
+      // Alternativa para navegadores/webviews sin permiso de portapapeles
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.position="fixed"; ta.style.opacity="0";
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+      } catch(_){ return; }
+    }
+    setOk(true); setTimeout(()=>setOk(false), 1500);
+  };
+  return (
+    <button onClick={doCopy} title={`Copiar ${what}`} style={{
+      display:"flex",alignItems:"center",gap:5,fontSize:11.5,padding:"4px 9px",borderRadius:7,transition:"all .15s",
+      color: ok?"var(--green)":"var(--text-2)",
+      border:`1px solid ${ok?"rgba(74,222,128,0.3)":"var(--border)"}`,
+      background: ok?"rgba(74,222,128,0.08)":"transparent"
+    }} onMouseEnter={e=>{ if(!ok){e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";} }}
+       onMouseLeave={e=>{ if(!ok){e.currentTarget.style.color="var(--text-2)";e.currentTarget.style.borderColor="var(--border)";} }}>
+      {ok?Icons.check:Icons.copy}{ok?"Copiado":"Copiar"}
+    </button>
+  );
+}
+
+function VideoModal({v, onClose, onSave, onDelete, onDuplicate, formats}) {
+  const [draft, setDraft] = useState(clone(v));
+  const [notesBig, setNotesBig] = useState(false);
+  useEffect(()=>{ setDraft(clone(v)); setNotesBig(false); },[v]);
+  const f = formats[draft.format] || { color:"#6B6B6B" };
+  const set = (k,val)=>setDraft(d=>({...d,[k]:val}));
+  const toggleCheck = id => setDraft(d=>({...d, checklist: d.checklist.map(c=>c.id===id?{...c,done:!c.done}:c)}));
+  const done = draft.checklist.filter(c=>c.done).length;
+  const pct = Math.round(done/draft.checklist.length*100);
+
+  // Guarda los cambios y cierra (se usa al pulsar Escape o la cruz)
+  const closeWithSave = () => { onSave(draft); onClose(); };
+
+  // Cerrar con ESC (guardando), guardar con Ctrl+Enter, mover a papelera con Supr/Backspace
+  useEffect(()=>{
+    const h = e => {
+      if(e.key==="Escape") closeWithSave();
+      if(e.key==="Enter" && (e.ctrlKey||e.metaKey)) { closeWithSave(); }
+      // Supr (o Backspace) mueve a papelera, salvo que estés escribiendo en un campo
+      if(e.key==="Delete" || e.key==="Backspace"){
+        const tag = (e.target.tagName||"").toLowerCase();
+        const editable = tag==="input" || tag==="textarea" || tag==="select" || e.target.isContentEditable;
+        if(!editable){ e.preventDefault(); onDelete(draft.id); onClose(); }
+      }
+    };
+    window.addEventListener("keydown",h);
+    return ()=>window.removeEventListener("keydown",h);
+  },[draft]);
+
+  return (
+    <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"5vh 16px",overflowY:"auto",backdropFilter:"blur(3px)"}}>
+      <div className="pop" style={{
+        background:"var(--bg-2)", border:`1px solid var(--border-gold)`, borderRadius:18, width:"100%", maxWidth: notesBig?720:560,
+        boxShadow:"0 20px 70px rgba(0,0,0,0.7)", transition:"max-width .25s"
+      }}>
+        <div style={{padding:"18px 22px", borderBottom:"1px solid var(--border)", display:"flex",justifyContent:"space-between",alignItems:"center", background:`linear-gradient(180deg, ${f.color}10, transparent)`}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{color:f.color,display:"flex"}}>{draft.type==="short"?Icons.short:Icons.largo}</span>
+            <span style={{fontSize:12.5,color:"var(--text-2)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Editar vídeo</span>
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button onClick={()=>{onDuplicate(draft);}} title="Duplicar vídeo" style={{color:"var(--text-2)",display:"flex",padding:6,borderRadius:7}}
+              onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-2)"}>{Icons.copy}</button>
+            <button onClick={closeWithSave} title="Guardar y cerrar (Esc)" style={{color:"var(--text-2)",display:"flex",padding:6,borderRadius:7}}
+              onMouseEnter={e=>e.currentTarget.style.color="var(--text)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-2)"}>{Icons.x}</button>
+          </div>
+        </div>
+
+        <div style={{padding:22, display:"flex", flexDirection:"column", gap:18, maxHeight:"72vh", overflowY:"auto"}}>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+              <span style={labelStyle}>Título del vídeo</span>
+              <CopyMini text={draft.title} what="el título"/>
+            </div>
+            <input value={draft.title} onChange={e=>set("title",e.target.value)} style={inputStyle} autoFocus
+              onFocus={e=>{ if(draft.title==="Nueva idea") e.target.select(); }}/>
+          </div>
+
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+            <Field label="Formato">
+              <select value={draft.format} onChange={e=>set("format",e.target.value)} style={inputStyle}>
+                {sortedFormats(formats).map(([k,val])=><option key={k} value={k}>{val.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Tipo">
+              <select value={draft.type} onChange={e=>set("type",e.target.value)} style={inputStyle}>
+                <option value="short">Short</option>
+                <option value="largo">Vídeo largo</option>
+              </select>
+            </Field>
+          </div>
+
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+            <Field label="Estado">
+              <select value={draft.status} onChange={e=>set("status",e.target.value)} style={inputStyle}>
+                {Object.entries(STATUSES).map(([k,val])=><option key={k} value={k}>{val.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Hora">
+              <input type="time" value={draft.time} onChange={e=>set("time",e.target.value)} style={inputStyle}/>
+            </Field>
+          </div>
+
+          <Field label="Fecha de publicación">
+            <input type="date" value={draft.date||""} onChange={e=>set("date",e.target.value||null)} style={inputStyle}/>
+          </Field>
+
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <span style={labelStyle}>Checklist de producción</span>
+              <span style={{fontSize:11.5,color: pct===100?"var(--green)":"var(--gold)",fontWeight:600}}>{pct}% completo</span>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {draft.checklist.map(c=>(
+                <button key={c.id} onClick={()=>toggleCheck(c.id)} style={{
+                  display:"flex",alignItems:"center",gap:11, padding:"9px 12px", borderRadius:9,
+                  background: c.done?"rgba(74,222,128,0.07)":"var(--card)", border:`1px solid ${c.done?"rgba(74,222,128,0.25)":"var(--border)"}`,
+                  textAlign:"left", transition:"all .15s"
+                }}>
+                  <span style={{
+                    width:19,height:19,borderRadius:6, display:"flex",alignItems:"center",justifyContent:"center", flexShrink:0,
+                    background: c.done?"var(--green)":"transparent", border:`1.5px solid ${c.done?"var(--green)":"var(--text-3)"}`, color:"#000"
+                  }}>{c.done && Icons.check}</span>
+                  <span style={{fontSize:13, color: c.done?"var(--text-2)":"var(--text)", textDecoration: c.done?"line-through":"none"}}>{c.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+              <span style={labelStyle}>Notas</span>
+              <div style={{display:"flex",gap:7}}>
+                <CopyMini text={draft.notes} what="las notas"/>
+                <button onClick={()=>setNotesBig(b=>!b)} style={{
+                display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"var(--text-2)",padding:"4px 9px",
+                border:"1px solid var(--border)",borderRadius:7,transition:"all .15s"
+              }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
+                 onMouseLeave={e=>{e.currentTarget.style.color="var(--text-2)";e.currentTarget.style.borderColor="var(--border)";}}>
+                {notesBig?Icons.collapse:Icons.expand}{notesBig?"Reducir":"Ampliar"}
+              </button>
+              </div>
+            </div>
+            <textarea value={draft.notes} onChange={e=>set("notes",e.target.value)}
+              onFocus={e=>{ if(!notesBig && draft.notes.length>40) setNotesBig(true); }}
+              placeholder="Escribe aquí el guion completo, ideas de miniatura, hooks, recordatorios, enlaces de referencia... Pulsa «Ampliar» para más espacio."
+              style={{...inputStyle, minHeight: notesBig?320:90, lineHeight:1.6, transition:"min-height .25s"}}/>
+            <div style={{textAlign:"right",fontSize:10.5,color:"var(--text-3)",marginTop:5}}>{draft.notes.length} caracteres</div>
+          </div>
+        </div>
+
+        <div style={{padding:"16px 22px", borderTop:"1px solid var(--border)", display:"flex", justifyContent:"space-between", gap:10, alignItems:"center"}}>
+          <button onClick={()=>{onDelete(draft.id); onClose();}} title="Mover a la papelera (tecla Supr)" style={{
+            display:"flex",alignItems:"center",gap:7, color:"var(--red)", fontSize:13, fontWeight:600, padding:"10px 14px",
+            border:"1px solid rgba(248,113,113,0.25)", borderRadius:10
+          }}>{Icons.trash} Mover a papelera <span style={{fontSize:10.5,opacity:.7,marginLeft:2}}><kbd style={{borderColor:"rgba(248,113,113,0.3)"}}>Supr</kbd></span></button>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontSize:11,color:"var(--text-3)"}} className="modal-hint"><kbd>Esc</kbd> guarda y cierra</span>
+            <button onClick={closeWithSave} className="grad-gold gold-glow" style={{
+              color:"#000", fontWeight:700, fontSize:13.5, padding:"10px 26px", borderRadius:10, display:"flex", alignItems:"center", gap:8
+            }}>{Icons.check} Guardar cambios</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+const inputStyle = {
+  width:"100%", background:"var(--card)", border:"1px solid var(--border)", borderRadius:9,
+  padding:"10px 12px", color:"var(--text)", fontSize:13.5, transition:"border-color .15s"
+};
+const labelStyle = { fontSize:11.5, fontWeight:600, color:"var(--text-2)", textTransform:"uppercase", letterSpacing:".05em" };
+const Field = ({label, children}) => (
+  <label style={{display:"flex",flexDirection:"column",gap:7}}>
+    <span style={labelStyle}>{label}</span>{children}
+  </label>
+);
+
+/* ============================ GESTOR DE FORMATOS ============================ */
+function FormatsModal({formats, setFormats, videos, onClose, toast, askConfirm}) {
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(PALETTE[0]);
+  const slug = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"") || ("fmt"+Date.now());
+
+  const add = () => {
+    const label = name.trim();
+    if(!label){ toast("Escribe un nombre para el formato"); return; }
+    let key = slug(label);
+    if(formats[key]) key = key+"_"+Math.floor(Math.random()*999);
+    setFormats(f=>({...f, [key]:{ label, color, score:80, ideal:[] }}));
+    setName(""); setColor(PALETTE[Math.floor(Math.random()*PALETTE.length)]);
+    toast(`Formato «${label}» añadido`);
+  };
+  const remove = (key) => {
+    const inUse = videos.filter(v=>v.format===key).length;
+    if(Object.keys(formats).length<=1){ toast("Debe quedar al menos un formato"); return; }
+    const doRemove = () => { setFormats(f=>{ const c={...f}; delete c[key]; return c; }); toast("Formato eliminado"); };
+    if(inUse>0){
+      askConfirm({
+        title: "Eliminar formato",
+        message: `Hay ${inUse} vídeo${inUse!==1?"s":""} con este formato. Se reasignarán al primer formato disponible. ¿Continuar?`,
+        confirmLabel: "Eliminar formato",
+        danger: true,
+        onConfirm: doRemove
+      });
+    } else { doRemove(); }
+  };
+
+  useEffect(()=>{
+    const h = e => { if(e.key==="Escape") onClose(); };
+    window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h);
+  },[]);
+
+  return (
+    <div onClick={onClose} className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"7vh 16px",overflowY:"auto",backdropFilter:"blur(3px)"}}>
+      <div onClick={e=>e.stopPropagation()} className="pop" style={{background:"var(--bg-2)",border:"1px solid var(--border-gold)",borderRadius:18,width:"100%",maxWidth:520,boxShadow:"0 20px 70px rgba(0,0,0,0.7)"}}>
+        <div style={{padding:"18px 22px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{color:"var(--gold)",display:"flex"}}>{Icons.tag}</span>
+            <span style={{fontSize:14.5,fontWeight:700}}>Gestionar formatos</span>
+          </div>
+          <button onClick={onClose} style={{color:"var(--text-2)",display:"flex"}}>{Icons.x}</button>
+        </div>
+
+        <div style={{padding:22}}>
+          {/* Añadir */}
+          <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:12,padding:14,marginBottom:18}}>
+            <div style={{...labelStyle,marginBottom:10}}>Nuevo formato</div>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
+                placeholder="Ej: Tier list de skins" style={{...inputStyle,flex:1}}/>
+              <button onClick={add} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 16px",borderRadius:9,display:"flex",alignItems:"center",gap:6,flexShrink:0}}>{Icons.plus} Añadir</button>
+            </div>
+            <div style={{marginTop:12}}>
+              <div style={{fontSize:11.5,color:"var(--text-3)",marginBottom:8}}>Color del formato</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(12, 1fr)",gap:6,maxHeight:128,overflowY:"auto",paddingRight:2}} className="color-grid">
+                {PALETTE.map(c=>(
+                  <button key={c} onClick={()=>setColor(c)} title={c} style={{
+                    aspectRatio:"1 / 1", width:"100%", borderRadius:6, background:c, position:"relative",
+                    border: color===c?"2px solid #fff":"2px solid transparent",
+                    boxShadow: color===c?`0 0 9px ${c}cc`:"none", transition:"all .12s", cursor:"pointer",
+                    display:"flex", alignItems:"center", justifyContent:"center"
+                  }}>
+                    {color===c && <span style={{color:"#fff",display:"flex",filter:"drop-shadow(0 1px 1px rgba(0,0,0,0.6))"}}><Icon d={<path d="M20 6L9 17l-5-5"/>} size={13} sw={3}/></span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Lista */}
+          <div style={{...labelStyle,marginBottom:10}}>Formatos actuales ({Object.keys(formats).length})</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:300,overflowY:"auto"}}>
+            {sortedFormats(formats).map(([key,val])=>{
+              const inUse = videos.filter(v=>v.format===key).length;
+              return (
+                <div key={key} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 13px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:10}}>
+                  <span style={{width:11,height:11,borderRadius:"50%",background:val.color,boxShadow:`0 0 8px ${val.color}88`,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13.5,fontWeight:600,color:"var(--text)"}}>{val.label}</div>
+                    <div style={{fontSize:11,color:"var(--text-3)"}}>{inUse} vídeo{inUse!==1?"s":""}{val.ideal&&val.ideal.length?` · mejores días: ${val.ideal.join(", ")}`:""}</div>
+                  </div>
+                  <button onClick={()=>remove(key)} title="Eliminar formato" style={{color:"var(--text-3)",display:"flex",padding:7,borderRadius:7,transition:"all .15s"}}
+                    onMouseEnter={e=>e.currentTarget.style.color="var(--red)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>{Icons.trash}</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ CALENDARIO ============================ */
+function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffset, setWeekOffset, onQuickAdd, onUnassign, formats}) {
+  const [dragDay, setDragDay] = useState(null);
+  const [dragUnassign, setDragUnassign] = useState(false);
+  const base = new Date();
+  base.setDate(base.getDate() - ((base.getDay()+6)%7) + weekOffset*7);
+  const weekDates = DAYS.map((_,i)=>{ const d=new Date(base); d.setDate(base.getDate()+i); return d; });
+  const isoOf = d => iso(d.getFullYear(), d.getMonth(), d.getDate());
+  const todayIso = isoOf(new Date());
+
+  const byDate = useMemo(()=>{
+    const m={}; videos.forEach(v=>{ if(v.date){ (m[v.date]=m[v.date]||[]).push(v); } }); return m;
+  },[videos]);
+  const unassigned = useMemo(()=>{
+    const labelOf = v => (formats[v.format]?.label || "\uffff"); // los sin formato válido van al final
+    return videos.filter(v=>!v.date).sort((a,b)=>{
+      const c = labelOf(a).localeCompare(labelOf(b), "es", {sensitivity:"base"});
+      return c !== 0 ? c : a.title.localeCompare(b.title, "es", {sensitivity:"base"});
+    });
+  },[videos, formats]);
+
+  const monthLabel = weekDates[0].toLocaleDateString("es-ES",{month:"long",year:"numeric"});
+  const weekCount = weekDates.reduce((acc,d)=>acc+(byDate[isoOf(d)]||[]).length,0);
+
+  return (
+    <div className="fade-in" style={{padding:"4px 2px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:700,textTransform:"capitalize"}}>{monthLabel}</h2>
+          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
+            <span className="hint-desktop">{weekCount} vídeo{weekCount!==1?"s":""} esta semana · arrastra para reprogramar</span>
+            <span className="hint-touch">{weekCount} vídeo{weekCount!==1?"s":""} · mantén pulsado un vídeo para moverlo</span>
+          </p>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={()=>setWeekOffset(w=>w-1)} style={navBtn} title="Semana anterior">←</button>
+          <button onClick={()=>setWeekOffset(0)} style={{...navBtn, width:"auto", padding:"0 14px", fontSize:12.5, fontWeight:600, color: weekOffset===0?"var(--gold)":"var(--text-2)"}}>Hoy</button>
+          <button onClick={()=>setWeekOffset(w=>w+1)} style={navBtn} title="Semana siguiente">→</button>
+        </div>
+      </div>
+
+      <div style={{display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:10}} className="cal-grid">
+        {weekDates.map((d,i)=>{
+          const di = isoOf(d);
+          const dayKey = DAYS[i];
+          const items = byDate[di]||[];
+          const isToday = di===todayIso;
+          return (
+            <div key={di}
+              data-drop="date" data-dropval={di}
+              onDragOver={e=>{e.preventDefault(); setDragDay(di);}}
+              onDragLeave={()=>setDragDay(null)}
+              onDrop={e=>{e.preventDefault(); onDrop(di); setDragDay(null);}}
+              className={dragDay===di?"drag-over":""}
+              style={{
+                background:"var(--bg-2)", border:`1px solid ${isToday?"var(--border-gold)":"var(--border)"}`, borderRadius:12,
+                minHeight:200, padding:8, display:"flex", flexDirection:"column", transition:"all .15s",
+                ...(isToday?{boxShadow:"0 0 0 1px rgba(212,175,55,0.15)"}:{})
+              }}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 4px 9px"}}>
+                <div>
+                  <div style={{fontSize:10.5,color: isToday?"var(--gold)":"var(--text-3)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>{dayKey}</div>
+                  <div style={{fontSize:16,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div>
+                </div>
+                <button onClick={()=>onQuickAdd(di)} title="Añadir vídeo este día" style={{
+                  width:22,height:22,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",
+                  color:"var(--text-3)", border:"1px solid var(--border)", transition:"all .15s"
+                }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
+                   onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
+                  {Icons.plus}
+                </button>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:7,flex:1}}>
+                {items.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
+                {items.length===0 && (
+                  <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"#333",fontSize:11,minHeight:60,border:"1px dashed var(--border)",borderRadius:8}}>
+                    Vacío
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* SIN ASIGNAR */}
+      <div
+        data-drop="unassign"
+        onDragOver={e=>{e.preventDefault(); setDragUnassign(true);}}
+        onDragLeave={()=>setDragUnassign(false)}
+        onDrop={e=>{e.preventDefault(); onUnassign(); setDragUnassign(false);}}
+        className={dragUnassign?"drag-over":""}
+        style={{
+          marginTop:14, background:"var(--bg-2)", border:`1px solid var(--border)`, borderRadius:12, padding:"14px 14px 12px",
+          transition:"all .15s"
+        }}>
+        <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:12}}>
+          <span style={{color:"var(--text-3)",display:"flex"}}>{Icons.inbox}</span>
+          <span style={{fontSize:13.5,fontWeight:700,color:"var(--text)"}}>Sin asignar</span>
+          <span style={{fontSize:11,color:"var(--text-3)",background:"var(--card)",padding:"2px 8px",borderRadius:20,border:"1px solid var(--border)"}}>{unassigned.length}</span>
+          <span style={{flex:1,minWidth:0,fontSize:11.5,color:"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} className="unassigned-hint">Arrastra un vídeo a un día para programarlo · o suéltalo aquí para quitarle la fecha</span>
+          <button onClick={()=>onQuickAdd(null)} title="Crear un vídeo sin asignar" style={{
+            display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",
+            border:"1px solid var(--border-gold)",borderRadius:9,padding:"7px 12px",background:"rgba(212,175,55,0.05)",
+            transition:"all .15s",flexShrink:0
+          }} onMouseEnter={e=>e.currentTarget.style.background="rgba(212,175,55,0.12)"}
+             onMouseLeave={e=>e.currentTarget.style.background="rgba(212,175,55,0.05)"}>
+            {Icons.plus} Añadir vídeo
+          </button>
+        </div>
+        {unassigned.length===0 ? (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",color:"#333",fontSize:12,padding:"22px 0",border:"1px dashed var(--border)",borderRadius:9}}>
+            No hay vídeos por asignar
+          </div>
+        ) : (
+          <>
+            <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:11}}>
+              {sortedFormats(formats).map(([k,val])=>{
+                const n = unassigned.filter(v=>v.format===k).length;
+                if(n===0) return null;
+                return (
+                  <span key={k} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:11,fontWeight:600,color:val.color,background:`${val.color}12`,border:`1px solid ${val.color}30`,padding:"3px 9px",borderRadius:7}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:val.color}}/>{val.label}<span style={{opacity:.7}}>· {n}</span>
+                  </span>
+                );
+              })}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(190px, 1fr))",gap:9}}>
+              {unassigned.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+const navBtn = { width:38, height:38, borderRadius:10, background:"var(--card)", border:"1px solid var(--border)", color:"var(--text)", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s" };
+
+/* ============================ KANBAN ============================ */
+function KanbanView({videos, onOpen, onDrop, onDragStart, onDragEnd, onQuickAdd, formats, search}) {
+  const [dragCol, setDragCol] = useState(null);
+  const cols = Object.keys(STATUSES);
+  const filtered = search ? videos.filter(v=>v.title.toLowerCase().includes(search.toLowerCase())) : videos;
+  return (
+    <div className="fade-in">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:700}}>Tablero de producción</h2>
+          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Mueve cada vídeo por su etapa de producción</p>
+        </div>
+        <button onClick={()=>onQuickAdd(null)} style={{
+          display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:"var(--gold)",
+          border:"1px solid var(--border-gold)", borderRadius:10, padding:"9px 14px", background:"rgba(212,175,55,0.05)"
+        }}>{Icons.plus} Añadir idea rápida</button>
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(5, minmax(190px,1fr))", gap:12, overflowX:"auto", paddingBottom:8}} className="kanban-grid">
+        {cols.map(col=>{
+          const items = filtered.filter(v=>v.status===col);
+          const s = STATUSES[col];
+          return (
+            <div key={col}
+              data-drop="status" data-dropval={col}
+              onDragOver={e=>{e.preventDefault();setDragCol(col);}}
+              onDragLeave={()=>setDragCol(null)}
+              onDrop={e=>{e.preventDefault(); onDrop(col); setDragCol(null);}}
+              className={dragCol===col?"drag-over":""}
+              style={{background:"var(--bg-2)",border:`1px solid var(--border)`,borderRadius:14,padding:10,minHeight:340,transition:"all .15s"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 6px 12px",borderBottom:`1px solid var(--border)`,marginBottom:10}}>
+                <span style={{width:9,height:9,borderRadius:"50%",background:s.color,boxShadow:`0 0 8px ${s.color}aa`}}/>
+                <span style={{fontSize:13,fontWeight:700,color:"var(--text)"}}>{s.label}</span>
+                <span style={{marginLeft:"auto",fontSize:11,color:"var(--text-3)",background:"var(--card)",padding:"2px 8px",borderRadius:20,border:"1px solid var(--border)"}}>{items.length}</span>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:9}}>
+                {items.map(v=><VideoCard key={v.id} v={v} onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
+                {items.length===0 && <div style={{textAlign:"center",color:"#333",fontSize:11.5,padding:"24px 0",border:"1px dashed var(--border)",borderRadius:9}}>Suelta vídeos aquí</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ============================ DIÁLOGO DE CONFIRMACIÓN ============================ */
+function ConfirmDialog({ open, title, message, confirmLabel="Eliminar", danger=true, onConfirm, onCancel }) {
+  useEffect(()=>{
+    if(!open) return;
+    const h = e => {
+      if(e.key==="Escape") onCancel();
+      if(e.key==="Enter") onConfirm();
+    };
+    window.addEventListener("keydown",h);
+    return ()=>window.removeEventListener("keydown",h);
+  },[open]);
+  if(!open) return null;
+  return (
+    <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:1100,display:"flex",alignItems:"center",justifyContent:"center",padding:"16px",backdropFilter:"blur(3px)"}}>
+      <div onClick={e=>e.stopPropagation()} className="pop" style={{
+        background:"var(--bg-2)", border:`1px solid ${danger?"rgba(248,113,113,0.3)":"var(--border-gold)"}`, borderRadius:18, width:"100%", maxWidth:420,
+        boxShadow:"0 20px 70px rgba(0,0,0,0.7)", padding:"26px 24px"
+      }}>
+        <div style={{display:"flex",alignItems:"center",gap:13,marginBottom:14}}>
+          <div style={{width:42,height:42,borderRadius:11,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+            background: danger?"rgba(248,113,113,0.1)":"rgba(212,175,55,0.1)", color: danger?"var(--red)":"var(--gold)"}}>
+            {Icons.trashBig}
+          </div>
+          <h3 style={{fontSize:17,fontWeight:700,color:"var(--text)"}}>{title}</h3>
+        </div>
+        <p style={{fontSize:13.5,color:"var(--text-2)",lineHeight:1.6,marginBottom:22}}>{message}</p>
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={onCancel} style={{
+            fontSize:13.5,fontWeight:600,color:"var(--text-2)",padding:"10px 18px",borderRadius:10,
+            border:"1px solid var(--border)",transition:"all .15s"
+          }} onMouseEnter={e=>{e.currentTarget.style.color="var(--text)";e.currentTarget.style.borderColor="var(--text-3)";}}
+             onMouseLeave={e=>{e.currentTarget.style.color="var(--text-2)";e.currentTarget.style.borderColor="var(--border)";}}>Cancelar</button>
+          <button onClick={onConfirm} style={{
+            fontSize:13.5,fontWeight:700,padding:"10px 20px",borderRadius:10,display:"flex",alignItems:"center",gap:7,
+            background: danger?"var(--red)":"linear-gradient(135deg,#FFD700,#D4AF37)", color: danger?"#fff":"#000"
+          }}>{Icons.trash} {confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ MODAL DE SINCRONIZACIÓN ============================ */
+function SyncModal({ syncCode, status, onClose, onLink, onExport, onImport, toast }) {
+  const [copied, setCopied] = useState(false);
+  const [input, setInput] = useState("");
+  const [showLink, setShowLink] = useState(false);
+  const fileRef = useRef(null);
+
+  useEffect(()=>{
+    const h = e => { if(e.key==="Escape") onClose(); };
+    window.addEventListener("keydown",h); return ()=>window.removeEventListener("keydown",h);
+  },[]);
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(syncCode); setCopied(true); setTimeout(()=>setCopied(false),1800); }
+    catch(e){ toast("No se pudo copiar. Selecciona y copia manualmente."); }
+  };
+
+  const statusInfo = {
+    connecting: { label:"Conectando…", color:"var(--text-2)" },
+    online:     { label:"Sincronizado", color:"var(--green)" },
+    saving:     { label:"Guardando…", color:"var(--gold)" },
+    offline:    { label:"Sin conexión (se guardará localmente)", color:"var(--orange)" },
+  }[status] || { label:"—", color:"var(--text-3)" };
+
+  return (
+    <div onClick={onClose} className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"7vh 16px",overflowY:"auto",backdropFilter:"blur(3px)"}}>
+      <div onClick={e=>e.stopPropagation()} className="pop" style={{background:"var(--bg-2)",border:"1px solid var(--border-gold)",borderRadius:18,width:"100%",maxWidth:480,boxShadow:"0 20px 70px rgba(0,0,0,0.7)"}}>
+        <div style={{padding:"18px 22px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{color:"var(--gold)",display:"flex"}}>{Icons.cloud}</span>
+            <span style={{fontSize:14.5,fontWeight:700}}>Sincronización entre dispositivos</span>
+          </div>
+          <button onClick={onClose} style={{color:"var(--text-2)",display:"flex"}}>{Icons.x}</button>
+        </div>
+
+        <div style={{padding:22, display:"flex", flexDirection:"column", gap:18}}>
+          {/* Estado */}
+          <div style={{display:"flex",alignItems:"center",gap:9,padding:"11px 14px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:11}}>
+            <span style={{width:9,height:9,borderRadius:"50%",background:statusInfo.color,boxShadow:`0 0 8px ${statusInfo.color}`,flexShrink:0}}/>
+            <span style={{fontSize:13,fontWeight:600,color:statusInfo.color}}>{statusInfo.label}</span>
+          </div>
+
+          {/* Código de sincronización */}
+          <div>
+            <div style={{...labelStyle,marginBottom:8}}>Tu código de sincronización</div>
+            <p style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.6,marginBottom:11}}>
+              Este código identifica tus datos en la nube. Para sincronizar otro dispositivo (tu iPhone), ábrelo ahí y pega este mismo código en «Vincular con otro código».
+            </p>
+            <div style={{display:"flex",gap:9,alignItems:"center"}}>
+              <input readOnly value={syncCode} onFocus={e=>e.target.select()} style={{...inputStyle, fontFamily:"monospace", fontSize:12.5, letterSpacing:".02em"}}/>
+              <button onClick={copy} className={copied?"":"grad-gold"} style={{
+                flexShrink:0, display:"flex",alignItems:"center",gap:7, fontWeight:700,fontSize:13, padding:"10px 15px", borderRadius:9,
+                background: copied?"rgba(74,222,128,0.12)":undefined, color: copied?"var(--green)":"#000",
+                border: copied?"1px solid rgba(74,222,128,0.3)":"none"
+              }}>{copied?Icons.check:Icons.copy}{copied?"Copiado":"Copiar"}</button>
+            </div>
+          </div>
+
+          <div style={{height:1,background:"var(--border)"}}/>
+
+          {/* Vincular con otro código */}
+          {!showLink ? (
+            <button onClick={()=>setShowLink(true)} style={{
+              display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--gold)",
+              border:"1px solid var(--border-gold)",borderRadius:10,padding:"11px",background:"rgba(212,175,55,0.05)",transition:"all .15s"
+            }} onMouseEnter={e=>e.currentTarget.style.background="rgba(212,175,55,0.12)"}
+               onMouseLeave={e=>e.currentTarget.style.background="rgba(212,175,55,0.05)"}>
+              {Icons.link} Vincular con otro código
+            </button>
+          ) : (
+            <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:11,padding:14}}>
+              <div style={{...labelStyle,marginBottom:8}}>Vincular este dispositivo</div>
+              <p style={{fontSize:12,color:"var(--text-2)",lineHeight:1.55,marginBottom:11}}>
+                Pega el código del dispositivo con el que quieras sincronizar. Se descargarán esos datos y este dispositivo quedará enlazado. <span style={{color:"var(--orange)"}}>Lo que tengas ahora aquí se reemplazará por los datos de la nube.</span>
+              </p>
+              <div style={{display:"flex",gap:9}}>
+                <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&onLink(input)}
+                  placeholder="Pega aquí el código" style={{...inputStyle, fontFamily:"monospace", fontSize:12.5}} autoFocus/>
+                <button onClick={()=>onLink(input)} className="grad-gold" style={{flexShrink:0,color:"#000",fontWeight:700,fontSize:13,padding:"10px 16px",borderRadius:9,display:"flex",alignItems:"center",gap:6}}>{Icons.link} Vincular</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{height:1,background:"var(--border)"}}/>
+
+          {/* Copia de seguridad / transferencia manual */}
+          <div>
+            <div style={{...labelStyle,marginBottom:8}}>Copia de seguridad y transferencia</div>
+            <p style={{fontSize:12,color:"var(--text-2)",lineHeight:1.55,marginBottom:11}}>
+              Exporta todos tus vídeos, formatos y papelera a un archivo, o importa un archivo exportado desde otro organizador. Al importar, los datos actuales se reemplazan y se sincronizan a la nube.
+            </p>
+            <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
+              <button onClick={onExport} style={{
+                flex:1,minWidth:150,display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--text)",
+                border:"1px solid var(--border)",borderRadius:10,padding:"11px",transition:"all .15s"
+              }} onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--border-gold)";e.currentTarget.style.color="var(--gold)";}}
+                 onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.color="var(--text)";}}>
+                {Icons.download} Exportar datos
+              </button>
+              <button onClick={()=>fileRef.current && fileRef.current.click()} style={{
+                flex:1,minWidth:150,display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--text)",
+                border:"1px solid var(--border)",borderRadius:10,padding:"11px",transition:"all .15s"
+              }} onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--border-gold)";e.currentTarget.style.color="var(--gold)";}}
+                 onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.color="var(--text)";}}>
+                {Icons.upload} Importar datos
+              </button>
+              <input ref={fileRef} type="file" accept=".json,application/json" style={{display:"none"}}
+                onChange={e=>{ const f=e.target.files && e.target.files[0]; if(f) onImport(f); e.target.value=""; }}/>
+            </div>
+          </div>
+
+          <p style={{fontSize:11.5,color:"var(--text-3)",lineHeight:1.6}}>
+            Tus datos se guardan en tu cuenta de Supabase. La app sigue funcionando sin conexión y sincroniza cuando vuelve internet.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================ PAPELERA ============================ */
+function TrashView({trash, onRestore, onDeleteForever, onEmpty, formats}) {
+  const fmtDate = ts => {
+    if(!ts) return "";
+    const d = new Date(ts);
+    return d.toLocaleDateString("es-ES",{day:"numeric",month:"short"}) + " · " + d.toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"});
+  };
+  return (
+    <div className="fade-in">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:700}}>Papelera</h2>
+          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
+            {trash.length===0 ? "No hay vídeos en la papelera" : `${trash.length} vídeo${trash.length!==1?"s":""} · restaura los que necesites o vacíala para borrarlos definitivamente`}
+          </p>
+        </div>
+        <button onClick={onEmpty} disabled={trash.length===0} style={{
+          display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,
+          color: trash.length===0?"var(--text-3)":"var(--red)",
+          border:`1px solid ${trash.length===0?"var(--border)":"rgba(248,113,113,0.3)"}`,
+          borderRadius:10, padding:"9px 14px", background: trash.length===0?"transparent":"rgba(248,113,113,0.05)",
+          cursor: trash.length===0?"not-allowed":"pointer", opacity: trash.length===0?.5:1
+        }}>{Icons.trashBig} Vaciar papelera</button>
+      </div>
+
+      {trash.length===0 ? (
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"70px 20px",color:"var(--text-3)",border:"1px dashed var(--border)",borderRadius:14,gap:14}}>
+          <span style={{color:"#2a2a2a"}}><Icon d={Icons.trashBig.props.d} size={48} sw={1.3}/></span>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:14,color:"var(--text-2)",fontWeight:600,marginBottom:4}}>La papelera está vacía</div>
+            <div style={{fontSize:12.5}}>Los vídeos que elimines aparecerán aquí antes de borrarse del todo</div>
+          </div>
+        </div>
+      ) : (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(280px, 1fr))",gap:12}}>
+          {trash.map(v=>{
+            const f = formats[v.format] || { color:"#6B6B6B", label:"Sin formato" };
+            return (
+              <div key={v.id} className="fade-in" style={{
+                background:"var(--card)", border:"1px solid var(--border)", borderLeft:`3px solid ${f.color}`,
+                borderRadius:10, padding:"13px 14px", opacity:.92
+              }}>
+                <div style={{display:"flex",alignItems:"center",gap:7,color:"var(--text-3)",marginBottom:7}}>
+                  <span style={{color:f.color,display:"flex"}}>{v.type==="short"?Icons.short:Icons.largo}</span>
+                  <span style={{fontSize:10.5,textTransform:"uppercase",letterSpacing:".06em"}}>{v.type==="short"?"Short":"Vídeo largo"}</span>
+                  <span style={{marginLeft:"auto",fontSize:10.5,color:"var(--text-3)"}}>Eliminado {fmtDate(v.deletedAt)}</span>
+                </div>
+                <div style={{fontSize:13.5,fontWeight:600,color:"var(--text-2)",marginBottom:10,lineHeight:1.35,textDecoration:"line-through",textDecorationColor:"var(--text-3)"}}>{v.title}</div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>onRestore(v.id)} style={{
+                    flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:7,fontSize:12.5,fontWeight:600,
+                    color:"var(--green)",border:"1px solid rgba(74,222,128,0.3)",borderRadius:8,padding:"8px 10px",
+                    background:"rgba(74,222,128,0.05)",transition:"all .15s"
+                  }} onMouseEnter={e=>e.currentTarget.style.background="rgba(74,222,128,0.12)"}
+                     onMouseLeave={e=>e.currentTarget.style.background="rgba(74,222,128,0.05)"}>
+                    {Icons.restore} Restaurar
+                  </button>
+                  <button onClick={()=>onDeleteForever(v.id)} title="Eliminar para siempre" style={{
+                    display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-3)",
+                    border:"1px solid var(--border)",borderRadius:8,padding:"8px 11px",transition:"all .15s"
+                  }} onMouseEnter={e=>{e.currentTarget.style.color="var(--red)";e.currentTarget.style.borderColor="rgba(248,113,113,0.3)";}}
+                     onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
+                    {Icons.trash}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================ STAT STRIP ============================ */
+function StatStrip({videos}) {
+  const count = st => videos.filter(v=>v.status===st).length;
+  const items = [
+    {label:"Total vídeos", value:videos.length, icon:Icons.calendar, color:"var(--text)"},
+    {label:"Ideas en bruto", value:count("idea"), icon:Icons.sparkle, color:STATUSES.idea.color},
+    {label:"Grabados", value:count("grabacion"), icon:Icons.camera, color:STATUSES.grabacion.color},
+    {label:"Editados", value:count("edicion"), icon:Icons.scissors, color:STATUSES.edicion.color},
+    {label:"Programados", value:count("programado"), icon:Icons.clock, color:STATUSES.programado.color},
+    {label:"Publicados", value:count("publicado"), icon:Icons.check, color:STATUSES.publicado.color},
+  ];
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:22}} className="stat-grid">
+      {items.map((it,i)=>(
+        <div key={i} style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:"13px 14px",display:"flex",alignItems:"center",gap:11}}>
+          <div style={{width:36,height:36,borderRadius:10,flexShrink:0,background:"var(--card)",display:"flex",alignItems:"center",justifyContent:"center",color:it.color||"var(--text-2)"}}>{it.icon}</div>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:21,fontWeight:700,fontFamily:"'Sora'",color:it.color||"var(--text)",lineHeight:1.1}}>{it.value}</div>
+            <div style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".03em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.label}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ============================ APP ============================ */
+/* ============================ PERSISTENCIA (localStorage) ============================ */
+const STORE_KEY = "rivals_studio_v1";
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if(!raw) return null;
+    const data = JSON.parse(raw);
+    if(!data || !Array.isArray(data.videos) || typeof data.formats!=="object") return null;
+    // Reajustar el contador de ids para no colisionar con los guardados
+    let maxId = 100;
+    data.videos.forEach(v=>{ const n = parseInt(String(v.id).replace(/\D/g,"")); if(!isNaN(n) && n>maxId) maxId=n; });
+    _id = maxId;
+    return data;
+  } catch(e) { return null; }
+}
+function saveStore(videos, formats, trash) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], savedAt: Date.now() })); return true; }
+  catch(e) { return false; }
+}
+function clearStore() { try { localStorage.removeItem(STORE_KEY); } catch(e){} }
+
+/* ============================ SINCRONIZACIÓN (Supabase) ============================ */
+const SUPABASE_URL = "https://krzuellhsakbwavlahxg.supabase.co";
+const SUPABASE_KEY = "sb_publishable_FWzHwkpMr4bOQYjakGGmpg_ZqEFFYCO";
+const SYNC_CODE_KEY = "rivals_sync_code";
+
+let _sb = null;
+let _authReady = false; // true cuando ya hemos hecho sign-in anónimo
+let _authPromise = null; // promesa de auth para no lanzarla dos veces
+
+function getClient() {
+  if(_sb) return _sb;
+  if(typeof window === "undefined" || !window.supabase || !window.supabase.createClient) return null;
+  try {
+    _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true }
+    });
+    return _sb;
+  } catch(e){ return null; }
+}
+
+// Hace sign-in anónimo si todavía no se ha hecho (solo una vez por sesión)
+async function ensureAuth() {
+  const sb = getClient(); if(!sb) throw new Error("sin cliente");
+  if(_authReady) return sb;
+  if(_authPromise) { await _authPromise; return sb; }
+  _authPromise = (async () => {
+    try {
+      // Comprobar si ya hay sesión activa
+      const { data: { session } } = await sb.auth.getSession();
+      if(session) { _authReady = true; return; }
+      // Si no hay sesión, hacer sign-in anónimo
+      const { error } = await sb.auth.signInAnonymously();
+      if(error) throw error;
+      _authReady = true;
+    } catch(e) {
+      _authPromise = null; // permitir reintento
+      throw e;
+    }
+  })();
+  await _authPromise;
+  return sb;
+}
+// Reajusta el contador de IDs para no colisionar con datos venidos de la nube
+function bumpIdFrom(videos) {
+  let maxId = _id;
+  (videos||[]).forEach(v=>{ const n = parseInt(String(v.id).replace(/\D/g,"")); if(!isNaN(n) && n>maxId) maxId=n; });
+  _id = maxId;
+}
+function getSyncCode() {
+  let c = null;
+  try { c = localStorage.getItem(SYNC_CODE_KEY); } catch(e){}
+  if(!c) {
+    c = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ("code-"+Math.random().toString(36).slice(2)+Date.now().toString(36));
+    try { localStorage.setItem(SYNC_CODE_KEY, c); } catch(e){}
+  }
+  return c;
+}
+function storeSyncCode(code) { try { localStorage.setItem(SYNC_CODE_KEY, code); } catch(e){} }
+
+async function cloudLoad(code) {
+  const sb = await ensureAuth();
+  const { data, error } = await sb.from("rivals_data").select("data, updated_at").eq("user_id", code).maybeSingle();
+  if(error) throw error;
+  return data;
+}
+async function cloudSave(code, payload) {
+  const sb = await ensureAuth();
+  const { error } = await sb.from("rivals_data").upsert(
+    { user_id: code, data: payload, updated_at: new Date().toISOString() },
+    { onConflict: "user_id" }
+  );
+  if(error) throw error;
+}
+
+function App() {
+  const _initial = loadStore();
+  const [videos, setVideos] = useState(_initial ? _initial.videos : SEED);
+  const [formats, setFormats] = useState(_initial ? _initial.formats : DEFAULT_FORMATS);
+  const [trash, setTrash] = useState(_initial && Array.isArray(_initial.trash) ? _initial.trash : []);
+  const [saved, setSaved] = useState(false);
+  const [view, setView] = useState("calendar");
+  const [editing, setEditing] = useState(null);
+  const [showFormats, setShowFormats] = useState(false);
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [dragId, setDragId] = useState(null);
+  const [optimizing, setOptimizing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [confirm, setConfirm] = useState(null); // {title, message, confirmLabel, danger, onConfirm}
+  const [syncStatus, setSyncStatus] = useState("connecting"); // connecting | online | offline | saving
+  const [showSync, setShowSync] = useState(false);
+  const [syncCode, setSyncCodeState] = useState(()=>getSyncCode());
+  const [toast, toastNode] = useToast();
+
+  const lastSyncedRef = useRef(null); // huella de los últimos datos sincronizados (para ignorar ecos)
+  const saveTimer = useRef(null);
+
+  // Carga inicial desde la nube + resolución de conflicto con lo local
+  const didInit = useRef(false);
+  useEffect(()=>{
+    if(didInit.current) return; didInit.current = true;
+    let active = true;
+    (async ()=>{
+      setSyncStatus("connecting");
+      try {
+        const remote = await cloudLoad(syncCode);
+        if(!active) return;
+        if(remote && remote.data) {
+          const r = remote.data;
+          const localTs = (_initial && _initial.savedAt) ? _initial.savedAt : 0;
+          const remoteTs = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
+          if(remoteTs >= localTs) {
+            // La nube manda: adoptamos sus datos
+            bumpIdFrom(r.videos);
+            if(Array.isArray(r.videos)) setVideos(r.videos);
+            if(r.formats && typeof r.formats==="object") setFormats(r.formats);
+            if(Array.isArray(r.trash)) setTrash(r.trash);
+            lastSyncedRef.current = JSON.stringify({videos:r.videos, formats:r.formats, trash:r.trash||[]});
+          } else {
+            // Lo local es más nuevo: lo subimos
+            await cloudSave(syncCode, { videos, formats, trash, savedAt: Date.now() });
+            lastSyncedRef.current = JSON.stringify({videos, formats, trash});
+          }
+        } else {
+          // No hay nada en la nube todavía: subimos lo local
+          await cloudSave(syncCode, { videos, formats, trash, savedAt: Date.now() });
+          lastSyncedRef.current = JSON.stringify({videos, formats, trash});
+        }
+        if(active) setSyncStatus("online");
+      } catch(e) {
+        if(active) setSyncStatus("offline");
+      }
+    })();
+    return ()=>{ active=false; };
+  },[]);
+
+  // Suscripción en tiempo real: si otro dispositivo cambia algo, lo recibimos al instante
+  useEffect(()=>{
+    let channel = null;
+    ensureAuth().then(sb => {
+      channel = sb.channel("rivals-"+syncCode)
+        .on("postgres_changes", { event:"*", schema:"public", table:"rivals_data", filter:"user_id=eq."+syncCode }, payload=>{
+          const r = payload && payload.new && payload.new.data;
+          if(!r) return;
+          const incoming = JSON.stringify({videos:r.videos, formats:r.formats, trash:r.trash||[]});
+          if(incoming === lastSyncedRef.current) return;
+          lastSyncedRef.current = incoming;
+          bumpIdFrom(r.videos);
+          if(Array.isArray(r.videos)) setVideos(r.videos);
+          if(r.formats && typeof r.formats==="object") setFormats(r.formats);
+          if(Array.isArray(r.trash)) setTrash(r.trash);
+          setSyncStatus("online");
+          toast("Sincronizado desde otro dispositivo");
+        })
+        .subscribe();
+    }).catch(()=>{});
+    return ()=>{ try { if(channel) getClient()?.removeChannel(channel); } catch(e){} };
+  },[syncCode]);
+
+  // Vincular este dispositivo a otro código de sincronización
+  // Exportar todos los datos a un archivo JSON descargable
+  const exportData = () => {
+    const payload = { app:"RDeRandom Studio", version:1, exportedAt:new Date().toISOString(), videos, formats, trash };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const d = new Date();
+    a.href = url;
+    a.download = `RDeRandom_datos_${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 2000);
+    toast("Datos exportados · revisa tus descargas");
+  };
+
+  // Importar datos desde un archivo JSON (reemplaza lo actual, con confirmación)
+  const importData = (file) => {
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let parsed = null;
+      try { parsed = JSON.parse(reader.result); } catch(e){ toast("El archivo no es un JSON válido"); return; }
+      const inVideos = Array.isArray(parsed?.videos) ? parsed.videos : null;
+      const inFormats = (parsed?.formats && typeof parsed.formats==="object" && !Array.isArray(parsed.formats)) ? parsed.formats : null;
+      const inTrash = Array.isArray(parsed?.trash) ? parsed.trash : [];
+      if(!inVideos || !inFormats){ toast("El archivo no tiene el formato esperado de RDeRandom Studio"); return; }
+      setConfirm({
+        title: "Importar datos",
+        message: `Se importarán ${inVideos.length} vídeo${inVideos.length!==1?"s":""}, ${Object.keys(inFormats).length} formato${Object.keys(inFormats).length!==1?"s":""} y ${inTrash.length} elemento${inTrash.length!==1?"s":""} de la papelera. Esto reemplazará TODOS los datos actuales de este organizador (y se sincronizará a la nube). ¿Continuar?`,
+        confirmLabel: "Importar",
+        danger: true,
+        onConfirm: () => {
+          bumpIdFrom([...inVideos, ...inTrash]);
+          setVideos(inVideos);
+          setFormats(inFormats);
+          setTrash(inTrash);
+          setConfirm(null);
+          setShowSync(false);
+          toast("Datos importados correctamente");
+        }
+      });
+    };
+    reader.readAsText(file);
+  };
+
+  const linkToCode = async (code) => {
+    code = (code||"").trim();
+    if(!code){ toast("Introduce un código de sincronización"); return; }
+    storeSyncCode(code);
+    setSyncCodeState(code);
+    setSyncStatus("connecting");
+    try {
+      const remote = await cloudLoad(code);
+      if(remote && remote.data){
+        const r = remote.data;
+        bumpIdFrom(r.videos);
+        setVideos(Array.isArray(r.videos)?r.videos:[]);
+        setFormats((r.formats&&typeof r.formats==="object")?r.formats:clone(DEFAULT_FORMATS));
+        setTrash(Array.isArray(r.trash)?r.trash:[]);
+        lastSyncedRef.current = JSON.stringify({videos:r.videos, formats:r.formats, trash:r.trash||[]});
+        toast("Vinculado · datos descargados de la nube");
+      } else {
+        await cloudSave(code, { videos, formats, trash, savedAt: Date.now() });
+        lastSyncedRef.current = JSON.stringify({videos, formats, trash});
+        toast("Vinculado · se subieron tus datos actuales");
+      }
+      setSyncStatus("online");
+      setShowSync(false);
+    } catch(e) {
+      setSyncStatus("offline");
+      toast("No se pudo conectar con ese código");
+    }
+  };
+
+  // Auto-guardado: local al instante + nube con un pequeño retardo (debounce)
+  const firstRun = useRef(true);
+  useEffect(()=>{
+    if(firstRun.current){ firstRun.current=false; return; }
+    const ok = saveStore(videos, formats, trash);
+    if(ok){ setSaved(true); setTimeout(()=>setSaved(false), 1600); }
+    // Guardar en la nube tras 1.2s sin cambios
+    if(saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async ()=>{
+      const huella = JSON.stringify({videos, formats, trash});
+      if(huella === lastSyncedRef.current) return; // nada nuevo que subir
+      try {
+        setSyncStatus("saving");
+        lastSyncedRef.current = huella;
+        await cloudSave(syncCode, { videos, formats, trash, savedAt: Date.now() });
+        setSyncStatus("online");
+      } catch(e) { setSyncStatus("offline"); }
+    }, 1200);
+  },[videos, formats, trash]);
+
+  const resetAll = () => {
+    setConfirm({
+      title: "Restablecer datos",
+      message: "Esto borrará todos tus vídeos, formatos y la papelera, y restaurará el contenido de ejemplo. Esta acción no se puede deshacer.",
+      confirmLabel: "Restablecer",
+      danger: true,
+      onConfirm: () => {
+        clearStore();
+        _id = 100;
+        const freshFormats = clone(DEFAULT_FORMATS);
+        const freshVideos = clone(SEED);
+        setFormats(freshFormats);
+        setVideos(freshVideos);
+        setTrash([]);
+        setConfirm(null);
+        // Reflejar el restablecimiento también en la nube
+        lastSyncedRef.current = JSON.stringify({videos:freshVideos, formats:freshFormats, trash:[]});
+        cloudSave(syncCode, { videos:freshVideos, formats:freshFormats, trash:[], savedAt:Date.now() }).catch(()=>{});
+        toast("Datos restablecidos");
+      }
+    });
+  };
+
+  // Si se borra un formato en uso, reasignar al primero disponible
+  useEffect(()=>{
+    const keys = Object.keys(formats);
+    if(keys.length===0) return;
+    setVideos(vs=>vs.map(v=> formats[v.format] ? v : {...v, format:keys[0]}));
+  },[formats]);
+
+  const onDragStart = (e,v) => { setDragId(v.id); e.dataTransfer.effectAllowed="move"; if(e.currentTarget.classList) e.currentTarget.classList.add("dragging"); };
+  const onDragEnd = e => { setDragId(null); if(e.currentTarget.classList) e.currentTarget.classList.remove("dragging"); };
+
+  // Movimientos con id explícito (los usan tanto el ratón como el dedo)
+  const moveToDate = (id, date) => {
+    if(!id) return;
+    setVideos(vs=>vs.map(v=>v.id===id?{...v,date,status: v.status==="idea"?"programado":v.status}:v));
+    toast(`Reprogramado para el ${new Date(date+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}`);
+  };
+  const moveToStatus = (id, status) => {
+    if(!id) return;
+    setVideos(vs=>vs.map(v=>v.id===id?{...v,status}:v));
+    toast(`Movido a «${STATUSES[status].label}»`);
+  };
+  const moveToUnassign = (id) => {
+    if(!id) return;
+    setVideos(vs=>{
+      const v = vs.find(x=>x.id===id);
+      if(!v || !v.date) return vs; // ya estaba sin asignar
+      toast("Vídeo movido a «Sin asignar»");
+      return vs.map(x=>x.id===id?{...x, date:null, status: x.status==="programado"?"idea":x.status}:x);
+    });
+  };
+
+  // Conectar el puente de arrastre táctil con estas acciones
+  useEffect(()=>{
+    dnd.moveToDate = moveToDate;
+    dnd.moveToStatus = moveToStatus;
+    dnd.moveToUnassign = moveToUnassign;
+  });
+
+  // Versiones para el ratón (escritorio): usan el vídeo que se está arrastrando
+  const dropOnDate = (date) => moveToDate(dragId, date);
+  const dropOnStatus = (status) => moveToStatus(dragId, status);
+  const unassignVideo = () => moveToUnassign(dragId);
+
+  const saveVideo = (draft) => setVideos(vs=>vs.map(v=>v.id===draft.id?draft:v));
+
+  // Mover a la papelera (no borra del todo)
+  const deleteVideo = (id) => {
+    setVideos(vs=>{
+      const v = vs.find(x=>x.id===id);
+      if(v) setTrash(t=>[{...v, deletedAt: Date.now()}, ...t]);
+      return vs.filter(x=>x.id!==id);
+    });
+    toast("Vídeo movido a la papelera");
+  };
+  // Restaurar un vídeo desde la papelera
+  const restoreVideo = (id) => {
+    setTrash(t=>{
+      const v = t.find(x=>x.id===id);
+      if(v){ const { deletedAt, ...rest } = v; setVideos(vs=>[...vs, rest]); }
+      return t.filter(x=>x.id!==id);
+    });
+    toast("Vídeo restaurado");
+  };
+  // Vaciar la papelera (con aviso de seguridad)
+  const emptyTrash = () => {
+    if(trash.length===0){ toast("La papelera ya está vacía"); return; }
+    setConfirm({
+      title: "Vaciar papelera",
+      message: `Se eliminarán definitivamente ${trash.length} vídeo${trash.length!==1?"s":""}. Esta acción no se puede deshacer.`,
+      confirmLabel: "Vaciar papelera",
+      danger: true,
+      onConfirm: () => { setTrash([]); setConfirm(null); toast("Papelera vaciada"); }
+    });
+  };
+  // Borrar un único vídeo de la papelera de forma permanente
+  const deleteForever = (id) => {
+    const v = trash.find(x=>x.id===id);
+    setConfirm({
+      title: "Eliminar para siempre",
+      message: `«${v?v.title:"Este vídeo"}» se eliminará permanentemente. Esta acción no se puede deshacer.`,
+      confirmLabel: "Eliminar",
+      danger: true,
+      onConfirm: () => { setTrash(t=>t.filter(x=>x.id!==id)); setConfirm(null); toast("Vídeo eliminado permanentemente"); }
+    });
+  };
+
+  const duplicateVideo = (v) => {
+    const copy = {...clone(v), id:uid(), title:v.title+" (copia)", status:"idea", date:null};
+    setVideos(vs=>[...vs, copy]);
+    setEditing(copy);
+    toast("Vídeo duplicado");
+  };
+
+  const quickAdd = (date) => {
+    const v = makeVideo({date, status: date?"programado":"idea", title:"Nueva idea"}, formats);
+    setVideos(vs=>[...vs, v]);
+    setEditing(v);
+  };
+
+  const runOptimize = (vs) => {
+    const base = new Date();
+    base.setDate(base.getDate() - ((base.getDay()+6)%7) + 7);
+    const dates = DAYS.map((_,i)=>{ const d=new Date(base); d.setDate(base.getDate()+i); return iso(d.getFullYear(),d.getMonth(),d.getDate()); });
+    const pool = vs.filter(v=>v.status!=="publicado").sort((a,b)=>(formats[b.format]?.score||80)-(formats[a.format]?.score||80));
+    const used={};
+    const newVs = vs.map(v=>({...v}));
+    let di=0;
+    pool.forEach(v=>{
+      if(di>=7) return;
+      if(!used[dates[di]]){
+        const target=newVs.find(x=>x.id===v.id);
+        target.date=dates[di]; target.status= target.status==="idea"?"programado":target.status;
+        target.time = DAYS[di]==="Dom"?"21:00":"22:00";
+        used[dates[di]]=true; di++;
+      } else { di++; }
+    });
+    return newVs;
+  };
+
+  const handleOptimize = () => {
+    setOptimizing(true);
+    setTimeout(()=>{
+      setVideos(vs=>runOptimize(vs));
+      setOptimizing(false);
+      setView("calendar");
+      toast("Calendario optimizado para máxima consistencia ✨");
+    }, 1000);
+  };
+
+  const tabs = [
+    {id:"calendar", label:"Calendario", icon:Icons.calendar},
+    {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban},
+    {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:"radial-gradient(1200px 600px at 80% -10%, rgba(212,175,55,0.06), transparent), var(--bg)"}}>
+      {/* HEADER */}
+      <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(12px)",background:"rgba(0,0,0,0.7)"}}>
+        <div className="app-header" style={{maxWidth:1320,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:13}}>
+            <div className="grad-gold gold-glow" style={{width:40,height:40,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",color:"#000"}}>
+              <span style={{fontFamily:"'Sora'",fontWeight:800,fontSize:19}}>R</span>
+            </div>
+            <div className="brand-text">
+              <div style={{fontFamily:"'Sora'",fontWeight:700,fontSize:17,letterSpacing:"-.01em"}}>RDeRandom <span className="gold-text">Studio</span></div>
+              <div style={{fontSize:10.5,color:"var(--text-3)",letterSpacing:".04em"}}>Gestor de contenido</div>
+            </div>
+          </div>
+
+          <nav style={{display:"flex",gap:4,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:4}}>
+            {tabs.map(tb=>(
+              <button key={tb.id} onClick={()=>setView(tb.id)} style={{
+                display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,padding:"9px 15px",borderRadius:9,transition:"all .18s",position:"relative",
+                ...(view===tb.id
+                  ? {background:"linear-gradient(135deg,rgba(212,175,55,0.18),rgba(212,175,55,0.08))",color:"var(--gold)",boxShadow:"0 0 0 1px rgba(212,175,55,0.25)"}
+                  : {color:"var(--text-2)"})
+              }}>{tb.icon}<span className="tab-label">{tb.label}</span>
+                {tb.badge>0 && <span style={{
+                  fontSize:10,fontWeight:700,minWidth:17,height:17,padding:"0 5px",borderRadius:9,
+                  background:"var(--red)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"
+                }}>{tb.badge}</span>}
+              </button>
+            ))}
+          </nav>
+
+          <div style={{display:"flex",gap:9,alignItems:"center"}}>
+            {(()=>{
+              const si = {
+                connecting:{c:"var(--text-2)",t:"Conectando…",icon:Icons.cloud},
+                online:{c:"var(--green)",t:"Sincronizado",icon:Icons.cloudCheck},
+                saving:{c:"var(--gold)",t:"Guardando…",icon:Icons.cloud},
+                offline:{c:"var(--orange)",t:"Sin conexión",icon:Icons.cloud},
+              }[syncStatus] || {c:"var(--text-3)",t:"—",icon:Icons.cloud};
+              return (
+                <button onClick={()=>setShowSync(true)} title="Sincronización entre dispositivos" className="sync-btn" style={{
+                  display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:si.c,padding:"8px 12px",borderRadius:11,
+                  border:"1px solid var(--border)",transition:"all .15s",whiteSpace:"nowrap"
+                }} onMouseEnter={e=>e.currentTarget.style.borderColor="var(--border-gold)"}
+                   onMouseLeave={e=>e.currentTarget.style.borderColor="var(--border)"}>
+                  <span style={{display:"flex"}}>{si.icon}</span><span className="sync-label">{si.t}</span>
+                </button>
+              );
+            })()}
+            <button onClick={()=>setShowFormats(true)} title="Gestionar formatos" style={{
+              display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:"var(--text-2)",padding:"9px 13px",borderRadius:11,
+              border:"1px solid var(--border)",transition:"all .15s"
+            }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
+               onMouseLeave={e=>{e.currentTarget.style.color="var(--text-2)";e.currentTarget.style.borderColor="var(--border)";}}>
+              {Icons.tag}<span className="tab-label">Formatos</span>
+            </button>
+            <button onClick={handleOptimize} disabled={optimizing} className={optimizing?"":"gold-glow"} style={{
+              display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,padding:"10px 16px",borderRadius:11,
+              background: optimizing?"var(--card)":"linear-gradient(135deg,#FFD700,#D4AF37)", color: optimizing?"var(--gold)":"#000",
+              border: optimizing?"1px solid var(--border-gold)":"none"
+            }}>
+              <span className={optimizing?"spin":""} style={{display:"flex"}}>{Icons.sparkle}</span>
+              <span className="tab-label">{optimizing?"Optimizando...":"Optimizar con IA"}</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* MAIN */}
+      <main className="app-main" style={{maxWidth:1320,margin:"0 auto",padding:"26px 24px 60px"}}>
+        {view!=="trash" && <StatStrip videos={videos}/>}
+        {view==="kanban" && (
+          <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
+            <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:"var(--text-3)",display:"flex"}}>{Icons.search}</span>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar vídeo por título..." style={{...inputStyle,paddingLeft:38}}/>
+          </div>
+        )}
+        {view==="calendar" && <CalendarView videos={videos} onOpen={setEditing} onDrop={dropOnDate} onDragStart={onDragStart} onDragEnd={onDragEnd} weekOffset={weekOffset} setWeekOffset={setWeekOffset} onQuickAdd={quickAdd} onUnassign={unassignVideo} formats={formats}/>}
+        {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
+        {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
+
+        <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+          <p style={{fontSize:12,color:"var(--text-3)",lineHeight:1.5,maxWidth:520}}>
+            Tus vídeos, formatos, notas y papelera se guardan automáticamente en este navegador. No se envían a ningún servidor. Si usas otro dispositivo o navegador, empezarás de cero.
+          </p>
+          <button onClick={resetAll} style={{
+            display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--text-3)",padding:"8px 13px",borderRadius:9,
+            border:"1px solid var(--border)",transition:"all .15s",whiteSpace:"nowrap"
+          }} onMouseEnter={e=>{e.currentTarget.style.color="var(--red)";e.currentTarget.style.borderColor="rgba(248,113,113,0.3)";}}
+             onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
+            {Icons.trash} Restablecer datos
+          </button>
+        </footer>
+      </main>
+
+      {editing && <VideoModal v={editing} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} formats={formats}/>}
+      {showFormats && <FormatsModal formats={formats} setFormats={setFormats} videos={videos} onClose={()=>setShowFormats(false)} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
+      {showSync && <SyncModal syncCode={syncCode} status={syncStatus} onClose={()=>setShowSync(false)} onLink={linkToCode} onExport={exportData} onImport={importData} toast={toast}/>}
+      <ConfirmDialog
+        open={!!confirm}
+        title={confirm?.title}
+        message={confirm?.message}
+        confirmLabel={confirm?.confirmLabel}
+        danger={confirm?.danger}
+        onConfirm={()=>confirm?.onConfirm&&confirm.onConfirm()}
+        onCancel={()=>setConfirm(null)}
+      />
+      {toastNode}
+
+      <style>{`
+        /* La pista táctil solo se ve en pantallas pequeñas */
+        .hint-touch { display:none; }
+
+        @media (max-width: 1100px) {
+          .stat-grid { grid-template-columns: repeat(3,1fr) !important; }
+        }
+        @media (max-width: 920px) {
+          .tab-label { display:none; }
+          .brand-text { display:none; }
+          /* En móvil el botón de nube queda visible pero compacto (solo icono) */
+          .sync-label { display:none; }
+          .sync-btn { padding: 8px 10px !important; }
+        }
+        @media (max-width: 760px) {
+          .cal-grid { grid-template-columns: repeat(2,1fr) !important; }
+          .stat-grid { grid-template-columns: repeat(2,1fr) !important; }
+          .unassigned-hint { display:none !important; }
+          .modal-hint { display:none !important; }
+          .hint-desktop { display:none; }
+          .hint-touch { display:inline; }
+          .app-header { padding: 0 14px !important; height: 58px !important; gap: 10px !important; }
+          .app-main { padding: 16px 14px 80px !important; }
+        }
+        @media (max-width: 480px) {
+          .stat-grid { grid-template-columns: repeat(2,1fr) !important; gap: 8px !important; }
+          .cal-grid { grid-template-columns: 1fr !important; }
+          .app-main { padding: 14px 11px 90px !important; }
+          /* Botones del header más compactos */
+          .app-header { gap: 8px !important; }
+          /* Modales casi a pantalla completa, respetando el notch */
+          .modal-overlay { padding: calc(env(safe-area-inset-top) + 12px) 10px calc(env(safe-area-inset-bottom) + 16px) 10px !important; align-items: flex-start !important; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
