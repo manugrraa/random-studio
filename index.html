@@ -65,6 +65,8 @@
     box-shadow: 0 16px 40px rgba(0,0,0,0.6), 0 0 0 1px var(--border-gold); border-radius: 11px;
   }
   .lifted { opacity: 0.35 !important; }
+  @keyframes drawerIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+  .drawer { animation: drawerIn .22s ease-out; }
   h1, h2, h3, h4, .display { font-family: 'Sora', sans-serif; }
   ::-webkit-scrollbar { width: 9px; height: 9px; }
   ::-webkit-scrollbar-track { background: var(--bg-2); }
@@ -205,6 +207,7 @@ const Icons = {
   short: <Icon d={<><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M10.5 8.5l4 2.5-4 2.5z"/></>}/>,
   largo: <Icon d={<><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></>}/>,
   trash: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>} size={16}/>,
+  edit: <Icon d={<><path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></>} size={14}/>,
   drag: <Icon d={<path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/>} size={16}/>,
   expand: <Icon d={<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>} size={15}/>,
   collapse: <Icon d={<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>} size={15}/>,
@@ -217,6 +220,10 @@ const Icons = {
   link: <Icon d={<><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1"/></>} size={16}/>,
   download: <Icon d={<><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></>} size={16}/>,
   upload: <Icon d={<><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></>} size={16}/>,
+  chevron: <Icon d={<path d="M6 9l6 6 6-6"/>} size={16}/>,
+  bell: <Icon d={<><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></>} size={16}/>,
+  tasks: <Icon d={<><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 5l1.5 1.5L8 4M4 11l1.5 1.5L8 10M4 17l1.5 1.5L8 16"/></>} size={17}/>,
+  menu: <Icon d={<path d="M3 6h18M3 12h18M3 18h18"/>} size={20}/>,
   trashBig: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>}/>,
 };
 
@@ -357,6 +364,11 @@ function VideoCard({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
   const done = v.checklist.filter(c=>c.done).length;
   const pct = Math.round(done/v.checklist.length*100);
   const ref = useRef(null);
+  const isLargo = v.type === "largo";
+  // Los vídeos largos van con fondo blanco; los Shorts, con fondo oscuro
+  const th = isLargo
+    ? { bg:"#F4F4F2", bgHover:"#FFFFFF", text:"#141414", text2:"#555", text3:"#8a8a8a", track:"#e2e2e0", border:"#d8d8d4" }
+    : { bg:"var(--card)", bgHover:"var(--card-hover)", text:"var(--text)", text2:"var(--text-2)", text3:"var(--text-3)", track:"#0a0a0a", border:"var(--border)" };
   const handleClick = () => {
     if(Date.now() < dnd.suppressClickUntil) return; // veníamos de arrastrar: no abrir
     onOpen(v);
@@ -370,31 +382,31 @@ function VideoCard({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
       onClick={handleClick}
       className="fade-in"
       style={{
-        background:"var(--card)", border:`1px solid var(--border)`, borderLeft:`3px solid ${f.color}`,
+        background:th.bg, border:`1px solid ${th.border}`, borderLeft:`3px solid ${f.color}`,
         borderRadius:10, padding: compact?"9px 11px":"12px 13px", cursor:"pointer", position:"relative",
         transition:"background .15s, border-color .15s"
       }}
-      onMouseEnter={e=>{e.currentTarget.style.background="var(--card-hover)";e.currentTarget.style.borderColor="var(--border-gold)";e.currentTarget.style.borderLeftColor=f.color;}}
-      onMouseLeave={e=>{e.currentTarget.style.background="var(--card)";e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.borderLeftColor=f.color;}}
+      onMouseEnter={e=>{e.currentTarget.style.background=th.bgHover;e.currentTarget.style.borderColor= isLargo?"#c8b46a":"var(--border-gold)";e.currentTarget.style.borderLeftColor=f.color;}}
+      onMouseLeave={e=>{e.currentTarget.style.background=th.bg;e.currentTarget.style.borderColor=th.border;e.currentTarget.style.borderLeftColor=f.color;}}
     >
       <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:7, color:"var(--text-3)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:7, color:th.text3}}>
           <span style={{color:f.color, display:"flex"}}>{v.type==="short"?Icons.short:Icons.largo}</span>
-          {!compact && <span style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:".06em", color:"var(--text-3)"}}>{v.type==="short"?"Short":"Vídeo largo"}</span>}
+          {!compact && <span style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:".06em", color:th.text3}}>{v.type==="short"?"Short":"Vídeo largo"}</span>}
         </div>
-        <span style={{color:"var(--text-3)", display:"flex"}}>{Icons.drag}</span>
+        <span style={{color:th.text3, display:"flex"}}>{Icons.drag}</span>
       </div>
-      <div style={{fontSize: compact?12.5:13.5, fontWeight:600, color:"var(--text)", margin:"7px 0 8px", lineHeight:1.35}}>{v.title}</div>
+      <div style={{fontSize: compact?12.5:13.5, fontWeight:600, color:th.text, margin:"7px 0 8px", lineHeight:1.35}}>{v.title}</div>
       <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
         <FormatPill fmt={f} small/>
-        {v.date && <span style={{fontSize:10.5,color:"var(--text-3)",display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{v.time}</span>}
+        {v.date && <span style={{fontSize:10.5,color:th.text3,display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{v.time}</span>}
       </div>
       {!compact && (
         <div style={{marginTop:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-3)",marginBottom:4}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:th.text3,marginBottom:4}}>
             <StatusDot status={v.status}/><span>{done}/{v.checklist.length}</span>
           </div>
-          <div style={{height:4, background:"#0a0a0a", borderRadius:4, overflow:"hidden"}}>
+          <div style={{height:4, background:th.track, borderRadius:4, overflow:"hidden"}}>
             <div style={{height:"100%", width:`${pct}%`, background: pct===100?"var(--green)":"linear-gradient(90deg,#D4AF37,#FFD700)", transition:"width .3s", borderRadius:4}}/>
           </div>
         </div>
@@ -826,10 +838,34 @@ function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffse
 const navBtn = { width:38, height:38, borderRadius:10, background:"var(--card)", border:"1px solid var(--border)", color:"var(--text)", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center", transition:"all .15s" };
 
 /* ============================ KANBAN ============================ */
+// Caja desplegable reutilizable (Completados del tablero y Completadas de tareas)
+function CollapsibleBox({ title, count, children, icon }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{marginTop:14, background:"var(--bg-2)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden"}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{
+        width:"100%", display:"flex", alignItems:"center", gap:9, padding:"13px 14px", textAlign:"left", transition:"background .15s"
+      }} onMouseEnter={e=>e.currentTarget.style.background="var(--card)"}
+         onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+        <span style={{color:"var(--green)",display:"flex"}}>{icon||Icons.check}</span>
+        <span style={{fontSize:13.5,fontWeight:700,color:"var(--text)"}}>{title}</span>
+        <span style={{fontSize:11,color:"var(--text-3)",background:"var(--card)",padding:"2px 8px",borderRadius:20,border:"1px solid var(--border)"}}>{count}</span>
+        <span style={{marginLeft:"auto",display:"flex",color:"var(--text-3)",transform:open?"rotate(180deg)":"none",transition:"transform .2s"}}>{Icons.chevron}</span>
+      </button>
+      {open && <div className="fade-in" style={{padding:"0 14px 14px"}}>{children}</div>}
+    </div>
+  );
+}
+
 function KanbanView({videos, onOpen, onDrop, onDragStart, onDragEnd, onQuickAdd, formats, search}) {
   const [dragCol, setDragCol] = useState(null);
   const cols = Object.keys(STATUSES);
   const filtered = search ? videos.filter(v=>v.title.toLowerCase().includes(search.toLowerCase())) : videos;
+  // Completados: publicados hace más de 7 días (salen del tablero y van a la caja de abajo)
+  const WEEK = 7*24*60*60*1000;
+  const isCompleted = v => v.status==="publicado" && v.date && (Date.now() - new Date(v.date+"T00:00").getTime()) > WEEK;
+  const completed = filtered.filter(isCompleted);
+  const board = filtered.filter(v=>!isCompleted(v));
   return (
     <div className="fade-in">
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
@@ -844,7 +880,7 @@ function KanbanView({videos, onOpen, onDrop, onDragStart, onDragEnd, onQuickAdd,
       </div>
       <div style={{display:"grid", gridTemplateColumns:"repeat(5, minmax(190px,1fr))", gap:12, overflowX:"auto", paddingBottom:8}} className="kanban-grid">
         {cols.map(col=>{
-          const items = filtered.filter(v=>v.status===col);
+          const items = board.filter(v=>v.status===col);
           const s = STATUSES[col];
           return (
             <div key={col}
@@ -867,6 +903,19 @@ function KanbanView({videos, onOpen, onDrop, onDragStart, onDragEnd, onQuickAdd,
           );
         })}
       </div>
+
+      {/* COMPLETADOS: publicados hace más de una semana */}
+      <CollapsibleBox title="Completados" count={completed.length}>
+        {completed.length===0 ? (
+          <div style={{textAlign:"center",color:"#333",fontSize:12,padding:"18px 0",border:"1px dashed var(--border)",borderRadius:9}}>
+            Aquí aparecerán los vídeos publicados hace más de una semana
+          </div>
+        ) : (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(190px, 1fr))",gap:9}}>
+            {completed.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
+          </div>
+        )}
+      </CollapsibleBox>
     </div>
   );
 }
@@ -1033,6 +1082,230 @@ function SyncModal({ syncCode, status, onClose, onLink, onExport, onImport, toas
   );
 }
 
+/* ============================ TAREAS ============================ */
+function TaskRow({ t, onToggle, onDelete, onSetDue, isDone }) {
+  const [editDue, setEditDue] = useState(false);
+  const [dueDraft, setDueDraft] = useState(t.due || "");
+  const overdue = !t.done && t.due && new Date(t.due).getTime() < Date.now();
+  const dueLabel = t.due ? new Date(t.due).toLocaleString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : null;
+  const openEditor = () => { setDueDraft(t.due || ""); setEditDue(e=>!e); };
+  const saveDue = () => { onSetDue(t.id, dueDraft || null); setEditDue(false); };
+  const clearDue = () => { onSetDue(t.id, null); setEditDue(false); };
+  return (
+    <div style={{padding:"9px 10px",borderRadius:9,
+      background: isDone?"transparent":"var(--card)", border:`1px solid ${isDone?"transparent":"var(--border)"}`, transition:"all .15s"}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+        <button onClick={()=>onToggle(t.id)} title={isDone?"Marcar como pendiente":"Marcar como completada"} style={{
+          width:20,height:20,borderRadius:"50%",flexShrink:0,marginTop:1,
+          display:"flex",alignItems:"center",justifyContent:"center",
+          background: isDone?"var(--green)":"transparent",
+          border:`1.5px solid ${isDone?"var(--green)":"var(--text-3)"}`, color:"#000", transition:"all .15s"
+        }}>{isDone && Icons.check}</button>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13.5, color: isDone?"var(--text-3)":"var(--text)", textDecoration: isDone?"line-through":"none", lineHeight:1.4, overflowWrap:"anywhere"}}>{t.title}</div>
+          {dueLabel && !isDone && (
+            <button onClick={openEditor} title="Cambiar recordatorio" style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,marginTop:4,padding:0,
+              color: overdue?"var(--red)":"var(--text-3)", fontWeight: overdue?600:400}}>
+              {Icons.bell}{dueLabel}{overdue && " · vencida"}
+            </button>
+          )}
+          {isDone && t.completedAt && (
+            <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:3}}>Completada el {new Date(t.completedAt).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>
+          )}
+        </div>
+        {!isDone && (
+          <button onClick={openEditor} title={t.due?"Cambiar o quitar recordatorio":"Programar recordatorio"} style={{
+            color: t.due?"var(--gold)":"var(--text-3)", display:"flex",padding:4,borderRadius:6,flexShrink:0,transition:"color .15s"
+          }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color=t.due?"var(--gold)":"var(--text-3)"}>
+            {Icons.bell}
+          </button>
+        )}
+        <button onClick={()=>onDelete(t.id)} title="Eliminar tarea" style={{color:"var(--text-3)",display:"flex",padding:4,borderRadius:6,flexShrink:0,transition:"color .15s"}}
+          onMouseEnter={e=>e.currentTarget.style.color="var(--red)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>
+          {Icons.trash}
+        </button>
+      </div>
+      {editDue && !isDone && (
+        <div className="fade-in" style={{display:"flex",gap:7,marginTop:9,paddingTop:9,borderTop:"1px solid var(--border)",flexWrap:"wrap",alignItems:"center"}}>
+          <input type="datetime-local" value={dueDraft} onChange={e=>setDueDraft(e.target.value)}
+            style={{flex:1,minWidth:170,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:8,padding:"7px 10px",color:"var(--text)",fontSize:12.5}}/>
+          <button onClick={saveDue} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:12,padding:"8px 13px",borderRadius:8}}>Guardar</button>
+          {t.due && <button onClick={clearDue} style={{color:"var(--red)",fontWeight:600,fontSize:12,padding:"8px 11px",borderRadius:8,border:"1px solid rgba(248,113,113,0.3)"}}>Quitar</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TaskList({ list, onUpdate, onDeleteList, toast }) {
+  const [text, setText] = useState("");
+  const [due, setDue] = useState("");
+  const [showDue, setShowDue] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState(list.name);
+
+  const pending = list.tasks.filter(t=>!t.done).sort((a,b)=>{
+    if(a.due && b.due) return new Date(a.due)-new Date(b.due);
+    if(a.due) return -1; if(b.due) return 1;
+    return (a.createdAt||0)-(b.createdAt||0);
+  });
+  const doneTasks = list.tasks.filter(t=>t.done).sort((a,b)=>(b.completedAt||0)-(a.completedAt||0));
+
+  const addTask = () => {
+    const title = text.trim();
+    if(!title){ toast("Escribe el texto de la tarea"); return; }
+    const t = { id:tid(), title, due: due||null, done:false, completedAt:null, notified:false, createdAt:Date.now() };
+    onUpdate({...list, tasks:[...list.tasks, t]});
+    setText(""); setDue(""); setShowDue(false);
+  };
+  const toggle = (taskId) => {
+    onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId
+      ? {...t, done:!t.done, completedAt: !t.done?Date.now():null, notified: t.done?false:t.notified}
+      : t)});
+  };
+  const removeTask = (taskId) => {
+    onUpdate({...list, tasks: list.tasks.filter(t=>t.id!==taskId)});
+  };
+  const setTaskDue = (taskId, due) => {
+    onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId ? {...t, due, notified:false} : t)});
+  };
+  const saveRename = () => {
+    const n = newName.trim();
+    if(!n){ toast("El nombre no puede estar vacío"); return; }
+    onUpdate({...list, name:n}); setRenaming(false);
+  };
+
+  return (
+    <div style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:14,padding:14,display:"flex",flexDirection:"column",gap:11}}>
+      {/* Cabecera de la lista */}
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        {renaming ? (
+          <>
+            <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")saveRename(); if(e.key==="Escape")setRenaming(false);}}
+              style={{flex:1,background:"var(--card)",border:"1px solid var(--border-gold)",borderRadius:8,padding:"7px 10px",color:"var(--text)",fontSize:13.5,fontWeight:700}} autoFocus/>
+            <button onClick={saveRename} style={{color:"var(--green)",display:"flex",padding:5}}>{Icons.check}</button>
+          </>
+        ) : (
+          <>
+            <span style={{fontSize:14.5,fontWeight:700,color:"var(--text)",flex:1,overflowWrap:"anywhere"}}>{list.name}</span>
+            <span style={{fontSize:11,color:"var(--text-3)",background:"var(--card)",padding:"2px 8px",borderRadius:20,border:"1px solid var(--border)",flexShrink:0}}>{pending.length}</span>
+            <button onClick={()=>{setNewName(list.name); setRenaming(true);}} title="Renombrar lista" style={{color:"var(--text-3)",display:"flex",padding:5,borderRadius:6}}
+              onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>{Icons.edit}</button>
+            <button onClick={()=>onDeleteList(list.id)} title="Eliminar lista" style={{color:"var(--text-3)",display:"flex",padding:5,borderRadius:6}}
+              onMouseEnter={e=>e.currentTarget.style.color="var(--red)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>{Icons.trash}</button>
+          </>
+        )}
+      </div>
+
+      {/* Añadir tarea */}
+      <div style={{display:"flex",flexDirection:"column",gap:7}}>
+        <div style={{display:"flex",gap:7}}>
+          <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTask()}
+            placeholder="Nueva tarea…" style={{flex:1,minWidth:0,background:"var(--card)",border:"1px solid var(--border)",borderRadius:9,padding:"9px 11px",color:"var(--text)",fontSize:13}}/>
+          <button onClick={()=>setShowDue(s=>!s)} title="Añadir recordatorio" style={{
+            flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",width:38,borderRadius:9,transition:"all .15s",
+            color: (showDue||due)?"var(--gold)":"var(--text-3)", border:`1px solid ${(showDue||due)?"var(--border-gold)":"var(--border)"}`
+          }}>{Icons.bell}</button>
+          <button onClick={addTask} className="grad-gold" style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",width:38,borderRadius:9,color:"#000"}}>{Icons.plus}</button>
+        </div>
+        {showDue && (
+          <input type="datetime-local" value={due} onChange={e=>setDue(e.target.value)}
+            style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:9,padding:"8px 11px",color:"var(--text)",fontSize:13}}/>
+        )}
+      </div>
+
+      {/* Tareas pendientes */}
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {pending.map(t=><TaskRow key={t.id} t={t} isDone={false} onToggle={toggle} onDelete={removeTask} onSetDue={setTaskDue}/>)}
+        {pending.length===0 && (
+          <div style={{textAlign:"center",color:"#333",fontSize:11.5,padding:"16px 0",border:"1px dashed var(--border)",borderRadius:9}}>
+            No hay tareas pendientes
+          </div>
+        )}
+      </div>
+
+      {/* Completadas (desplegable) */}
+      {doneTasks.length>0 && (
+        <CollapsibleBox title="Completadas" count={doneTasks.length}>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {doneTasks.map(t=><TaskRow key={t.id} t={t} isDone={true} onToggle={toggle} onDelete={removeTask} onSetDue={setTaskDue}/>)}
+          </div>
+        </CollapsibleBox>
+      )}
+    </div>
+  );
+}
+
+function TasksView({ taskLists, setTaskLists, toast, askConfirm }) {
+  const [newList, setNewList] = useState("");
+  const [notifState, setNotifState] = useState(typeof Notification!=="undefined" ? Notification.permission : "unsupported");
+
+  const addList = () => {
+    const name = newList.trim();
+    if(!name){ toast("Escribe un nombre para la lista"); return; }
+    setTaskLists(ls=>[...ls, { id:tid(), name, tasks:[] }]);
+    setNewList("");
+    toast(`Lista «${name}» creada`);
+  };
+  const updateList = (updated) => setTaskLists(ls=>ls.map(l=>l.id===updated.id?updated:l));
+  const deleteList = (id) => {
+    const l = taskLists.find(x=>x.id===id);
+    askConfirm({
+      title: "Eliminar lista",
+      message: `Se eliminará la lista «${l?.name}» con sus ${l?.tasks.length||0} tarea${(l?.tasks.length||0)!==1?"s":""}. Esta acción no se puede deshacer.`,
+      confirmLabel: "Eliminar lista",
+      danger: true,
+      onConfirm: () => setTaskLists(ls=>ls.filter(x=>x.id!==id))
+    });
+  };
+  const enableNotifs = async () => {
+    const res = await askNotifPermission();
+    setNotifState(res);
+    if(res==="granted") toast("Notificaciones activadas");
+    else if(res==="denied") toast("Notificaciones bloqueadas · actívalas en los ajustes del navegador");
+    else if(res==="unsupported") toast("Este navegador no soporta notificaciones");
+  };
+
+  const totalPending = taskLists.reduce((a,l)=>a+l.tasks.filter(t=>!t.done).length,0);
+
+  return (
+    <div className="fade-in">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:700}}>Tareas</h2>
+          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>{totalPending} tarea{totalPending!==1?"s":""} pendiente{totalPending!==1?"s":""} · organiza en listas y programa recordatorios</p>
+        </div>
+        {notifState!=="granted" && notifState!=="unsupported" && (
+          <button onClick={enableNotifs} style={{
+            display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",
+            border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 13px",background:"rgba(212,175,55,0.05)"
+          }}>{Icons.bell} Activar notificaciones</button>
+        )}
+      </div>
+
+      {/* Crear lista nueva */}
+      <div style={{display:"flex",gap:9,marginBottom:16,maxWidth:420}}>
+        <input value={newList} onChange={e=>setNewList(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addList()}
+          placeholder="Nombre de la nueva lista…" style={{flex:1,minWidth:0,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 13px",color:"var(--text)",fontSize:13}}/>
+        <button onClick={addList} style={{
+          flexShrink:0,display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:"var(--gold)",
+          border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 14px",background:"rgba(212,175,55,0.05)"
+        }}>{Icons.plus} Crear lista</button>
+      </div>
+
+      {/* Listas */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(290px, 1fr))",gap:13,alignItems:"start"}} className="tasks-grid">
+        {taskLists.map(l=><TaskList key={l.id} list={l} onUpdate={updateList} onDeleteList={deleteList} toast={toast}/>)}
+      </div>
+      {taskLists.length===0 && (
+        <div style={{textAlign:"center",color:"var(--text-3)",fontSize:13,padding:"50px 0"}}>
+          Crea tu primera lista de tareas con el campo de arriba
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================ PAPELERA ============================ */
 function TrashView({trash, onRestore, onDeleteForever, onEmpty, formats}) {
   const fmtDate = ts => {
@@ -1149,11 +1422,35 @@ function loadStore() {
     return data;
   } catch(e) { return null; }
 }
-function saveStore(videos, formats, trash) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], savedAt: Date.now() })); return true; }
+function saveStore(videos, formats, trash, taskLists) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], savedAt: Date.now() })); return true; }
   catch(e) { return false; }
 }
 function clearStore() { try { localStorage.removeItem(STORE_KEY); } catch(e){} }
+
+/* ============================ TAREAS: datos y notificaciones ============================ */
+let _tid = 0;
+const tid = () => "t" + Date.now().toString(36) + (++_tid);
+const DEFAULT_TASK_LISTS = [
+  { id:"lst_default", name:"Mis tareas", tasks:[] }
+];
+// Pide permiso de notificaciones (devuelve el estado final)
+async function askNotifPermission() {
+  if(typeof Notification === "undefined") return "unsupported";
+  if(Notification.permission === "granted") return "granted";
+  if(Notification.permission === "denied") return "denied";
+  try { return await Notification.requestPermission(); } catch(e){ return "denied"; }
+}
+// Lanza una notificación si hay permiso; si no, devuelve false para avisar por toast
+function fireNotification(title, body) {
+  try {
+    if(typeof Notification !== "undefined" && Notification.permission === "granted") {
+      new Notification(title, { body, icon:undefined, badge:undefined, tag:"rderandom-"+title });
+      return true;
+    }
+  } catch(e){}
+  return false;
+}
 
 /* ============================ SINCRONIZACIÓN (Supabase) ============================ */
 const SUPABASE_URL = "https://krzuellhsakbwavlahxg.supabase.co";
@@ -1234,6 +1531,7 @@ function App() {
   const [videos, setVideos] = useState(_initial ? _initial.videos : SEED);
   const [formats, setFormats] = useState(_initial ? _initial.formats : DEFAULT_FORMATS);
   const [trash, setTrash] = useState(_initial && Array.isArray(_initial.trash) ? _initial.trash : []);
+  const [taskLists, setTaskLists] = useState(_initial && Array.isArray(_initial.taskLists) && _initial.taskLists.length ? _initial.taskLists : clone(DEFAULT_TASK_LISTS));
   const [saved, setSaved] = useState(false);
   const [view, setView] = useState("calendar");
   const [editing, setEditing] = useState(null);
@@ -1245,78 +1543,141 @@ function App() {
   const [confirm, setConfirm] = useState(null); // {title, message, confirmLabel, danger, onConfirm}
   const [syncStatus, setSyncStatus] = useState("connecting"); // connecting | online | offline | saving
   const [showSync, setShowSync] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [syncCode, setSyncCodeState] = useState(()=>getSyncCode());
   const [toast, toastNode] = useToast();
 
   const lastSyncedRef = useRef(null); // huella de los últimos datos sincronizados (para ignorar ecos)
+  const lastRemoteTsRef = useRef(0);  // fecha de la última versión de la nube que hemos integrado
+  const localEditedAtRef = useRef((_initial && _initial.savedAt) ? _initial.savedAt : 0); // última edición local
+  const stateRef = useRef({videos, formats, trash, taskLists}); // estado vivo para los manejadores async
+  const pullingRef = useRef(false);
   const saveTimer = useRef(null);
+  const [rtKey, setRtKey] = useState(0); // al aumentar, se recrea el canal de tiempo real
 
-  // Carga inicial desde la nube + resolución de conflicto con lo local
+  // Espejo del estado actual (para leerlo dentro de callbacks asíncronos sin datos obsoletos)
+  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists}; },[videos, formats, trash, taskLists]);
+
+  const fp = (s) => JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[]});
+
+  // Adopta los datos de la nube en la app
+  const applyRemote = (r, remoteTs) => {
+    lastSyncedRef.current = fp({videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists});
+    lastRemoteTsRef.current = remoteTs || Date.now();
+    bumpIdFrom([...(r.videos||[]), ...(r.trash||[])]);
+    if(Array.isArray(r.videos)) setVideos(r.videos);
+    if(r.formats && typeof r.formats==="object") setFormats(r.formats);
+    if(Array.isArray(r.trash)) setTrash(r.trash);
+    if(Array.isArray(r.taskLists)) setTaskLists(r.taskLists);
+  };
+
+  // Sube el estado actual a la nube
+  const pushLocal = async () => {
+    const s = stateRef.current;
+    const huella = fp(s);
+    setSyncStatus("saving");
+    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, savedAt: Date.now() });
+    lastSyncedRef.current = huella;
+    lastRemoteTsRef.current = Date.now();
+    setSyncStatus("online");
+  };
+
+  // RECONCILIACIÓN: compara nube y local y decide quién manda.
+  // Se llama al abrir, al volver del segundo plano, al recuperar internet y cada 60s.
+  const pullFromCloud = async (silent) => {
+    if(pullingRef.current) return;
+    pullingRef.current = true;
+    try {
+      if(!silent) setSyncStatus("connecting");
+      const remote = await cloudLoad(syncCode);
+      const s = stateRef.current;
+      const localDirty = fp(s) !== lastSyncedRef.current;
+      if(remote && remote.data) {
+        const remoteTs = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
+        const remoteFp = fp({videos:remote.data.videos, formats:remote.data.formats, trash:remote.data.trash, taskLists:remote.data.taskLists});
+        const remoteNew = remoteTs > lastRemoteTsRef.current && remoteFp !== lastSyncedRef.current;
+        if(remoteNew && !localDirty) {
+          // La nube tiene novedades y aquí no hay cambios sin subir → adoptar nube
+          applyRemote(remote.data, remoteTs);
+          if(!silent) toast("Sincronizado desde otro dispositivo");
+        } else if(remoteNew && localDirty) {
+          // Cambios en ambos lados → gana el más reciente
+          if(remoteTs >= localEditedAtRef.current) applyRemote(remote.data, remoteTs);
+          else await pushLocal();
+        } else if(localDirty) {
+          // Solo hay cambios locales pendientes → subirlos
+          await pushLocal();
+        } else if(remoteTs > lastRemoteTsRef.current) {
+          lastRemoteTsRef.current = remoteTs; // misma huella, solo actualizar la marca
+        }
+      } else {
+        // No existe nada en la nube todavía → subir lo local
+        await pushLocal();
+      }
+      setSyncStatus("online");
+    } catch(e) {
+      setSyncStatus("offline");
+    } finally {
+      pullingRef.current = false;
+    }
+  };
+  const pullRef = useRef(pullFromCloud);
+  useEffect(()=>{ pullRef.current = pullFromCloud; });
+
+  // Carga inicial
   const didInit = useRef(false);
   useEffect(()=>{
     if(didInit.current) return; didInit.current = true;
-    let active = true;
-    (async ()=>{
-      setSyncStatus("connecting");
-      try {
-        const remote = await cloudLoad(syncCode);
-        if(!active) return;
-        if(remote && remote.data) {
-          const r = remote.data;
-          const localTs = (_initial && _initial.savedAt) ? _initial.savedAt : 0;
-          const remoteTs = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
-          if(remoteTs >= localTs) {
-            // La nube manda: adoptamos sus datos
-            bumpIdFrom(r.videos);
-            if(Array.isArray(r.videos)) setVideos(r.videos);
-            if(r.formats && typeof r.formats==="object") setFormats(r.formats);
-            if(Array.isArray(r.trash)) setTrash(r.trash);
-            lastSyncedRef.current = JSON.stringify({videos:r.videos, formats:r.formats, trash:r.trash||[]});
-          } else {
-            // Lo local es más nuevo: lo subimos
-            await cloudSave(syncCode, { videos, formats, trash, savedAt: Date.now() });
-            lastSyncedRef.current = JSON.stringify({videos, formats, trash});
-          }
-        } else {
-          // No hay nada en la nube todavía: subimos lo local
-          await cloudSave(syncCode, { videos, formats, trash, savedAt: Date.now() });
-          lastSyncedRef.current = JSON.stringify({videos, formats, trash});
-        }
-        if(active) setSyncStatus("online");
-      } catch(e) {
-        if(active) setSyncStatus("offline");
-      }
-    })();
-    return ()=>{ active=false; };
+    pullRef.current(false);
+  },[]);
+
+  // RE-SINCRONIZACIÓN AUTOMÁTICA: al volver a la app, al recuperar internet y cada 60s.
+  // (iOS corta la conexión en segundo plano; esto la revive y trae lo que haya pasado mientras tanto.)
+  useEffect(()=>{
+    const onWake = () => {
+      if(document.visibilityState === "hidden") return;
+      pullRef.current(true);
+      setRtKey(k=>k+1); // recrear el canal de tiempo real por si murió en segundo plano
+    };
+    const onOnline = () => { pullRef.current(true); setRtKey(k=>k+1); };
+    document.addEventListener("visibilitychange", onWake);
+    window.addEventListener("focus", onWake);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("pageshow", onWake);
+    const iv = setInterval(()=>{ if(document.visibilityState!=="hidden") pullRef.current(true); }, 60000);
+    return ()=>{
+      document.removeEventListener("visibilitychange", onWake);
+      window.removeEventListener("focus", onWake);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("pageshow", onWake);
+      clearInterval(iv);
+    };
   },[]);
 
   // Suscripción en tiempo real: si otro dispositivo cambia algo, lo recibimos al instante
   useEffect(()=>{
     let channel = null;
     ensureAuth().then(sb => {
-      channel = sb.channel("rivals-"+syncCode)
+      channel = sb.channel("rivals-"+syncCode+"-"+rtKey)
         .on("postgres_changes", { event:"*", schema:"public", table:"rivals_data", filter:"user_id=eq."+syncCode }, payload=>{
           const r = payload && payload.new && payload.new.data;
           if(!r) return;
-          const incoming = JSON.stringify({videos:r.videos, formats:r.formats, trash:r.trash||[]});
-          if(incoming === lastSyncedRef.current) return;
-          lastSyncedRef.current = incoming;
-          bumpIdFrom(r.videos);
-          if(Array.isArray(r.videos)) setVideos(r.videos);
-          if(r.formats && typeof r.formats==="object") setFormats(r.formats);
-          if(Array.isArray(r.trash)) setTrash(r.trash);
+          const remoteTs = payload.new.updated_at ? new Date(payload.new.updated_at).getTime() : Date.now();
+          const incoming = fp({videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists});
+          if(incoming === lastSyncedRef.current) { lastRemoteTsRef.current = Math.max(lastRemoteTsRef.current, remoteTs); return; }
+          applyRemote(r, remoteTs);
           setSyncStatus("online");
           toast("Sincronizado desde otro dispositivo");
         })
         .subscribe();
     }).catch(()=>{});
     return ()=>{ try { if(channel) getClient()?.removeChannel(channel); } catch(e){} };
-  },[syncCode]);
+  },[syncCode, rtKey]);
 
   // Vincular este dispositivo a otro código de sincronización
   // Exportar todos los datos a un archivo JSON descargable
   const exportData = () => {
-    const payload = { app:"RDeRandom Studio", version:1, exportedAt:new Date().toISOString(), videos, formats, trash };
+    const payload = { app:"RDeRandom Studio", version:2, exportedAt:new Date().toISOString(), videos, formats, trash, taskLists };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1338,6 +1699,7 @@ function App() {
       const inVideos = Array.isArray(parsed?.videos) ? parsed.videos : null;
       const inFormats = (parsed?.formats && typeof parsed.formats==="object" && !Array.isArray(parsed.formats)) ? parsed.formats : null;
       const inTrash = Array.isArray(parsed?.trash) ? parsed.trash : [];
+      const inTasks = Array.isArray(parsed?.taskLists) ? parsed.taskLists : null;
       if(!inVideos || !inFormats){ toast("El archivo no tiene el formato esperado de RDeRandom Studio"); return; }
       setConfirm({
         title: "Importar datos",
@@ -1349,6 +1711,7 @@ function App() {
           setVideos(inVideos);
           setFormats(inFormats);
           setTrash(inTrash);
+          if(inTasks) setTaskLists(inTasks.length?inTasks:clone(DEFAULT_TASK_LISTS));
           setConfirm(null);
           setShowSync(false);
           toast("Datos importados correctamente");
@@ -1367,16 +1730,14 @@ function App() {
     try {
       const remote = await cloudLoad(code);
       if(remote && remote.data){
-        const r = remote.data;
-        bumpIdFrom(r.videos);
-        setVideos(Array.isArray(r.videos)?r.videos:[]);
-        setFormats((r.formats&&typeof r.formats==="object")?r.formats:clone(DEFAULT_FORMATS));
-        setTrash(Array.isArray(r.trash)?r.trash:[]);
-        lastSyncedRef.current = JSON.stringify({videos:r.videos, formats:r.formats, trash:r.trash||[]});
+        const remoteTs = remote.updated_at ? new Date(remote.updated_at).getTime() : Date.now();
+        applyRemote(remote.data, remoteTs);
         toast("Vinculado · datos descargados de la nube");
       } else {
-        await cloudSave(code, { videos, formats, trash, savedAt: Date.now() });
-        lastSyncedRef.current = JSON.stringify({videos, formats, trash});
+        const s = stateRef.current;
+        await cloudSave(code, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, savedAt: Date.now() });
+        lastSyncedRef.current = fp(s);
+        lastRemoteTsRef.current = Date.now();
         toast("Vinculado · se subieron tus datos actuales");
       }
       setSyncStatus("online");
@@ -1391,21 +1752,19 @@ function App() {
   const firstRun = useRef(true);
   useEffect(()=>{
     if(firstRun.current){ firstRun.current=false; return; }
-    const ok = saveStore(videos, formats, trash);
+    const ok = saveStore(videos, formats, trash, taskLists);
     if(ok){ setSaved(true); setTimeout(()=>setSaved(false), 1600); }
+    // Si esta huella no coincide con lo último sincronizado, es una edición hecha aquí
+    const huella = fp({videos, formats, trash, taskLists});
+    if(huella !== lastSyncedRef.current) localEditedAtRef.current = Date.now();
     // Guardar en la nube tras 1.2s sin cambios
     if(saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async ()=>{
-      const huella = JSON.stringify({videos, formats, trash});
-      if(huella === lastSyncedRef.current) return; // nada nuevo que subir
-      try {
-        setSyncStatus("saving");
-        lastSyncedRef.current = huella;
-        await cloudSave(syncCode, { videos, formats, trash, savedAt: Date.now() });
-        setSyncStatus("online");
-      } catch(e) { setSyncStatus("offline"); }
+      if(fp(stateRef.current) === lastSyncedRef.current) return; // nada nuevo que subir
+      try { await pushLocal(); }
+      catch(e) { setSyncStatus("offline"); }
     }, 1200);
-  },[videos, formats, trash]);
+  },[videos, formats, trash, taskLists]);
 
   const resetAll = () => {
     setConfirm({
@@ -1421,10 +1780,13 @@ function App() {
         setFormats(freshFormats);
         setVideos(freshVideos);
         setTrash([]);
+        const freshTasks = clone(DEFAULT_TASK_LISTS);
+        setTaskLists(freshTasks);
         setConfirm(null);
         // Reflejar el restablecimiento también en la nube
-        lastSyncedRef.current = JSON.stringify({videos:freshVideos, formats:freshFormats, trash:[]});
-        cloudSave(syncCode, { videos:freshVideos, formats:freshFormats, trash:[], savedAt:Date.now() }).catch(()=>{});
+        lastSyncedRef.current = JSON.stringify({videos:freshVideos, formats:freshFormats, trash:[], taskLists:freshTasks});
+        lastRemoteTsRef.current = Date.now();
+        cloudSave(syncCode, { videos:freshVideos, formats:freshFormats, trash:[], taskLists:freshTasks, savedAt:Date.now() }).catch(()=>{});
         toast("Datos restablecidos");
       }
     });
@@ -1562,8 +1924,37 @@ function App() {
   const tabs = [
     {id:"calendar", label:"Calendario", icon:Icons.calendar},
     {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban},
+    {id:"tasks", label:"Tareas", icon:Icons.tasks, badge: taskLists.reduce((a,l)=>a+l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length,0)},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
   ];
+
+  // Planificador de recordatorios: comprueba cada 30s si alguna tarea ha vencido
+  useEffect(()=>{
+    const check = () => {
+      const now = Date.now();
+      let fired = null;
+      setTaskLists(ls=>{
+        let changed = false;
+        const next = ls.map(l=>({
+          ...l,
+          tasks: l.tasks.map(t=>{
+            if(!t.done && !t.notified && t.due && new Date(t.due).getTime() <= now){
+              changed = true;
+              fired = t.title;
+              const ok = fireNotification("Recordatorio de tarea", t.title + " · " + l.name);
+              if(!ok) setTimeout(()=>toast("🔔 Tarea pendiente: " + t.title), 50);
+              return {...t, notified:true};
+            }
+            return t;
+          })
+        }));
+        return changed ? next : ls;
+      });
+    };
+    check();
+    const iv = setInterval(check, 30000);
+    return ()=>clearInterval(iv);
+  },[]);
 
   return (
     <div style={{minHeight:"100vh",background:"radial-gradient(1200px 600px at 80% -10%, rgba(212,175,55,0.06), transparent), var(--bg)"}}>
@@ -1571,6 +1962,10 @@ function App() {
       <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(12px)",background:"rgba(0,0,0,0.7)"}}>
         <div className="app-header" style={{maxWidth:1320,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
           <div style={{display:"flex",alignItems:"center",gap:13}}>
+            <button className="menu-btn" onClick={()=>setMenuOpen(true)} title="Abrir menú" style={{
+              display:"none",alignItems:"center",justifyContent:"center",width:40,height:40,borderRadius:11,
+              color:"var(--text)",border:"1px solid var(--border)"
+            }}>{Icons.menu}</button>
             <div className="grad-gold gold-glow" style={{width:40,height:40,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",color:"#000"}}>
               <span style={{fontFamily:"'Sora'",fontWeight:800,fontSize:19}}>R</span>
             </div>
@@ -1580,7 +1975,7 @@ function App() {
             </div>
           </div>
 
-          <nav style={{display:"flex",gap:4,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:4}}>
+          <nav className="top-nav" style={{display:"flex",gap:4,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:4}}>
             {tabs.map(tb=>(
               <button key={tb.id} onClick={()=>setView(tb.id)} style={{
                 display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,padding:"9px 15px",borderRadius:9,transition:"all .18s",position:"relative",
@@ -1633,9 +2028,57 @@ function App() {
         </div>
       </header>
 
+      {/* MENÚ LATERAL (móvil) */}
+      {menuOpen && (
+        <div onClick={()=>setMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:900,backdropFilter:"blur(2px)"}}>
+          <div onClick={e=>e.stopPropagation()} className="drawer" style={{
+            position:"absolute",left:0,top:0,bottom:0,width:280,maxWidth:"82vw",
+            background:"var(--bg-2)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",
+            paddingTop:"calc(env(safe-area-inset-top) + 14px)",paddingBottom:"calc(env(safe-area-inset-bottom) + 14px)",
+            boxShadow:"12px 0 40px rgba(0,0,0,0.5)"
+          }}>
+            <div style={{display:"flex",alignItems:"center",gap:11,padding:"4px 16px 16px",borderBottom:"1px solid var(--border)"}}>
+              <div className="grad-gold" style={{width:34,height:34,borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",color:"#000"}}>
+                <span style={{fontFamily:"'Sora'",fontWeight:800,fontSize:16}}>R</span>
+              </div>
+              <div>
+                <div style={{fontFamily:"'Sora'",fontWeight:700,fontSize:14.5}}>RDeRandom <span className="gold-text">Studio</span></div>
+                <div style={{fontSize:10,color:"var(--text-3)"}}>Gestor de contenido</div>
+              </div>
+              <button onClick={()=>setMenuOpen(false)} style={{marginLeft:"auto",color:"var(--text-2)",display:"flex",padding:5}}>{Icons.x}</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:4,padding:"14px 12px",flex:1,overflowY:"auto"}}>
+              {tabs.map(tb=>(
+                <button key={tb.id} onClick={()=>{setView(tb.id); setMenuOpen(false);}} style={{
+                  display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,padding:"13px 14px",borderRadius:11,transition:"all .15s",textAlign:"left",
+                  ...(view===tb.id
+                    ? {background:"linear-gradient(135deg,rgba(212,175,55,0.18),rgba(212,175,55,0.08))",color:"var(--gold)",boxShadow:"0 0 0 1px rgba(212,175,55,0.25)"}
+                    : {color:"var(--text-2)"})
+                }}>{tb.icon}<span style={{flex:1}}>{tb.label}</span>
+                  {tb.badge>0 && <span style={{
+                    fontSize:10,fontWeight:700,minWidth:18,height:18,padding:"0 5px",borderRadius:9,
+                    background:"var(--red)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"
+                  }}>{tb.badge}</span>}
+                </button>
+              ))}
+              <div style={{height:1,background:"var(--border)",margin:"10px 4px"}}/>
+              <button onClick={()=>{setShowFormats(true); setMenuOpen(false);}} style={{
+                display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,padding:"13px 14px",borderRadius:11,color:"var(--text-2)",textAlign:"left"
+              }}>{Icons.tag}<span>Formatos</span></button>
+              <button onClick={()=>{setShowSync(true); setMenuOpen(false);}} style={{
+                display:"flex",alignItems:"center",gap:12,fontSize:14,fontWeight:600,padding:"13px 14px",borderRadius:11,color:"var(--text-2)",textAlign:"left"
+              }}>{Icons.cloud}<span>Sincronización</span></button>
+            </div>
+            <div style={{padding:"10px 16px 0",borderTop:"1px solid var(--border)",fontSize:10.5,color:"var(--text-3)"}}>
+              Datos sincronizados con la nube
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MAIN */}
       <main className="app-main" style={{maxWidth:1320,margin:"0 auto",padding:"26px 24px 60px"}}>
-        {view!=="trash" && <StatStrip videos={videos}/>}
+        {view!=="trash" && view!=="tasks" && <StatStrip videos={videos}/>}
         {view==="kanban" && (
           <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
             <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:"var(--text-3)",display:"flex"}}>{Icons.search}</span>
@@ -1644,6 +2087,7 @@ function App() {
         )}
         {view==="calendar" && <CalendarView videos={videos} onOpen={setEditing} onDrop={dropOnDate} onDragStart={onDragStart} onDragEnd={onDragEnd} weekOffset={weekOffset} setWeekOffset={setWeekOffset} onQuickAdd={quickAdd} onUnassign={unassignVideo} formats={formats}/>}
         {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
+        {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
 
         <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
@@ -1697,6 +2141,10 @@ function App() {
           .hint-touch { display:inline; }
           .app-header { padding: 0 14px !important; height: 58px !important; gap: 10px !important; }
           .app-main { padding: 16px 14px 80px !important; }
+          /* En móvil: menú lateral en vez de pestañas superiores */
+          .top-nav { display:none !important; }
+          .menu-btn { display:flex !important; }
+          .tasks-grid { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 480px) {
           .stat-grid { grid-template-columns: repeat(2,1fr) !important; gap: 8px !important; }
