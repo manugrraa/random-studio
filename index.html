@@ -1201,19 +1201,26 @@ function SyncModal({ syncCode, status, onClose, onLink, onExport, onImport, onSy
 }
 
 /* ============================ TAREAS ============================ */
-function TaskRow({ t, onToggle, onDelete, onSetDue, onToggleUrgent, isDone }) {
-  const [editDue, setEditDue] = useState(false);
+function TaskRow({ t, onToggle, onDelete, onSetDue, onEditTitle, onToggleUrgent, isDone }) {
+  const [editing, setEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(t.title);
   const [dueDraft, setDueDraft] = useState(t.due || "");
   const [swipeX, setSwipeX] = useState(0);
   const swipe = useRef({x0:0,y0:0,active:false,horiz:false});
   const overdue = !t.done && t.due && new Date(t.due).getTime() < Date.now();
   const dueLabel = t.due ? new Date(t.due).toLocaleString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) : null;
-  const openEditor = () => { setDueDraft(t.due || ""); setEditDue(e=>!e); };
-  const saveDue = () => { onSetDue(t.id, dueDraft || null); setEditDue(false); };
-  const clearDue = () => { onSetDue(t.id, null); setEditDue(false); };
+  const openEditor = () => { setTitleDraft(t.title); setDueDraft(t.due || ""); setEditing(e=>!e); };
+  const saveAll = () => {
+    const nt = titleDraft.trim();
+    if(!nt){ return; }
+    if(nt !== t.title && onEditTitle) onEditTitle(t.id, nt);
+    if((dueDraft||null) !== (t.due||null)) onSetDue(t.id, dueDraft || null);
+    setEditing(false);
+  };
+  const clearDue = () => { setDueDraft(""); onSetDue(t.id, null); };
   // Gestos de deslizar (móvil): izquierda = completar/pendiente · derecha = eliminar
-  const ts = (e) => { const p=e.touches[0]; swipe.current={x0:p.clientX,y0:p.clientY,active:true,horiz:false}; };
-  const tm = (e) => {
+  const tstart = (e) => { const p=e.touches[0]; swipe.current={x0:p.clientX,y0:p.clientY,active:true,horiz:false}; };
+  const tmove = (e) => {
     if(!swipe.current.active) return;
     const p=e.touches[0]; const dx=p.clientX-swipe.current.x0, dy=p.clientY-swipe.current.y0;
     if(!swipe.current.horiz){
@@ -1222,7 +1229,7 @@ function TaskRow({ t, onToggle, onDelete, onSetDue, onToggleUrgent, isDone }) {
     }
     if(swipe.current.horiz) setSwipeX(Math.max(-110, Math.min(110, dx)));
   };
-  const te = () => {
+  const tend = () => {
     if(swipe.current.horiz){
       if(swipeX <= -70) onToggle(t.id);        // izquierda → completar / desmarcar
       else if(swipeX >= 70) onDelete(t.id);    // derecha → eliminar
@@ -1240,10 +1247,10 @@ function TaskRow({ t, onToggle, onDelete, onSetDue, onToggleUrgent, isDone }) {
         </div>
       )}
       <div className={(!isDone && t.urgent)?"urgent-task":""}
-        onTouchStart={ts} onTouchMove={tm} onTouchEnd={te}
+        onTouchStart={editing?undefined:tstart} onTouchMove={editing?undefined:tmove} onTouchEnd={editing?undefined:tend}
         style={{padding:"9px 10px",borderRadius:9, position:"relative",
         transform:`translateX(${swipeX}px)`, transition: swipeX===0?"transform .18s ease-out":"none",
-        background: isDone?"transparent":"var(--card)", border:`1px solid ${isDone?"transparent":"var(--border)"}`}}>
+        background: isDone?"transparent":"var(--card)", border:`1px solid ${isDone?"transparent":(editing?"var(--border-gold)":"var(--border)")}`}}>
         <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
           <button onClick={()=>onToggle(t.id)} title={isDone?"Marcar como pendiente":"Marcar como completada"} style={{
             width:20,height:20,borderRadius:"50%",flexShrink:0,marginTop:1,
@@ -1252,11 +1259,11 @@ function TaskRow({ t, onToggle, onDelete, onSetDue, onToggleUrgent, isDone }) {
             border:`1.5px solid ${isDone?"var(--green)":"var(--text-3)"}`, color:"#000", transition:"all .15s"
           }}>{isDone && Icons.check}</button>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13.5, color: isDone?"var(--text-3)":"var(--text)", textDecoration: isDone?"line-through":"none", lineHeight:1.4, overflowWrap:"anywhere"}}>
+            <div onDoubleClick={()=>{ if(!isDone) openEditor(); }} style={{fontSize:13.5, color: isDone?"var(--text-3)":"var(--text)", textDecoration: isDone?"line-through":"none", lineHeight:1.4, overflowWrap:"anywhere", cursor: isDone?"default":"text"}}>
               {!isDone && t.urgent && <span style={{color:"var(--gold)",fontWeight:700,marginRight:5}}>⚑</span>}{t.title}
             </div>
             {dueLabel && !isDone && (
-              <button onClick={openEditor} title="Cambiar recordatorio" style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,marginTop:4,padding:0,
+              <button onClick={openEditor} title="Editar tarea" style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,marginTop:4,padding:0,
                 color: overdue?"var(--red)":"var(--text-3)", fontWeight: overdue?600:400}}>
                 {Icons.bell}{dueLabel}{overdue && " · vencida"}
               </button>
@@ -1273,10 +1280,10 @@ function TaskRow({ t, onToggle, onDelete, onSetDue, onToggleUrgent, isDone }) {
             </button>
           )}
           {!isDone && (
-            <button onClick={openEditor} title={t.due?"Cambiar o quitar recordatorio":"Programar recordatorio"} style={{
-              color: t.due?"var(--gold)":"var(--text-3)", display:"flex",padding:4,borderRadius:6,flexShrink:0,transition:"color .15s"
-            }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color=t.due?"var(--gold)":"var(--text-3)"}>
-              {Icons.bell}
+            <button onClick={openEditor} title="Editar tarea (nombre y hora)" style={{
+              color: editing?"var(--gold)":"var(--text-3)", display:"flex",padding:4,borderRadius:6,flexShrink:0,transition:"color .15s"
+            }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color=editing?"var(--gold)":"var(--text-3)"}>
+              {Icons.edit}
             </button>
           )}
           <button onClick={()=>onDelete(t.id)} title="Eliminar tarea" style={{color:"var(--text-3)",display:"flex",padding:4,borderRadius:6,flexShrink:0,transition:"color .15s"}}
@@ -1284,12 +1291,21 @@ function TaskRow({ t, onToggle, onDelete, onSetDue, onToggleUrgent, isDone }) {
             {Icons.trash}
           </button>
         </div>
-        {editDue && !isDone && (
-          <div className="fade-in" style={{display:"flex",gap:7,marginTop:9,paddingTop:9,borderTop:"1px solid var(--border)",flexWrap:"wrap",alignItems:"center"}}>
-            <input type="datetime-local" value={dueDraft} onChange={e=>setDueDraft(e.target.value)}
-              style={{flex:1,minWidth:170,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:8,padding:"7px 10px",color:"var(--text)",fontSize:12.5}}/>
-            <button onClick={saveDue} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:12,padding:"8px 13px",borderRadius:8}}>Guardar</button>
-            {t.due && <button onClick={clearDue} style={{color:"var(--red)",fontWeight:600,fontSize:12,padding:"8px 11px",borderRadius:8,border:"1px solid rgba(248,113,113,0.3)"}}>Quitar</button>}
+        {editing && !isDone && (
+          <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:8,marginTop:10,paddingTop:10,borderTop:"1px solid var(--border)"}}>
+            <input value={titleDraft} onChange={e=>setTitleDraft(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter")saveAll(); if(e.key==="Escape")setEditing(false); }}
+              placeholder="Nombre de la tarea" autoFocus
+              style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:8,padding:"8px 11px",color:"var(--text)",fontSize:13}}/>
+            <div style={{display:"flex",gap:7,alignItems:"center",flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:170,background:"var(--bg-2)",border:`1px solid ${dueDraft?"var(--border-gold)":"var(--border)"}`,borderRadius:8,padding:"3px 8px"}}>
+                <span style={{color:dueDraft?"var(--gold)":"var(--text-3)",display:"flex",flexShrink:0}}>{Icons.bell}</span>
+                <input type="datetime-local" value={dueDraft} onChange={e=>setDueDraft(e.target.value)}
+                  style={{flex:1,minWidth:0,background:"transparent",border:"none",padding:"5px 0",color:"var(--text)",fontSize:12.5}}/>
+                {dueDraft && <button onClick={clearDue} title="Quitar recordatorio" style={{color:"var(--red)",display:"flex",padding:2,flexShrink:0}}>{Icons.x}</button>}
+              </div>
+              <button onClick={saveAll} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:12.5,padding:"9px 15px",borderRadius:8,flexShrink:0}}>Guardar</button>
+            </div>
+            <div style={{fontSize:10.5,color:"var(--text-3)"}}>Consejo: doble clic sobre el nombre para editar rápido</div>
           </div>
         )}
       </div>
@@ -1336,6 +1352,9 @@ function TaskList({ list, onUpdate, onDeleteList, onTaskDeleted, toast }) {
   };
   const toggleUrgent = (taskId) => {
     onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId ? {...t, urgent: !t.urgent, updatedAt:Date.now()} : t)});
+  };
+  const editTitle = (taskId, title) => {
+    onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId ? {...t, title, updatedAt:Date.now()} : t)});
   };
   const saveRename = () => {
     const n = newName.trim();
@@ -1389,7 +1408,7 @@ function TaskList({ list, onUpdate, onDeleteList, onTaskDeleted, toast }) {
 
       {/* Tareas pendientes */}
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {pending.map(t=><TaskRow key={t.id} t={t} isDone={false} onToggle={toggle} onDelete={removeTask} onSetDue={setTaskDue} onToggleUrgent={toggleUrgent}/>)}
+        {pending.map(t=><TaskRow key={t.id} t={t} isDone={false} onToggle={toggle} onDelete={removeTask} onSetDue={setTaskDue} onEditTitle={editTitle} onToggleUrgent={toggleUrgent}/>)}
         {pending.length===0 && (
           <div style={{textAlign:"center",color:"var(--empty)",fontSize:11.5,padding:"16px 0",border:"1px dashed var(--border)",borderRadius:9}}>
             No hay tareas pendientes
@@ -1401,7 +1420,7 @@ function TaskList({ list, onUpdate, onDeleteList, onTaskDeleted, toast }) {
       {doneTasks.length>0 && (
         <CollapsibleBox title="Completadas" count={doneTasks.length}>
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            {doneTasks.map(t=><TaskRow key={t.id} t={t} isDone={true} onToggle={toggle} onDelete={removeTask} onSetDue={setTaskDue} onToggleUrgent={toggleUrgent}/>)}
+            {doneTasks.map(t=><TaskRow key={t.id} t={t} isDone={true} onToggle={toggle} onDelete={removeTask} onSetDue={setTaskDue} onEditTitle={editTitle} onToggleUrgent={toggleUrgent}/>)}
           </div>
         </CollapsibleBox>
       )}
@@ -1564,7 +1583,12 @@ function TasksView({ taskLists, setTaskLists, toast, askConfirm, onTaskDeleted, 
   const enableNotifs = async () => {
     const res = await askNotifPermission();
     setNotifState(res);
-    if(res==="granted") toast("Notificaciones activadas");
+    if(res==="granted"){
+      registerNotifSW();
+      toast("Notificaciones activadas");
+      // Notificación de prueba para confirmar que funcionan
+      setTimeout(()=>fireNotification("✅ Notificaciones activas", "Te avisaré cuando venzan tus tareas programadas"), 400);
+    }
     else if(res==="denied") toast("Notificaciones bloqueadas · actívalas en los ajustes del navegador");
     else if(res==="unsupported") toast("Este navegador no soporta notificaciones");
   };
@@ -1694,6 +1718,56 @@ function StatsView({ videos, taskLists, formats }) {
 
   const published = videos.filter(v=>v.status==="publicado").length;
 
+  // ——— NUEVAS ESTADÍSTICAS ———
+
+  // Reparto Shorts vs Vídeos largos
+  const shorts = videos.filter(v=>v.type==="short").length;
+  const largos = videos.filter(v=>v.type==="largo").length;
+  const totalType = shorts + largos;
+
+  // Vídeos programados esta semana (con fecha en la semana actual)
+  const weekStart = new Date(thisMonday), weekEnd = new Date(thisMonday); weekEnd.setDate(weekEnd.getDate()+7);
+  const thisWeekVideos = videos.filter(v=>v.date && (()=>{ const t=new Date(v.date+"T00:00"); return t>=weekStart && t<weekEnd; })()).length;
+
+  // Vídeos pendientes de publicar (todo lo que no está publicado y tiene fecha)
+  const pendingScheduled = videos.filter(v=>v.status!=="publicado" && v.date).length;
+  const ideasPool = videos.filter(v=>v.status==="idea" && !v.date).length;
+
+  // Progreso de checklist global (media de completitud de todas las checklists)
+  let checkSum = 0, checkCount = 0;
+  videos.forEach(v=>{
+    if(Array.isArray(v.checklist) && v.checklist.length){
+      const done = v.checklist.filter(c=>c.done).length;
+      checkSum += done/v.checklist.length; checkCount++;
+    }
+  });
+  const avgChecklist = checkCount ? Math.round(checkSum/checkCount*100) : 0;
+
+  // Tareas: totales, pendientes, completadas, urgentes, vencidas
+  const allTasksFlat = taskLists.flatMap(l=>l.tasks||[]);
+  const tasksPending = allTasksFlat.filter(t=>!t.done).length;
+  const tasksDoneTotal = allTasksFlat.filter(t=>t.done).length;
+  const tasksUrgent = allTasksFlat.filter(t=>!t.done && t.urgent).length;
+  const tasksOverdue = allTasksFlat.filter(t=>!t.done && t.due && new Date(t.due).getTime()<now).length;
+  const taskCompletion = (tasksPending+tasksDoneTotal)>0 ? Math.round(tasksDoneTotal/(tasksPending+tasksDoneTotal)*100) : 0;
+
+  // Publicaciones por mes (últimos 6 meses)
+  const monthsArr = Array.from({length:6},(_,i)=>{
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-(5-i));
+    return { y:d.getFullYear(), m:d.getMonth(), label:d.toLocaleDateString("es-ES",{month:"short"}), count:0 };
+  });
+  videos.forEach(v=>{
+    if(v.status==="publicado" && v.date){
+      const t = new Date(v.date+"T00:00");
+      const slot = monthsArr.find(x=>x.y===t.getFullYear() && x.m===t.getMonth());
+      if(slot) slot.count++;
+    }
+  });
+  const maxMonth = Math.max(1, ...monthsArr.map(m=>m.count));
+
+  // Ritmo: media de vídeos publicados por semana (sobre las 8 semanas)
+  const avgPerWeek = (weeks.reduce((a,w)=>a+w.count,0)/8).toFixed(1);
+
   const box = {background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:14,padding:"17px 18px"};
   const boxTitle = {fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:14,display:"flex",alignItems:"center",gap:8};
 
@@ -1708,8 +1782,12 @@ function StatsView({ videos, taskLists, formats }) {
       <div className="stats-cards" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
         <StatCard label="Racha sin vencidas" value={streak+"d"} sub={streak>0?"días sin tareas vencidas":"tienes tareas vencidas"} color={streak>0?"var(--green)":"var(--red)"} icon={Icons.flag}/>
         <StatCard label="Publicados" value={published} sub="vídeos en total" icon={Icons.check}/>
-        <StatCard label="Tareas (7 días)" value={tasksDone7} sub="completadas esta semana" color="var(--blue)" icon={Icons.tasks}/>
-        <StatCard label="Producción media" value={avgProd!==null?avgProd.toFixed(1)+"d":"—"} sub={avgProd!==null?"de idea a publicado":"aún sin datos (vídeos nuevos)"} color="var(--purple)" icon={Icons.clock}/>
+        <StatCard label="Ritmo semanal" value={avgPerWeek} sub="vídeos/semana (media 8 sem.)" color="var(--gold)" icon={Icons.chart}/>
+        <StatCard label="Producción media" value={avgProd!==null?avgProd.toFixed(1)+"d":"—"} sub={avgProd!==null?"de idea a publicado":"aún sin datos"} color="var(--purple)" icon={Icons.clock}/>
+        <StatCard label="Esta semana" value={thisWeekVideos} sub="vídeos programados" color="var(--blue)" icon={Icons.calendar}/>
+        <StatCard label="En cola" value={pendingScheduled} sub={`+ ${ideasPool} ideas sin fecha`} color="var(--orange)" icon={Icons.kanban}/>
+        <StatCard label="Tareas hechas" value={taskCompletion+"%"} sub={`${tasksDoneTotal} de ${tasksPending+tasksDoneTotal}`} color="var(--green)" icon={Icons.tasks}/>
+        <StatCard label="Checklist media" value={avgChecklist+"%"} sub="progreso de producción" color="var(--gold)" icon={Icons.check}/>
       </div>
 
       <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:14,alignItems:"start"}}>
@@ -1795,6 +1873,79 @@ function StatsView({ videos, taskLists, formats }) {
             ))}
           </div>
           <p style={{fontSize:11,color:"var(--text-3)",marginTop:10}}>Días de la semana en que más publicas (vídeos con estado «Publicado»)</p>
+        </div>
+
+        {/* Publicaciones por mes (últimos 6 meses) */}
+        <div style={box}>
+          <div style={boxTitle}>{Icons.chart} Publicaciones por mes</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:9,height:130,padding:"0 4px"}}>
+            {monthsArr.map((m,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,height:"100%",justifyContent:"flex-end"}}>
+                <span style={{fontSize:11,fontWeight:700,color:m.count?"var(--purple)":"var(--text-3)"}}>{m.count||""}</span>
+                <div title={`${m.count} publicado(s)`} style={{
+                  width:"100%",maxWidth:40,borderRadius:"6px 6px 2px 2px",
+                  height:`${Math.max(4,(m.count/maxMonth)*100)}%`,
+                  background: m.count===0?"var(--track)":"linear-gradient(180deg,#a78bfa,#7c3aed)",
+                  transition:"height .4s ease"
+                }}/>
+                <span style={{fontSize:10,color:"var(--text-3)",textTransform:"capitalize"}}>{m.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Shorts vs Largos */}
+        <div style={box}>
+          <div style={boxTitle}>{Icons.short} Shorts vs Vídeos largos</div>
+          {totalType===0 ? <div style={{color:"var(--empty)",fontSize:12,textAlign:"center",padding:"30px 0"}}>Sin vídeos todavía</div> : (
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div style={{display:"flex",height:26,borderRadius:8,overflow:"hidden",border:"1px solid var(--border)"}}>
+                {shorts>0 && <div style={{width:`${shorts/totalType*100}%`,background:"linear-gradient(90deg,#60a5fa,#2563eb)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{fontSize:11,fontWeight:800,color:"#fff"}}>{Math.round(shorts/totalType*100)}%</span>
+                </div>}
+                {largos>0 && <div style={{width:`${largos/totalType*100}%`,background:"linear-gradient(90deg,#D4AF37,#8a7320)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{fontSize:11,fontWeight:800,color:"#000"}}>{Math.round(largos/totalType*100)}%</span>
+                </div>}
+              </div>
+              <div style={{display:"flex",justifyContent:"space-around",gap:10}}>
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontSize:24,fontWeight:800,fontFamily:"Sora",color:"var(--blue)"}}>{shorts}</div>
+                  <div style={{fontSize:11,color:"var(--text-3)",display:"flex",alignItems:"center",gap:5,justifyContent:"center"}}><span style={{width:9,height:9,borderRadius:3,background:"var(--blue)"}}/>Shorts</div>
+                </div>
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontSize:24,fontWeight:800,fontFamily:"Sora",color:"var(--gold)"}}>{largos}</div>
+                  <div style={{fontSize:11,color:"var(--text-3)",display:"flex",alignItems:"center",gap:5,justifyContent:"center"}}><span style={{width:9,height:9,borderRadius:3,background:"var(--gold)"}}/>Largos</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Estado de las tareas */}
+        <div style={box}>
+          <div style={boxTitle}>{Icons.tasks} Estado de tus tareas</div>
+          {(tasksPending+tasksDoneTotal)===0 ? <div style={{color:"var(--empty)",fontSize:12,textAlign:"center",padding:"30px 0"}}>Sin tareas todavía</div> : (
+            <div style={{display:"flex",flexDirection:"column",gap:11}}>
+              {[
+                {label:"Completadas", n:tasksDoneTotal, color:"var(--green)"},
+                {label:"Pendientes", n:tasksPending, color:"var(--blue)"},
+                {label:"Urgentes", n:tasksUrgent, color:"var(--gold)"},
+                {label:"Vencidas", n:tasksOverdue, color:"var(--red)"},
+              ].map((r,i)=>{
+                const mx = Math.max(1, tasksPending+tasksDoneTotal);
+                return (
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:11.5,color:"var(--text-2)",width:88,flexShrink:0}}>{r.label}</span>
+                    <div style={{flex:1,height:18,background:"var(--track)",borderRadius:5,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:`${(r.n/mx)*100}%`,minWidth:r.n?16:0,background:r.color,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6,transition:"width .4s ease"}}>
+                        {r.n>0 && <span style={{fontSize:10,fontWeight:800,color:"#000"}}>{r.n}</span>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1941,11 +2092,41 @@ async function askNotifPermission() {
 function fireNotification(title, body) {
   try {
     if(typeof Notification !== "undefined" && Notification.permission === "granted") {
-      new Notification(title, { body, icon:undefined, badge:undefined, tag:"rderandom-"+title });
+      // Preferir el Service Worker (funciona con la pestaña en segundo plano)
+      if(navigator.serviceWorker && navigator.serviceWorker.ready){
+        navigator.serviceWorker.ready.then(reg=>{
+          reg.showNotification(title, { body, icon:NOTIF_ICON, badge:NOTIF_ICON, tag:"rderandom-"+Date.now(), requireInteraction:true, vibrate:[120,60,120] });
+        }).catch(()=>{ try { new Notification(title, { body }); } catch(e){} });
+        return true;
+      }
+      new Notification(title, { body, tag:"rderandom-"+Date.now() });
       return true;
     }
   } catch(e){}
   return false;
+}
+// Icono para las notificaciones (data URI dorado)
+const NOTIF_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23D4AF37'/%3E%3Ctext x='50' y='68' font-size='58' text-anchor='middle' fill='%23000' font-family='sans-serif' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E";
+
+// Registrar un Service Worker mínimo (permite notificaciones con la pestaña en segundo plano)
+function registerNotifSW(){
+  if(!("serviceWorker" in navigator)) return;
+  try {
+    const swCode = `
+      self.addEventListener("install", e=>self.skipWaiting());
+      self.addEventListener("activate", e=>e.waitUntil(self.clients.claim()));
+      self.addEventListener("notificationclick", e=>{
+        e.notification.close();
+        e.waitUntil(clients.matchAll({type:"window"}).then(cs=>{
+          for(const c of cs){ if("focus" in c) return c.focus(); }
+          if(clients.openWindow) return clients.openWindow("/");
+        }));
+      });
+    `;
+    const blob = new Blob([swCode], {type:"text/javascript"});
+    const url = URL.createObjectURL(blob);
+    navigator.serviceWorker.register(url).catch(()=>{});
+  } catch(e){}
 }
 
 /* ============================ SINCRONIZACIÓN (Supabase) ============================ */
@@ -2195,37 +2376,36 @@ function App() {
 
   const fp = (s) => JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[]});
 
-  // FUSIÓN: combina el estado remoto con el local por elementos (no reemplaza en bloque).
-  // Devuelve el estado fusionado y lo aplica.
-  const mergeAndApply = (r, remoteTs) => {
+  // FUSIÓN NO DESTRUCTIVA: combina remoto + local por elementos, quedándose SIEMPRE con la
+  // versión de updatedAt más alto de cada vídeo/tarea. Un dispositivo que suba datos viejos
+  // NO puede hacer retroceder los tuyos: sus elementos viejos pierden frente a los nuevos.
+  // Devuelve {state, changed}: changed=true solo si el resultado difiere de lo que ya tenías.
+  const computeMerge = (r) => {
     const s = stateRef.current;
     const mergedVideos = mergeById(s.videos, r.videos, s.tombstones, r.tombstones);
-    const mergedTrash  = mergeById(s.trash,  r.trash,  [], []); // la papelera se une sin más
+    const mergedTrash  = mergeById(s.trash,  r.trash,  s.tombstones, r.tombstones);
     const mergedTasks  = mergeTaskLists(s.taskLists, r.taskLists, s.tombstones, r.tombstones);
     const mergedTombs  = pruneTombs([...(s.tombstones||[]), ...(r.tombstones||[])]);
-    // Formatos: el conjunto más reciente por marca global (los formatos cambian poco)
-    const mergedFormats = (remoteTs >= localEditedAtRef.current && r.formats) ? r.formats : s.formats;
-    bumpIdFrom([...mergedVideos, ...mergedTrash]);
-    setVideos(mergedVideos);
-    setFormats(mergedFormats);
-    setTrash(mergedTrash);
-    setTaskLists(mergedTasks.length?mergedTasks:clone(DEFAULT_TASK_LISTS));
-    setTombstones(mergedTombs);
-    lastSyncedRef.current = fp({videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks});
-    lastRemoteTsRef.current = Math.max(remoteTs||0, Date.now());
-    return { videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks, tombstones:mergedTombs };
+    // Formatos: nos quedamos con el conjunto que tenga más entradas o el local si empatan
+    // (los formatos casi no cambian; ante la duda, conservar lo local evita perder ediciones).
+    const localFmtN = Object.keys(s.formats||{}).length;
+    const remoteFmtN = Object.keys(r.formats||{}).length;
+    const mergedFormats = remoteFmtN > localFmtN ? r.formats : s.formats;
+    const merged = { videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks, tombstones:mergedTombs };
+    const changed = fp(merged) !== fp(s);
+    return { merged, changed };
   };
 
-  // Adopta datos de la nube tal cual (solo cuando aquí no hay nada pendiente)
-  const applyRemote = (r, remoteTs) => {
-    lastSyncedRef.current = fp({videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists});
-    lastRemoteTsRef.current = remoteTs || Date.now();
-    bumpIdFrom([...(r.videos||[]), ...(r.trash||[])]);
-    if(Array.isArray(r.videos)) setVideos(r.videos);
-    if(r.formats && typeof r.formats==="object") setFormats(r.formats);
-    if(Array.isArray(r.trash)) setTrash(r.trash);
-    if(Array.isArray(r.taskLists)) setTaskLists(r.taskLists.length?r.taskLists:clone(DEFAULT_TASK_LISTS));
-    if(Array.isArray(r.tombstones)) setTombstones(pruneTombs(r.tombstones));
+  // Aplica un estado fusionado a la app
+  const applyMerged = (merged) => {
+    bumpIdFrom([...(merged.videos||[]), ...(merged.trash||[])]);
+    setVideos(merged.videos);
+    setFormats(merged.formats);
+    setTrash(merged.trash);
+    setTaskLists(merged.taskLists.length?merged.taskLists:clone(DEFAULT_TASK_LISTS));
+    setTombstones(merged.tombstones);
+    lastSyncedRef.current = fp(merged);
+    lastRemoteTsRef.current = Date.now();
   };
 
   // Sube el estado actual a la nube
@@ -2243,10 +2423,35 @@ function App() {
   const pushMerged = async (merged) => {
     setSyncStatus("saving");
     await cloudSave(syncCode, { videos:merged.videos, formats:merged.formats, trash:merged.trash, taskLists:merged.taskLists, tombstones:pruneTombs(merged.tombstones), savedAt: Date.now() });
+    lastSyncedRef.current = fp(merged);
+    lastRemoteTsRef.current = Date.now();
     setSyncStatus("online");
   };
 
-  // RECONCILIACIÓN: compara nube y local. Si ambos cambiaron, FUSIONA (no pisa).
+  // Integra datos remotos SIN hacer retroceder lo local. Devuelve true si algo cambió aquí.
+  // - Si la fusión no aporta nada nuevo respecto a lo local → no toca la app (no hay "cambio fantasma").
+  // - Si aporta algo (otro dispositivo añadió/editó algo genuino) → lo integra y lo sube fusionado.
+  const integrateRemote = async (r, silent) => {
+    const { merged, changed } = computeMerge(r);
+    if(!changed){
+      // Nada nuevo que integrar. Pero si el remoto está incompleto respecto a lo nuestro
+      // (p.ej. subió datos viejos), reafirmamos lo local subiéndolo.
+      const s = stateRef.current;
+      if(fp({videos:merged.videos,formats:merged.formats,trash:merged.trash,taskLists:merged.taskLists}) !== fp({videos:r.videos,formats:r.formats,trash:r.trash,taskLists:r.taskLists})){
+        try { await pushMerged(merged); } catch(e){}
+      } else {
+        lastSyncedRef.current = fp(s);
+      }
+      return false;
+    }
+    // Hay novedades reales de otro dispositivo → integrarlas (sin perder lo tuyo) y republicar
+    applyMerged(merged);
+    try { await pushMerged(merged); } catch(e){}
+    if(!silent) toast("Cambios de otro dispositivo integrados");
+    return true;
+  };
+
+  // RECONCILIACIÓN al abrir / despertar / cada 60s: baja la nube y la integra sin retroceder.
   const pullFromCloud = async (silent) => {
     if(pullingRef.current) return;
     pullingRef.current = true;
@@ -2256,27 +2461,11 @@ function App() {
       const s = stateRef.current;
       const localDirty = fp(s) !== lastSyncedRef.current;
       if(remote && remote.data) {
-        const remoteTs = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
-        const remoteFp = fp({videos:remote.data.videos, formats:remote.data.formats, trash:remote.data.trash, taskLists:remote.data.taskLists});
-        const remoteNew = remoteTs > lastRemoteTsRef.current && remoteFp !== lastSyncedRef.current;
-        if(remoteNew && !localDirty) {
-          // La nube tiene novedades y aquí no hay cambios sin subir → adoptar nube
-          applyRemote(remote.data, remoteTs);
-          if(!silent) toast("Sincronizado desde otro dispositivo");
-        } else if(remoteNew && localDirty) {
-          // Cambios en AMBOS lados → fusionar por elementos y subir el resultado
-          const merged = mergeAndApply(remote.data, remoteTs);
-          await pushMerged(merged);
-          if(!silent) toast("Cambios combinados entre dispositivos");
-        } else if(localDirty) {
-          // Solo hay cambios locales pendientes → subirlos
-          await pushLocal();
-        } else if(remoteTs > lastRemoteTsRef.current) {
-          lastRemoteTsRef.current = remoteTs; // misma huella, solo actualizar la marca
-        }
+        await integrateRemote(remote.data, silent);
+        // Si además teníamos cambios locales sin subir, integrateRemote ya los preservó y subió
+        void localDirty;
       } else {
-        // No existe nada en la nube todavía → subir lo local
-        await pushLocal();
+        await pushLocal(); // nube vacía → sembrarla con lo local
       }
       setSyncStatus("online");
     } catch(e) {
@@ -2375,27 +2564,17 @@ function App() {
           if(!r) return;
           const remoteTs = payload.new.updated_at ? new Date(payload.new.updated_at).getTime() : Date.now();
           const incoming = fp({videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists});
-          if(incoming === lastSyncedRef.current) { lastRemoteTsRef.current = Math.max(lastRemoteTsRef.current, remoteTs); return; }
-          // Eco de nuestro propio guardado urgente: los datos ya son estos → solo actualizar marcas
-          if(incoming === fp(stateRef.current)) {
-            lastSyncedRef.current = incoming;
+          // Eco de nuestro propio guardado: ya lo tenemos → solo actualizar marcas, sin tocar la app
+          if(incoming === lastSyncedRef.current || incoming === fp(stateRef.current)){
+            lastSyncedRef.current = fp(stateRef.current);
             lastRemoteTsRef.current = Math.max(lastRemoteTsRef.current, remoteTs);
             setSyncStatus("online");
             return;
           }
-          // Si aquí hay cambios locales sin subir, FUSIONAR (no pisar). Si no, adoptar.
-          const s = stateRef.current;
-          const localDirty = fp(s) !== lastSyncedRef.current;
-          if(localDirty){
-            const merged = mergeAndApply(r, remoteTs);
-            pushMerged(merged).catch(()=>{});
-            setSyncStatus("online");
-            toast("Cambios combinados entre dispositivos");
-          } else {
-            applyRemote(r, remoteTs);
-            setSyncStatus("online");
-            toast("Sincronizado desde otro dispositivo");
-          }
+          // Integración no destructiva: solo cambia la app si el otro dispositivo aportó
+          // algo genuinamente nuevo; nunca hace retroceder lo que tú tienes aquí.
+          integrateRemote(r, false).catch(()=>{});
+          setSyncStatus("online");
         })
         .subscribe();
     }).catch(()=>{});
@@ -2458,8 +2637,16 @@ function App() {
     try {
       const remote = await cloudLoad(code);
       if(remote && remote.data){
-        const remoteTs = remote.updated_at ? new Date(remote.updated_at).getTime() : Date.now();
-        applyRemote(remote.data, remoteTs);
+        // Vinculación explícita: adoptar los datos de ese código tal cual
+        const r = remote.data;
+        bumpIdFrom([...(r.videos||[]), ...(r.trash||[])]);
+        if(Array.isArray(r.videos)) setVideos(r.videos);
+        if(r.formats && typeof r.formats==="object") setFormats(r.formats);
+        if(Array.isArray(r.trash)) setTrash(r.trash);
+        if(Array.isArray(r.taskLists)) setTaskLists(r.taskLists.length?r.taskLists:clone(DEFAULT_TASK_LISTS));
+        if(Array.isArray(r.tombstones)) setTombstones(pruneTombs(r.tombstones));
+        lastSyncedRef.current = fp(r);
+        lastRemoteTsRef.current = Date.now();
         toast("Vinculado · datos descargados de la nube");
       } else {
         const s = stateRef.current;
@@ -2670,32 +2857,65 @@ function App() {
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
   ];
 
-  // Planificador de recordatorios: comprueba cada 30s si alguna tarea ha vencido
+  // Registro del Service Worker + permiso al arrancar
+  useEffect(()=>{ registerNotifSW(); },[]);
+
+  // PLANIFICADOR DE NOTIFICACIONES
+  // Marca "notified" en un registro LOCAL por dispositivo (no se sincroniza, para que cada
+  // dispositivo avise una vez y la sincronización no reactive ni silencie avisos).
+  const notifiedRef = useRef({});
   useEffect(()=>{
-    const check = () => {
+    try { notifiedRef.current = JSON.parse(localStorage.getItem("rds_notified")||"{}"); } catch(e){ notifiedRef.current = {}; }
+  },[]);
+  const markNotified = (id, dueSnapshot) => {
+    notifiedRef.current[id] = { at: Date.now(), due: dueSnapshot };
+    try { localStorage.setItem("rds_notified", JSON.stringify(notifiedRef.current)); } catch(e){}
+  };
+  // ¿Ya se notificó esta tarea CON esta misma hora? Si cambió la hora, se puede volver a avisar.
+  const alreadyNotified = (t) => {
+    const rec = notifiedRef.current[t.id];
+    if(!rec) return false;
+    if(typeof rec === "number") return true; // formato antiguo
+    return rec.due === (t.due||null);
+  };
+
+  useEffect(()=>{
+    let timers = [];
+    const fireFor = (t, listName) => {
+      if(alreadyNotified(t)) return; // ya avisado en este dispositivo con esta hora
+      markNotified(t.id, t.due||null);
+      const ok = fireNotification("⏰ " + t.title, "Tarea programada" + (listName?" · "+listName:""));
+      if(!ok) toast("🔔 " + t.title);
+    };
+    const scan = () => {
       const now = Date.now();
-      let fired = null;
-      setTaskLists(ls=>{
-        let changed = false;
-        const next = ls.map(l=>({
-          ...l,
-          tasks: l.tasks.map(t=>{
-            if(!t.done && !t.notified && t.due && new Date(t.due).getTime() <= now){
-              changed = true;
-              fired = t.title;
-              const ok = fireNotification("Recordatorio de tarea", t.title + " · " + l.name);
-              if(!ok) setTimeout(()=>toast("🔔 Tarea pendiente: " + t.title), 50);
-              return {...t, notified:true};
-            }
-            return t;
-          })
-        }));
-        return changed ? next : ls;
+      const lists = stateRef.current.taskLists || [];
+      timers.forEach(clearTimeout); timers = [];
+      lists.forEach(l=>{
+        (l.tasks||[]).forEach(t=>{
+          if(t.done || !t.due) return;
+          if(alreadyNotified(t)) return;
+          const at = new Date(t.due).getTime();
+          if(isNaN(at)) return;
+          if(at <= now){
+            fireFor(t, l.name); // ya venció → avisar ya
+          } else if(at - now <= 65000){
+            // Vence en menos de ~1 min → programar timeout exacto
+            timers.push(setTimeout(()=>fireFor(t, l.name), at - now));
+          }
+        });
       });
     };
-    check();
-    const iv = setInterval(check, 30000);
-    return ()=>clearInterval(iv);
+    scan();
+    const iv = setInterval(scan, 15000); // reevaluar cada 15s
+    // Limpiar registros de tareas que ya no existen (evita que crezca sin fin)
+    const clean = setInterval(()=>{
+      const ids = new Set((stateRef.current.taskLists||[]).flatMap(l=>(l.tasks||[]).map(t=>t.id)));
+      let changed=false;
+      Object.keys(notifiedRef.current).forEach(id=>{ if(!ids.has(id)){ delete notifiedRef.current[id]; changed=true; } });
+      if(changed){ try { localStorage.setItem("rds_notified", JSON.stringify(notifiedRef.current)); } catch(e){} }
+    }, 120000);
+    return ()=>{ clearInterval(iv); clearInterval(clean); timers.forEach(clearTimeout); };
   },[]);
 
   return (
