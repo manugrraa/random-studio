@@ -211,6 +211,7 @@ function makeVideo(opts={}, formats) {
     checklist: clone(CHECKLIST_TEMPLATE),
     notes: opts.notes || "",
     createdAt: Date.now(),
+    updatedAt: Date.now(),
   };
 }
 
@@ -271,6 +272,7 @@ const Icons = {
   flag: <Icon d={<><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/></>} size={14}/>,
   refresh: <Icon d={<><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0114.85-3.36L23 10M1 14l4.65 4.36A9 9 0 0020.5 15"/></>} size={16}/>,
   chart: <Icon d={<><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></>} size={17}/>,
+  repeat: <Icon d={<><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></>} size={15}/>,
   trashBig: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>}/>,
 };
 
@@ -1295,7 +1297,7 @@ function TaskRow({ t, onToggle, onDelete, onSetDue, onToggleUrgent, isDone }) {
   );
 }
 
-function TaskList({ list, onUpdate, onDeleteList, toast }) {
+function TaskList({ list, onUpdate, onDeleteList, onTaskDeleted, toast }) {
   const [text, setText] = useState("");
   const [due, setDue] = useState("");
   const [showDue, setShowDue] = useState(false);
@@ -1316,28 +1318,29 @@ function TaskList({ list, onUpdate, onDeleteList, toast }) {
   const addTask = () => {
     const title = text.trim();
     if(!title){ toast("Escribe el texto de la tarea"); return; }
-    const t = { id:tid(), title, due: due||null, done:false, completedAt:null, notified:false, createdAt:Date.now() };
-    onUpdate({...list, tasks:[...list.tasks, t]});
+    const t = { id:tid(), title, due: due||null, done:false, completedAt:null, notified:false, createdAt:Date.now(), updatedAt:Date.now() };
+    onUpdate({...list, tasks:[...list.tasks, t], updatedAt:Date.now()});
     setText(""); setDue(""); setShowDue(false);
   };
   const toggle = (taskId) => {
     onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId
-      ? {...t, done:!t.done, completedAt: !t.done?Date.now():null, notified: t.done?false:t.notified}
+      ? {...t, done:!t.done, completedAt: !t.done?Date.now():null, notified: t.done?false:t.notified, updatedAt:Date.now()}
       : t)});
   };
   const removeTask = (taskId) => {
-    onUpdate({...list, tasks: list.tasks.filter(t=>t.id!==taskId)});
+    if(onTaskDeleted) onTaskDeleted(taskId); // registra tombstone
+    onUpdate({...list, tasks: list.tasks.filter(t=>t.id!==taskId), updatedAt:Date.now()});
   };
   const setTaskDue = (taskId, due) => {
-    onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId ? {...t, due, notified:false} : t)});
+    onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId ? {...t, due, notified:false, updatedAt:Date.now()} : t)});
   };
   const toggleUrgent = (taskId) => {
-    onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId ? {...t, urgent: !t.urgent} : t)});
+    onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId ? {...t, urgent: !t.urgent, updatedAt:Date.now()} : t)});
   };
   const saveRename = () => {
     const n = newName.trim();
     if(!n){ toast("El nombre no puede estar vacío"); return; }
-    onUpdate({...list, name:n}); setRenaming(false);
+    onUpdate({...list, name:n, updatedAt:Date.now()}); setRenaming(false);
   };
 
   return (
@@ -1407,28 +1410,157 @@ function TaskList({ list, onUpdate, onDeleteList, toast }) {
   );
 }
 
-function TasksView({ taskLists, setTaskLists, toast, askConfirm }) {
+// Fecha de hoy en formato YYYY-MM-DD (local)
+function todayKey(){
+  const d = new Date(); const p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+
+/* Lista DIARIA fija: sus tareas se repiten cada día. Si no se completan hoy, quedan
+   pendientes y, pasada su hora límite, aparecen como vencidas. Se resetean solas al cambiar de día. */
+function DailyList({ list, onUpdate, onTaskDeleted, toast }) {
+  const [text, setText] = useState("");
+  const [limit, setLimit] = useState("");
+  const today = todayKey();
+  const collapsed = !!list.collapsed;
+  const toggleCollapsed = () => onUpdate({...list, collapsed: !collapsed});
+
+  const doneToday = (t) => t.lastDone === today;
+  // Vencida: no hecha hoy y ya pasó su hora límite (si tiene)
+  const isOverdue = (t) => {
+    if(doneToday(t)) return false;
+    if(!t.limitTime) return false;
+    const [h,m] = t.limitTime.split(":").map(Number);
+    const lim = new Date(); lim.setHours(h||0, m||0, 0, 0);
+    return Date.now() > lim.getTime();
+  };
+  // Orden: primero vencidas, luego con hora límite más temprana, luego el resto
+  const pending = list.tasks.filter(t=>!doneToday(t)).sort((a,b)=>{
+    const ao=isOverdue(a), bo=isOverdue(b);
+    if(ao!==bo) return ao?-1:1;
+    if(a.limitTime && b.limitTime) return a.limitTime.localeCompare(b.limitTime);
+    if(a.limitTime) return -1; if(b.limitTime) return 1;
+    return (a.createdAt||0)-(b.createdAt||0);
+  });
+  const doneList = list.tasks.filter(t=>doneToday(t));
+
+  const addTask = () => {
+    const title = text.trim();
+    if(!title){ toast("Escribe la tarea diaria"); return; }
+    const t = { id:tid(), title, limitTime: limit||null, lastDone:null, createdAt:Date.now(), updatedAt:Date.now() };
+    onUpdate({...list, tasks:[...list.tasks, t], updatedAt:Date.now()});
+    setText(""); setLimit("");
+  };
+  const toggle = (taskId) => {
+    onUpdate({...list, tasks: list.tasks.map(t=>t.id===taskId
+      ? {...t, lastDone: doneToday(t)?null:today, updatedAt:Date.now()} : t)});
+  };
+  const removeTask = (taskId) => {
+    if(onTaskDeleted) onTaskDeleted(taskId);
+    onUpdate({...list, tasks: list.tasks.filter(t=>t.id!==taskId), updatedAt:Date.now()});
+  };
+
+  const overdueCount = pending.filter(isOverdue).length;
+
+  return (
+    <div style={{background:"linear-gradient(180deg,rgba(212,175,55,0.06),var(--bg-2))",border:"1px solid var(--border-gold)",borderRadius:14,padding:14,display:"flex",flexDirection:"column",gap:11}}>
+      {/* Cabecera */}
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <button onClick={toggleCollapsed} style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0,textAlign:"left",padding:0}}>
+          <span style={{display:"flex",color:"var(--text-3)",transform:collapsed?"rotate(-90deg)":"none",transition:"transform .18s",flexShrink:0}}>{Icons.chevron}</span>
+          <span style={{color:"var(--gold)",display:"flex",flexShrink:0}}>{Icons.repeat}</span>
+          <span style={{fontSize:14.5,fontWeight:700,color:"var(--text)",overflowWrap:"anywhere"}}>{list.name}</span>
+        </button>
+        {overdueCount>0 && <span title="Tareas diarias vencidas" style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,background:"var(--red)",color:"#fff",flexShrink:0}}>{overdueCount} vencida{overdueCount!==1?"s":""}</span>}
+        <span style={{fontSize:11,color:"var(--text-3)",background:"var(--card)",padding:"2px 8px",borderRadius:20,border:"1px solid var(--border)",flexShrink:0}}>{pending.length}</span>
+      </div>
+
+      {!collapsed && <>
+      <div style={{fontSize:11,color:"var(--text-3)",marginTop:-4}}>Se reinician cada día · si no las cumples a tiempo, aparecen como vencidas</div>
+
+      {/* Añadir tarea diaria */}
+      <div style={{display:"flex",flexDirection:"column",gap:7}}>
+        <div style={{display:"flex",gap:7}}>
+          <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTask()}
+            placeholder="Nueva tarea diaria…" style={{flex:1,minWidth:0,background:"var(--card)",border:"1px solid var(--border)",borderRadius:9,padding:"9px 11px",color:"var(--text)",fontSize:13}}/>
+          <input type="time" value={limit} onChange={e=>setLimit(e.target.value)} title="Hora límite (opcional)"
+            style={{flexShrink:0,width:110,background:"var(--card)",border:`1px solid ${limit?"var(--border-gold)":"var(--border)"}`,borderRadius:9,padding:"9px 8px",color:"var(--text)",fontSize:12.5}}/>
+          <button onClick={addTask} className="grad-gold" style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",width:38,borderRadius:9,color:"#000"}}>{Icons.plus}</button>
+        </div>
+      </div>
+
+      {/* Pendientes de hoy */}
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {pending.map(t=>{
+          const over = isOverdue(t);
+          return (
+            <div key={t.id} className={over?"urgent-task":""} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",borderRadius:9,background:"var(--card)",border:`1px solid ${over?"rgba(248,113,113,0.4)":"var(--border)"}`}}>
+              <button onClick={()=>toggle(t.id)} title="Marcar como hecha hoy" style={{width:20,height:20,borderRadius:"50%",flexShrink:0,border:"1.5px solid var(--text-3)",background:"transparent"}}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13.5,color:"var(--text)",lineHeight:1.4,overflowWrap:"anywhere"}}>{t.title}</div>
+                {t.limitTime && (
+                  <div style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11,marginTop:3,color:over?"var(--red)":"var(--text-3)",fontWeight:over?600:400}}>
+                    {Icons.clock}Antes de las {t.limitTime}{over?" · vencida hoy":""}
+                  </div>
+                )}
+              </div>
+              <button onClick={()=>removeTask(t.id)} title="Eliminar tarea diaria" style={{color:"var(--text-3)",display:"flex",padding:4,borderRadius:6,flexShrink:0}}
+                onMouseEnter={e=>e.currentTarget.style.color="var(--red)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>{Icons.trash}</button>
+            </div>
+          );
+        })}
+        {pending.length===0 && (
+          <div style={{textAlign:"center",color:"var(--green)",fontSize:12,padding:"14px 0",border:"1px dashed rgba(74,222,128,0.3)",borderRadius:9}}>
+            ¡Todo hecho por hoy! 🎉
+          </div>
+        )}
+      </div>
+
+      {/* Hechas hoy */}
+      {doneList.length>0 && (
+        <CollapsibleBox title="Hechas hoy" count={doneList.length}>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {doneList.map(t=>(
+              <div key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9}}>
+                <button onClick={()=>toggle(t.id)} title="Desmarcar" style={{width:20,height:20,borderRadius:"50%",flexShrink:0,background:"var(--green)",border:"1.5px solid var(--green)",color:"#000",display:"flex",alignItems:"center",justifyContent:"center"}}>{Icons.check}</button>
+                <span style={{fontSize:13,color:"var(--text-3)",textDecoration:"line-through",flex:1,overflowWrap:"anywhere"}}>{t.title}</span>
+                <button onClick={()=>removeTask(t.id)} title="Eliminar" style={{color:"var(--text-3)",display:"flex",padding:4,flexShrink:0}}
+                  onMouseEnter={e=>e.currentTarget.style.color="var(--red)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>{Icons.trash}</button>
+              </div>
+            ))}
+          </div>
+        </CollapsibleBox>
+      )}
+      </>}
+    </div>
+  );
+}
+
+function TasksView({ taskLists, setTaskLists, toast, askConfirm, onTaskDeleted, onListDeleted }) {
   const [newList, setNewList] = useState("");
   const [notifState, setNotifState] = useState(typeof Notification!=="undefined" ? Notification.permission : "unsupported");
 
   const addList = () => {
     const name = newList.trim();
     if(!name){ toast("Escribe un nombre para la lista"); return; }
-    setTaskLists(ls=>[...ls, { id:tid(), name, tasks:[] }]);
+    setTaskLists(ls=>[...ls, { id:tid(), name, tasks:[], updatedAt:Date.now() }]);
     setNewList("");
     toast(`Lista «${name}» creada`);
   };
   const updateList = (updated) => setTaskLists(ls=>ls.map(l=>l.id===updated.id?updated:l));
   const deleteList = (id) => {
     const l = taskLists.find(x=>x.id===id);
+    if(l && l.fixed){ toast("La lista diaria no se puede eliminar"); return; }
     askConfirm({
       title: "Eliminar lista",
       message: `Se eliminará la lista «${l?.name}» con sus ${l?.tasks.length||0} tarea${(l?.tasks.length||0)!==1?"s":""}. Esta acción no se puede deshacer.`,
       confirmLabel: "Eliminar lista",
       danger: true,
-      onConfirm: () => setTaskLists(ls=>ls.filter(x=>x.id!==id))
+      onConfirm: () => { if(onListDeleted) onListDeleted(id); setTaskLists(ls=>ls.filter(x=>x.id!==id)); }
     });
   };
+  // La lista fija (diaria) siempre va primera
+  const orderedLists = [...taskLists].sort((a,b)=>(b.fixed?1:0)-(a.fixed?1:0));
   const enableNotifs = async () => {
     const res = await askNotifPermission();
     setNotifState(res);
@@ -1466,7 +1598,10 @@ function TasksView({ taskLists, setTaskLists, toast, askConfirm }) {
 
       {/* Listas */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(290px, 1fr))",gap:13,alignItems:"start"}} className="tasks-grid">
-        {taskLists.map(l=><TaskList key={l.id} list={l} onUpdate={updateList} onDeleteList={deleteList} toast={toast}/>)}
+        {orderedLists.map(l=> l.fixed
+          ? <DailyList key={l.id} list={l} onUpdate={updateList} onTaskDeleted={onTaskDeleted} toast={toast}/>
+          : <TaskList key={l.id} list={l} onUpdate={updateList} onDeleteList={deleteList} onTaskDeleted={onTaskDeleted} toast={toast}/>
+        )}
       </div>
       {taskLists.length===0 && (
         <div style={{textAlign:"center",color:"var(--text-3)",fontSize:13,padding:"50px 0"}}>
@@ -1782,8 +1917,8 @@ function loadStore() {
     return data;
   } catch(e) { return null; }
 }
-function saveStore(videos, formats, trash, taskLists) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], savedAt: Date.now() })); return true; }
+function saveStore(videos, formats, trash, taskLists, tombstones) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], tombstones: tombstones||[], savedAt: Date.now() })); return true; }
   catch(e) { return false; }
 }
 function clearStore() { try { localStorage.removeItem(STORE_KEY); } catch(e){} }
@@ -1792,7 +1927,8 @@ function clearStore() { try { localStorage.removeItem(STORE_KEY); } catch(e){} }
 let _tid = 0;
 const tid = () => "t" + Date.now().toString(36) + (++_tid);
 const DEFAULT_TASK_LISTS = [
-  { id:"lst_default", name:"Mis tareas", tasks:[] }
+  { id:"lst_daily", name:"Tareas diarias", fixed:true, tasks:[], updatedAt:0 },
+  { id:"lst_default", name:"Mis tareas", tasks:[], updatedAt:0 }
 ];
 // Pide permiso de notificaciones (devuelve el estado final)
 async function askNotifPermission() {
@@ -1866,6 +2002,72 @@ function bumpIdFrom(videos) {
   (videos||[]).forEach(v=>{ const n = parseInt(String(v.id).replace(/\D/g,"")); if(!isNaN(n) && n>maxId) maxId=n; });
   _id = maxId;
 }
+
+/* ============================ FUSIÓN INTELIGENTE (merge por elementos) ============================ */
+// En vez de que el dispositivo "más reciente" pise TODO lo del otro, fusionamos vídeo por vídeo
+// y tarea por tarea usando la marca updatedAt de cada elemento. Las eliminaciones se registran
+// como "tombstones" (id + cuándo) para no revivir lo borrado en el otro dispositivo.
+
+const TOMB_TTL = 45*24*60*60*1000; // olvidar tombstones tras 45 días
+
+// Fusiona dos listas de objetos con id + updatedAt, respetando eliminaciones de ambos lados
+function mergeById(localArr, remoteArr, localTombs, remoteTombs) {
+  const tombs = {}; // id -> timestamp de borrado más reciente
+  [...(localTombs||[]), ...(remoteTombs||[])].forEach(t=>{
+    if(!t || !t.id) return;
+    tombs[t.id] = Math.max(tombs[t.id]||0, t.at||0);
+  });
+  const byId = {};
+  const consider = (item, fromRemote) => {
+    if(!item || !item.id) return;
+    const prev = byId[item.id];
+    const ts = item.updatedAt || item.createdAt || 0;
+    if(!prev || ts > (prev.updatedAt || prev.createdAt || 0)) byId[item.id] = item;
+  };
+  (localArr||[]).forEach(i=>consider(i,false));
+  (remoteArr||[]).forEach(i=>consider(i,true));
+  // Aplicar tombstones: si algo fue borrado DESPUÉS de su última edición, se queda borrado
+  const result = [];
+  Object.values(byId).forEach(item=>{
+    const delAt = tombs[item.id];
+    const ts = item.updatedAt || item.createdAt || 0;
+    if(delAt && delAt >= ts) return; // borrado gana
+    result.push(item);
+  });
+  return result;
+}
+
+// Fusiona las listas de tareas (cada lista tiene su propio array de tareas)
+function mergeTaskLists(localLists, remoteLists, localTombs, remoteTombs) {
+  const listTombs = {};
+  [...(localTombs||[]), ...(remoteTombs||[])].forEach(t=>{ if(t&&t.id&&t.kind==="list") listTombs[t.id]=Math.max(listTombs[t.id]||0,t.at||0); });
+  const map = {};
+  const consider = (l) => {
+    if(!l || !l.id) return;
+    const prev = map[l.id];
+    if(!prev){ map[l.id] = {...l, tasks:[...(l.tasks||[])]}; return; }
+    // Fusionar tareas de ambas versiones de la misma lista
+    prev.tasks = mergeById(prev.tasks, l.tasks, localTombs, remoteTombs);
+    // Metadatos de la lista (nombre, plegado): el más reciente
+    if((l.updatedAt||0) > (prev.updatedAt||0)){ prev.name = l.name; prev.collapsed = l.collapsed; prev.updatedAt = l.updatedAt; prev.fixed = l.fixed; }
+  };
+  (localLists||[]).forEach(consider);
+  (remoteLists||[]).forEach(consider);
+  const result = Object.values(map).filter(l=>{
+    const delAt = listTombs[l.id];
+    return !(delAt && delAt >= (l.updatedAt||0));
+  });
+  // Ordenar: la lista fija (diaria) siempre primera
+  result.sort((a,b)=> (b.fixed?1:0)-(a.fixed?1:0));
+  return result;
+}
+
+// Poda tombstones caducados
+function pruneTombs(tombs) {
+  const now = Date.now();
+  return (tombs||[]).filter(t=>t && (now-(t.at||0)) < TOMB_TTL);
+}
+
 function getSyncCode() {
   let c = null;
   try { c = localStorage.getItem(SYNC_CODE_KEY); } catch(e){}
@@ -1894,17 +2096,35 @@ async function cloudSave(code, payload) {
 
 function App() {
   const _initial = loadStore();
-  const [videos, setVideos] = useState(_initial ? _initial.videos : SEED);
+  const [videos, setVideos] = useState(()=>{
+    const base = _initial ? _initial.videos : SEED;
+    // Sellar updatedAt en datos anteriores a esta versión (para que la fusión funcione)
+    return (base||[]).map(v=> v.updatedAt ? v : {...v, updatedAt: v.createdAt || 1});
+  });
   const [formats, setFormats] = useState(_initial ? _initial.formats : DEFAULT_FORMATS);
   const [trash, setTrash] = useState(_initial && Array.isArray(_initial.trash) ? _initial.trash : []);
-  const [taskLists, setTaskLists] = useState(_initial && Array.isArray(_initial.taskLists) && _initial.taskLists.length ? _initial.taskLists : clone(DEFAULT_TASK_LISTS));
+  const [tombstones, setTombstones] = useState(_initial && Array.isArray(_initial.tombstones) ? pruneTombs(_initial.tombstones) : []);
+  const addTomb = (id, kind) => setTombstones(ts=>[...ts.filter(t=>t.id!==id), {id, kind:kind||"item", at:Date.now()}]);
+  const [taskLists, setTaskLists] = useState(()=>{
+    let base = (_initial && Array.isArray(_initial.taskLists) && _initial.taskLists.length) ? _initial.taskLists : clone(DEFAULT_TASK_LISTS);
+    // Sellar updatedAt en listas/tareas anteriores a esta versión (para que la fusión funcione)
+    base = base.map(l=>({
+      ...l,
+      updatedAt: l.updatedAt || 1,
+      tasks: (l.tasks||[]).map(t=> t.updatedAt ? t : {...t, updatedAt: t.createdAt || 1})
+    }));
+    // Garantizar que exista la lista diaria fija (para datos guardados antes de esta versión)
+    if(!base.some(l=>l.fixed)){
+      base = [{ id:"lst_daily", name:"Tareas diarias", fixed:true, tasks:[], updatedAt:Date.now() }, ...base];
+    }
+    return base;
+  });
   const [saved, setSaved] = useState(false);
   const [view, setView] = useState("calendar");
   const [editing, setEditing] = useState(null);
   const [showFormats, setShowFormats] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
   const [dragId, setDragId] = useState(null);
-  const [optimizing, setOptimizing] = useState(false);
   const [search, setSearch] = useState("");
   const [confirm, setConfirm] = useState(null); // {title, message, confirmLabel, danger, onConfirm}
   const [syncStatus, setSyncStatus] = useState("connecting"); // connecting | online | offline | saving
@@ -1965,17 +2185,38 @@ function App() {
   const lastSyncedRef = useRef(null); // huella de los últimos datos sincronizados (para ignorar ecos)
   const lastRemoteTsRef = useRef(0);  // fecha de la última versión de la nube que hemos integrado
   const localEditedAtRef = useRef((_initial && _initial.savedAt) ? _initial.savedAt : 0); // última edición local
-  const stateRef = useRef({videos, formats, trash, taskLists}); // estado vivo para los manejadores async
+  const stateRef = useRef({videos, formats, trash, taskLists, tombstones}); // estado vivo para los manejadores async
   const pullingRef = useRef(false);
   const saveTimer = useRef(null);
   const [rtKey, setRtKey] = useState(0); // al aumentar, se recrea el canal de tiempo real
 
   // Espejo del estado actual (para leerlo dentro de callbacks asíncronos sin datos obsoletos)
-  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists}; },[videos, formats, trash, taskLists]);
+  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists, tombstones}; },[videos, formats, trash, taskLists, tombstones]);
 
   const fp = (s) => JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[]});
 
-  // Adopta los datos de la nube en la app
+  // FUSIÓN: combina el estado remoto con el local por elementos (no reemplaza en bloque).
+  // Devuelve el estado fusionado y lo aplica.
+  const mergeAndApply = (r, remoteTs) => {
+    const s = stateRef.current;
+    const mergedVideos = mergeById(s.videos, r.videos, s.tombstones, r.tombstones);
+    const mergedTrash  = mergeById(s.trash,  r.trash,  [], []); // la papelera se une sin más
+    const mergedTasks  = mergeTaskLists(s.taskLists, r.taskLists, s.tombstones, r.tombstones);
+    const mergedTombs  = pruneTombs([...(s.tombstones||[]), ...(r.tombstones||[])]);
+    // Formatos: el conjunto más reciente por marca global (los formatos cambian poco)
+    const mergedFormats = (remoteTs >= localEditedAtRef.current && r.formats) ? r.formats : s.formats;
+    bumpIdFrom([...mergedVideos, ...mergedTrash]);
+    setVideos(mergedVideos);
+    setFormats(mergedFormats);
+    setTrash(mergedTrash);
+    setTaskLists(mergedTasks.length?mergedTasks:clone(DEFAULT_TASK_LISTS));
+    setTombstones(mergedTombs);
+    lastSyncedRef.current = fp({videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks});
+    lastRemoteTsRef.current = Math.max(remoteTs||0, Date.now());
+    return { videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks, tombstones:mergedTombs };
+  };
+
+  // Adopta datos de la nube tal cual (solo cuando aquí no hay nada pendiente)
   const applyRemote = (r, remoteTs) => {
     lastSyncedRef.current = fp({videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists});
     lastRemoteTsRef.current = remoteTs || Date.now();
@@ -1983,7 +2224,8 @@ function App() {
     if(Array.isArray(r.videos)) setVideos(r.videos);
     if(r.formats && typeof r.formats==="object") setFormats(r.formats);
     if(Array.isArray(r.trash)) setTrash(r.trash);
-    if(Array.isArray(r.taskLists)) setTaskLists(r.taskLists);
+    if(Array.isArray(r.taskLists)) setTaskLists(r.taskLists.length?r.taskLists:clone(DEFAULT_TASK_LISTS));
+    if(Array.isArray(r.tombstones)) setTombstones(pruneTombs(r.tombstones));
   };
 
   // Sube el estado actual a la nube
@@ -1991,14 +2233,20 @@ function App() {
     const s = stateRef.current;
     const huella = fp(s);
     setSyncStatus("saving");
-    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, savedAt: Date.now() });
+    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), savedAt: Date.now() });
     lastSyncedRef.current = huella;
     lastRemoteTsRef.current = Date.now();
     setSyncStatus("online");
   };
 
-  // RECONCILIACIÓN: compara nube y local y decide quién manda.
-  // Se llama al abrir, al volver del segundo plano, al recuperar internet y cada 60s.
+  // Sube un estado ya fusionado
+  const pushMerged = async (merged) => {
+    setSyncStatus("saving");
+    await cloudSave(syncCode, { videos:merged.videos, formats:merged.formats, trash:merged.trash, taskLists:merged.taskLists, tombstones:pruneTombs(merged.tombstones), savedAt: Date.now() });
+    setSyncStatus("online");
+  };
+
+  // RECONCILIACIÓN: compara nube y local. Si ambos cambiaron, FUSIONA (no pisa).
   const pullFromCloud = async (silent) => {
     if(pullingRef.current) return;
     pullingRef.current = true;
@@ -2016,9 +2264,10 @@ function App() {
           applyRemote(remote.data, remoteTs);
           if(!silent) toast("Sincronizado desde otro dispositivo");
         } else if(remoteNew && localDirty) {
-          // Cambios en ambos lados → gana el más reciente
-          if(remoteTs >= localEditedAtRef.current) applyRemote(remote.data, remoteTs);
-          else await pushLocal();
+          // Cambios en AMBOS lados → fusionar por elementos y subir el resultado
+          const merged = mergeAndApply(remote.data, remoteTs);
+          await pushMerged(merged);
+          if(!silent) toast("Cambios combinados entre dispositivos");
         } else if(localDirty) {
           // Solo hay cambios locales pendientes → subirlos
           await pushLocal();
@@ -2086,7 +2335,7 @@ function App() {
           "Authorization": "Bearer " + (token || SUPABASE_KEY),
           "Prefer": "resolution=merge-duplicates"
         },
-        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, savedAt: Date.now() }, updated_at: new Date().toISOString() }])
+        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), savedAt: Date.now() }, updated_at: new Date().toISOString() }])
       });
       // Nota: no marcamos nada como sincronizado aquí a propósito. Si este envío
       // fallara (sin red), la reconciliación volverá a subirlo; si llegó bien,
@@ -2134,9 +2383,19 @@ function App() {
             setSyncStatus("online");
             return;
           }
-          applyRemote(r, remoteTs);
-          setSyncStatus("online");
-          toast("Sincronizado desde otro dispositivo");
+          // Si aquí hay cambios locales sin subir, FUSIONAR (no pisar). Si no, adoptar.
+          const s = stateRef.current;
+          const localDirty = fp(s) !== lastSyncedRef.current;
+          if(localDirty){
+            const merged = mergeAndApply(r, remoteTs);
+            pushMerged(merged).catch(()=>{});
+            setSyncStatus("online");
+            toast("Cambios combinados entre dispositivos");
+          } else {
+            applyRemote(r, remoteTs);
+            setSyncStatus("online");
+            toast("Sincronizado desde otro dispositivo");
+          }
         })
         .subscribe();
     }).catch(()=>{});
@@ -2146,7 +2405,7 @@ function App() {
   // Vincular este dispositivo a otro código de sincronización
   // Exportar todos los datos a un archivo JSON descargable
   const exportData = () => {
-    const payload = { app:"RDeRandom Studio", version:2, exportedAt:new Date().toISOString(), videos, formats, trash, taskLists };
+    const payload = { app:"RDeRandom Studio", version:2, exportedAt:new Date().toISOString(), videos, formats, trash, taskLists, tombstones };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -2204,7 +2463,7 @@ function App() {
         toast("Vinculado · datos descargados de la nube");
       } else {
         const s = stateRef.current;
-        await cloudSave(code, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, savedAt: Date.now() });
+        await cloudSave(code, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), savedAt: Date.now() });
         lastSyncedRef.current = fp(s);
         lastRemoteTsRef.current = Date.now();
         toast("Vinculado · se subieron tus datos actuales");
@@ -2221,7 +2480,7 @@ function App() {
   const firstRun = useRef(true);
   useEffect(()=>{
     if(firstRun.current){ firstRun.current=false; prevSnapRef.current = {videos, formats, trash, taskLists}; return; }
-    const ok = saveStore(videos, formats, trash, taskLists);
+    const ok = saveStore(videos, formats, trash, taskLists, tombstones);
     if(ok){ setSaved(true); setTimeout(()=>setSaved(false), 1600); }
     // Si esta huella no coincide con lo último sincronizado, es una edición hecha aquí
     const huella = fp({videos, formats, trash, taskLists});
@@ -2244,7 +2503,7 @@ function App() {
       try { await pushLocal(); }
       catch(e) { setSyncStatus("offline"); }
     }, 1200);
-  },[videos, formats, trash, taskLists]);
+  },[videos, formats, trash, taskLists, tombstones]);
 
   const resetAll = () => {
     setConfirm({
@@ -2262,11 +2521,12 @@ function App() {
         setTrash([]);
         const freshTasks = clone(DEFAULT_TASK_LISTS);
         setTaskLists(freshTasks);
+        setTombstones([]);
         setConfirm(null);
         // Reflejar el restablecimiento también en la nube
         lastSyncedRef.current = JSON.stringify({videos:freshVideos, formats:freshFormats, trash:[], taskLists:freshTasks});
         lastRemoteTsRef.current = Date.now();
-        cloudSave(syncCode, { videos:freshVideos, formats:freshFormats, trash:[], taskLists:freshTasks, savedAt:Date.now() }).catch(()=>{});
+        cloudSave(syncCode, { videos:freshVideos, formats:freshFormats, trash:[], taskLists:freshTasks, tombstones:[], savedAt:Date.now() }).catch(()=>{});
         toast("Datos restablecidos");
       }
     });
@@ -2292,7 +2552,7 @@ function App() {
       if(!dragged || !target) return vs;
       const rest = vs.filter(v=>v.id!==id);
       const idx = rest.findIndex(v=>v.id===targetId);
-      const adopted = {...dragged, date: target.date};
+      const adopted = {...dragged, date: target.date, updatedAt: Date.now()};
       // Cambia de día y era una idea → pasa a programado
       if(dragged.date !== target.date && target.date && adopted.status==="idea") adopted.status = "programado";
       // Mismo día pero distinta columna del tablero → adopta la columna del objetivo
@@ -2306,12 +2566,12 @@ function App() {
   // Movimientos con id explícito (los usan tanto el ratón como el dedo)
   const moveToDate = (id, date) => {
     if(!id) return;
-    setVideos(vs=>vs.map(v=>v.id===id?{...v,date,status: v.status==="idea"?"programado":v.status}:v));
+    setVideos(vs=>vs.map(v=>v.id===id?{...v,date,status: v.status==="idea"?"programado":v.status, updatedAt:Date.now()}:v));
     toast(`Reprogramado para el ${new Date(date+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}`);
   };
   const moveToStatus = (id, status) => {
     if(!id) return;
-    setVideos(vs=>vs.map(v=>v.id===id?{...v,status}:v));
+    setVideos(vs=>vs.map(v=>v.id===id?{...v,status, updatedAt:Date.now()}:v));
     toast(`Movido a «${STATUSES[status].label}»`);
   };
   const moveToUnassign = (id) => {
@@ -2320,7 +2580,7 @@ function App() {
       const v = vs.find(x=>x.id===id);
       if(!v || !v.date) return vs; // ya estaba sin asignar
       toast("Vídeo movido a «Sin asignar»");
-      return vs.map(x=>x.id===id?{...x, date:null, status: x.status==="programado"?"idea":x.status}:x);
+      return vs.map(x=>x.id===id?{...x, date:null, status: x.status==="programado"?"idea":x.status, updatedAt:Date.now()}:x);
     });
   };
 
@@ -2337,7 +2597,7 @@ function App() {
   const dropOnStatus = (status) => moveToStatus(dragId, status);
   const unassignVideo = () => moveToUnassign(dragId);
 
-  const saveVideo = (draft) => setVideos(vs=>vs.map(v=>v.id===draft.id?draft:v));
+  const saveVideo = (draft) => setVideos(vs=>vs.map(v=>v.id===draft.id?{...draft, updatedAt: Date.now()}:v));
 
   // Mover a la papelera (no borra del todo)
   const deleteVideo = (id) => {
@@ -2346,15 +2606,17 @@ function App() {
       if(v) setTrash(t=>[{...v, deletedAt: Date.now()}, ...t]);
       return vs.filter(x=>x.id!==id);
     });
+    addTomb(id, "video"); // que no reaparezca desde el otro dispositivo
     toast("Vídeo movido a la papelera");
   };
   // Restaurar un vídeo desde la papelera
   const restoreVideo = (id) => {
     setTrash(t=>{
       const v = t.find(x=>x.id===id);
-      if(v){ const { deletedAt, ...rest } = v; setVideos(vs=>[...vs, rest]); }
+      if(v){ const { deletedAt, ...rest } = v; setVideos(vs=>[...vs, {...rest, updatedAt: Date.now()}]); }
       return t.filter(x=>x.id!==id);
     });
+    setTombstones(ts=>ts.filter(t=>t.id!==id)); // deja de estar "borrado"
     toast("Vídeo restaurado");
   };
   // Vaciar la papelera (con aviso de seguridad)
@@ -2393,40 +2655,17 @@ function App() {
     setEditing(v);
   };
 
-  const runOptimize = (vs) => {
-    const base = new Date();
-    base.setDate(base.getDate() - ((base.getDay()+6)%7) + 7);
-    const dates = DAYS.map((_,i)=>{ const d=new Date(base); d.setDate(base.getDate()+i); return iso(d.getFullYear(),d.getMonth(),d.getDate()); });
-    const pool = vs.filter(v=>v.status!=="publicado").sort((a,b)=>(formats[b.format]?.score||80)-(formats[a.format]?.score||80));
-    const used={};
-    const newVs = vs.map(v=>({...v}));
-    let di=0;
-    pool.forEach(v=>{
-      if(di>=7) return;
-      if(!used[dates[di]]){
-        const target=newVs.find(x=>x.id===v.id);
-        target.date=dates[di]; target.status= target.status==="idea"?"programado":target.status;
-        target.time = DAYS[di]==="Dom"?"21:00":"22:00";
-        used[dates[di]]=true; di++;
-      } else { di++; }
-    });
-    return newVs;
-  };
-
-  const handleOptimize = () => {
-    setOptimizing(true);
-    setTimeout(()=>{
-      setVideos(vs=>runOptimize(vs));
-      setOptimizing(false);
-      setView("calendar");
-      toast("Calendario optimizado para máxima consistencia ✨");
-    }, 1000);
-  };
-
   const tabs = [
     {id:"calendar", label:"Calendario", icon:Icons.calendar},
     {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban},
-    {id:"tasks", label:"Tareas", icon:Icons.tasks, badge: taskLists.reduce((a,l)=>a+l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length,0)},
+    {id:"tasks", label:"Tareas", icon:Icons.tasks, badge: taskLists.reduce((a,l)=>{
+      if(l.fixed){
+        // Diarias: vencidas si no se hicieron hoy y pasó su hora límite
+        const tk = (()=>{ const d=new Date();const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; })();
+        return a + l.tasks.filter(t=>t.lastDone!==tk && t.limitTime && (()=>{ const [h,m]=t.limitTime.split(":").map(Number); const lim=new Date();lim.setHours(h||0,m||0,0,0); return Date.now()>lim.getTime(); })()).length;
+      }
+      return a + l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length;
+    },0)},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
   ];
@@ -2494,9 +2733,9 @@ function App() {
             ))}
           </nav>
 
-          <div style={{display:"flex",gap:9,alignItems:"center"}}>
-            {/* Deshacer / Rehacer */}
-            <div className="undo-group" style={{display:"flex",gap:3,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:11,padding:3}}>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {/* Grupo edición: deshacer / rehacer (oculto en móvil, va al menú lateral) */}
+            <div className="undo-group" style={{display:"flex",gap:2,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:11,padding:3}}>
               <button onClick={undo} disabled={!historyRef.current.past.length} title="Deshacer (Ctrl+Z)" style={{
                 display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,
                 color: historyRef.current.past.length?"var(--text-2)":"var(--empty)", opacity: historyRef.current.past.length?1:0.5, transition:"color .15s"
@@ -2508,22 +2747,22 @@ function App() {
               }} onMouseEnter={e=>{if(historyRef.current.future.length)e.currentTarget.style.color="var(--gold)";}}
                  onMouseLeave={e=>e.currentTarget.style.color=historyRef.current.future.length?"var(--text-2)":"var(--empty)"}>{Icons.redo}</button>
             </div>
-            {/* Tema claro/oscuro */}
-            <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} title={theme==="dark"?"Cambiar a tema claro":"Cambiar a tema oscuro"} style={{
-              display:"flex",alignItems:"center",justifyContent:"center",width:38,height:38,borderRadius:11,
-              color:"var(--text-2)",border:"1px solid var(--border)",transition:"all .15s"
-            }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
-               onMouseLeave={e=>{e.currentTarget.style.color="var(--text-2)";e.currentTarget.style.borderColor="var(--border)";}}>
-              {theme==="dark"?Icons.sun:Icons.moon}
-            </button>
-            {/* Sincronizar ahora */}
-            <button onClick={syncNow} title="Sincronizar ahora" style={{
-              display:"flex",alignItems:"center",justifyContent:"center",width:38,height:38,borderRadius:11,
-              color: manualSyncing?"var(--gold)":"var(--text-2)",border:"1px solid var(--border)",transition:"all .15s"
-            }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
-               onMouseLeave={e=>{if(!manualSyncing){e.currentTarget.style.color="var(--text-2)";e.currentTarget.style.borderColor="var(--border)";}}}>
-              <span className={manualSyncing?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
-            </button>
+
+            {/* Grupo herramientas: tema + formatos (formatos oculto en móvil, va al menú) */}
+            <div className="tools-group" style={{display:"flex",gap:2,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:11,padding:3}}>
+              <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} title={theme==="dark"?"Tema claro":"Tema oscuro"} style={{
+                display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,color:"var(--text-2)",transition:"color .15s"
+              }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-2)"}>
+                {theme==="dark"?Icons.sun:Icons.moon}
+              </button>
+              <button onClick={()=>setShowFormats(true)} title="Gestionar formatos" className="fmt-btn" style={{
+                display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,color:"var(--text-2)",transition:"color .15s"
+              }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-2)"}>
+                {Icons.tag}
+              </button>
+            </div>
+
+            {/* Grupo sincronización: refrescar + estado */}
             {(()=>{
               const si = {
                 connecting:{c:"var(--gold)",t:"Conectando…",icon:Icons.cloud,pulse:true},
@@ -2533,34 +2772,23 @@ function App() {
               }[syncStatus] || {c:"var(--text-3)",t:"—",icon:Icons.cloud,pulse:false};
               const off = syncStatus==="offline";
               return (
-                <button onClick={()=>setShowSync(true)} title="Sincronización entre dispositivos" className="sync-btn" style={{
-                  display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:si.c,padding:"8px 12px",borderRadius:11,
-                  border:`1px solid ${off?"rgba(248,113,113,0.5)":"var(--border)"}`,
-                  background: off?"rgba(248,113,113,0.1)":"transparent",
-                  transition:"all .15s",whiteSpace:"nowrap"
-                }} onMouseEnter={e=>e.currentTarget.style.borderColor="var(--border-gold)"}
-                   onMouseLeave={e=>e.currentTarget.style.borderColor=off?"rgba(248,113,113,0.5)":"var(--border)"}>
-                  <span className={"sync-dot"+(si.pulse?" pulsing":"")} style={{background:si.c}}/>
-                  <span style={{display:"flex"}}>{si.icon}</span>
-                  <span className={off?"":"sync-label"}>{si.t}</span>
-                </button>
+                <div style={{display:"flex",gap:2,background:"var(--bg-2)",border:`1px solid ${off?"rgba(248,113,113,0.5)":"var(--border)"}`,borderRadius:11,padding:3}}>
+                  <button onClick={syncNow} title="Sincronizar ahora" style={{
+                    display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,
+                    color: manualSyncing?"var(--gold)":"var(--text-2)",transition:"color .15s"
+                  }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>{if(!manualSyncing)e.currentTarget.style.color="var(--text-2)";}}>
+                    <span className={manualSyncing?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
+                  </button>
+                  <button onClick={()=>setShowSync(true)} title="Sincronización entre dispositivos" className="sync-btn" style={{
+                    display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:si.c,padding:"0 11px 0 9px",borderRadius:8,
+                    background: off?"rgba(248,113,113,0.1)":"transparent", transition:"all .15s",whiteSpace:"nowrap"
+                  }}>
+                    <span className={"sync-dot"+(si.pulse?" pulsing":"")} style={{background:si.c}}/>
+                    <span className={off?"":"sync-label"}>{si.t}</span>
+                  </button>
+                </div>
               );
             })()}
-            <button onClick={()=>setShowFormats(true)} title="Gestionar formatos" style={{
-              display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:"var(--text-2)",padding:"9px 13px",borderRadius:11,
-              border:"1px solid var(--border)",transition:"all .15s"
-            }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
-               onMouseLeave={e=>{e.currentTarget.style.color="var(--text-2)";e.currentTarget.style.borderColor="var(--border)";}}>
-              {Icons.tag}<span className="tab-label">Formatos</span>
-            </button>
-            <button onClick={handleOptimize} disabled={optimizing} className={optimizing?"":"gold-glow"} style={{
-              display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:700,padding:"10px 16px",borderRadius:11,
-              background: optimizing?"var(--card)":"linear-gradient(135deg,#FFD700,#D4AF37)", color: optimizing?"var(--gold)":"#000",
-              border: optimizing?"1px solid var(--border-gold)":"none"
-            }}>
-              <span className={optimizing?"spin":""} style={{display:"flex"}}>{Icons.sparkle}</span>
-              <span className="tab-label">{optimizing?"Optimizando...":"Optimizar con IA"}</span>
-            </button>
           </div>
         </div>
       </header>
@@ -2643,7 +2871,7 @@ function App() {
         )}
         {view==="calendar" && <CalendarView videos={videos} onOpen={setEditing} onDrop={dropOnDate} onDragStart={onDragStart} onDragEnd={onDragEnd} weekOffset={weekOffset} setWeekOffset={setWeekOffset} onQuickAdd={quickAdd} onUnassign={unassignVideo} formats={formats}/>}
         {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
-        {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
+        {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} toast={toast} onTaskDeleted={(id)=>addTomb(id,"task")} onListDeleted={(id)=>addTomb(id,"list")} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
         {view==="stats" && <StatsView videos={videos} taskLists={taskLists} formats={formats}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
 
@@ -2742,7 +2970,9 @@ function App() {
           .stats-grid { grid-template-columns: 1fr !important; }
           .stats-cards { grid-template-columns: repeat(2,1fr) !important; }
           /* Deshacer/rehacer viven en el menú lateral en móvil */
+          /* Deshacer/rehacer y formatos viven en el menú lateral en móvil */
           .undo-group { display:none !important; }
+          .fmt-btn { display:none !important; }
         }
         @media (max-width: 480px) {
           .stat-grid { grid-template-columns: repeat(2,1fr) !important; gap: 8px !important; }
