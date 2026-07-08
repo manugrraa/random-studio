@@ -145,6 +145,8 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
+const APP_VERSION = "1.0";
+
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
   competitivo: { label: "Competitivo 1v1", color: "#60a5fa", score: 95, ideal: ["Lun","Mar","Vie","Dom"] },
@@ -210,6 +212,8 @@ function makeVideo(opts={}, formats) {
     time: opts.time || "22:00",
     checklist: clone(CHECKLIST_TEMPLATE),
     notes: opts.notes || "",
+    description: opts.description || "",
+    pinnedComment: opts.pinnedComment || "",
     createdAt: Date.now(),
     updatedAt: Date.now(),
     youtubeId: null,
@@ -641,9 +645,9 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
 
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
-              <span style={labelStyle}>Notas</span>
+              <span style={labelStyle}>Descripción</span>
               <div style={{display:"flex",gap:7}}>
-                <CopyMini text={draft.notes} what="las notas"/>
+                <CopyMini text={draft.description||""} what="la descripción"/>
                 <button onClick={()=>setNotesBig(b=>!b)} style={{
                 display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"var(--text-2)",padding:"4px 9px",
                 border:"1px solid var(--border)",borderRadius:7,transition:"all .15s"
@@ -653,38 +657,60 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
               </button>
               </div>
             </div>
-            <textarea value={draft.notes} onChange={e=>set("notes",e.target.value)}
-              onFocus={e=>{ if(!notesBig && draft.notes.length>40) setNotesBig(true); }}
-              placeholder="Escribe aquí el guion completo, ideas de miniatura, hooks, recordatorios, enlaces de referencia... Pulsa «Ampliar» para más espacio."
-              style={{...inputStyle, minHeight: notesBig?320:90, lineHeight:1.6, transition:"min-height .25s"}}/>
-            <div style={{textAlign:"right",fontSize:10.5,color:"var(--text-3)",marginTop:5}}>{draft.notes.length} caracteres</div>
+            <textarea value={draft.description||""} onChange={e=>set("description",e.target.value)}
+              onFocus={e=>{ if(!notesBig && (draft.description||"").length>40) setNotesBig(true); }}
+              placeholder="Descripción que aparecerá en YouTube: hook, enlaces, hashtags, redes... Pulsa «Ampliar» para más espacio."
+              style={{...inputStyle, minHeight: notesBig?280:90, lineHeight:1.6, transition:"min-height .25s"}}/>
+            <div style={{textAlign:"right",fontSize:10.5,color:"var(--text-3)",marginTop:5}}>{(draft.description||"").length} caracteres</div>
+          </div>
+
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+              <span style={labelStyle}>Comentario fijado</span>
+              <CopyMini text={draft.pinnedComment||""} what="el comentario"/>
+            </div>
+            <textarea value={draft.pinnedComment||""} onChange={e=>set("pinnedComment",e.target.value)}
+              placeholder="Comentario que se publicará y fijará automáticamente cuando el vídeo se suba."
+              style={{...inputStyle, minHeight:70, lineHeight:1.6}}/>
+            <div style={{textAlign:"right",fontSize:10.5,color:"var(--text-3)",marginTop:5}}>{(draft.pinnedComment||"").length} caracteres</div>
+          </div>
+
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+              <span style={labelStyle}>Notas internas</span>
+              <CopyMini text={draft.notes||""} what="las notas"/>
+            </div>
+            <textarea value={draft.notes||""} onChange={e=>set("notes",e.target.value)}
+              placeholder="Notas privadas (guion, ideas de miniatura, recordatorios). No se suben a YouTube."
+              style={{...inputStyle, minHeight:70, lineHeight:1.6}}/>
           </div>
         </div>
 
-        <div style={{padding:"16px 22px", borderTop:"1px solid var(--border)", display:"flex", justifyContent:"space-between", gap:10, alignItems:"center",flexWrap:"wrap"}}>
-          <button onClick={()=>{onDelete(draft.id); onClose();}} title="Mover a la papelera (tecla Supr)" style={{
-            display:"flex",alignItems:"center",gap:7, color:"var(--red)", fontSize:13, fontWeight:600, padding:"10px 14px",
-            border:"1px solid rgba(248,113,113,0.25)", borderRadius:10
-          }}>{Icons.trash} Mover a papelera <span style={{fontSize:10.5,opacity:.7,marginLeft:2}}><kbd style={{borderColor:"rgba(248,113,113,0.3)"}}>Supr</kbd></span></button>
-          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            {draft.youtubeId ? (
-              <a href={draft.youtubeUrl || ("https://youtu.be/"+draft.youtubeId)} target="_blank" rel="noopener" style={{
-                display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--green)",padding:"9px 13px",
-                border:"1px solid rgba(74,222,128,0.3)",borderRadius:10
-              }}>{Icons.youtube} {draft.youtubeStatus==="scheduled"?"Programado en YouTube":"En YouTube"}</a>
-            ) : (
-              <button onClick={()=>{ onSave(draft); onUploadYouTube && onUploadYouTube(draft); }} title="Subir este vídeo a YouTube" style={{
-                display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"#FF0000",padding:"9px 13px",
-                border:"1px solid rgba(255,0,0,0.3)",borderRadius:10,transition:"all .15s"
-              }} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,0,0,0.08)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                {Icons.youtube} Subir a YouTube
-              </button>
-            )}
-            <span style={{fontSize:11,color:"var(--text-3)"}} className="modal-hint"><kbd>Esc</kbd> guarda y cierra</span>
+        <div style={{padding:"16px 22px", borderTop:"1px solid var(--border)", display:"flex", flexDirection:"column", gap:12}}>
+          {/* Fila 1: papelera + guardar */}
+          <div style={{display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap"}}>
+            <button onClick={()=>{onDelete(draft.id); onClose();}} title="Mover a la papelera (tecla Supr)" style={{
+              display:"flex",alignItems:"center",gap:7, color:"var(--red)", fontSize:13, fontWeight:600, padding:"10px 14px",
+              border:"1px solid rgba(248,113,113,0.25)", borderRadius:10
+            }}>{Icons.trash} Mover a papelera <span style={{fontSize:10.5,opacity:.7,marginLeft:2}} className="modal-hint"><kbd style={{borderColor:"rgba(248,113,113,0.3)"}}>Supr</kbd></span></button>
             <button onClick={closeWithSave} className="grad-gold gold-glow" style={{
               color:"#000", fontWeight:700, fontSize:13.5, padding:"10px 26px", borderRadius:10, display:"flex", alignItems:"center", gap:8
             }}>{Icons.check} Guardar cambios</button>
           </div>
+          {/* Fila 2: subir a YouTube (solo, abajo, en rojo) o estado si ya está subido */}
+          {draft.youtubeId ? (
+            <a href={draft.youtubeUrl || ("https://youtu.be/"+draft.youtubeId)} target="_blank" rel="noopener" style={{
+              display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13.5,fontWeight:700,color:"var(--green)",padding:"12px 16px",
+              border:"1px solid rgba(74,222,128,0.35)",borderRadius:11,width:"100%"
+            }}>{Icons.youtube} {draft.youtubeStatus==="scheduled"?"Programado en YouTube · ver":"Ver en YouTube"}</a>
+          ) : (
+            <button onClick={()=>{ onSave(draft); onUploadYouTube && onUploadYouTube(draft); }} title="Subir este vídeo a YouTube" style={{
+              display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:14,fontWeight:700,color:"#fff",padding:"13px 16px",
+              borderRadius:11,width:"100%",background:"#FF0000",transition:"filter .15s"
+            }} onMouseEnter={e=>e.currentTarget.style.filter="brightness(1.1)"} onMouseLeave={e=>e.currentTarget.style.filter="none"}>
+              {Icons.youtube} Subir a YouTube
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -702,48 +728,105 @@ const Field = ({label, children}) => (
 );
 
 /* ============================ SUBIR A YOUTUBE ============================ */
-function YouTubeUploadModal({ video, onClose, onDone, toast }) {
+/* ============================ SUBIR A YOUTUBE ============================ */
+function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, onClose, onDone, toast }) {
   const [connected, setConnected] = useState(ytIsConnected());
   const [searching, setSearching] = useState(false);
   const [driveFiles, setDriveFiles] = useState([]);
   const [selected, setSelected] = useState(null);
   const [searchError, setSearchError] = useState(null);
+  // Búsqueda en Drive editable: por defecto el título del vídeo de la app
+  const [driveQuery, setDriveQuery] = useState(video.title || "");
+
   const [title, setTitle] = useState(video.title || "");
-  const [desc, setDesc] = useState(video.notes || "");
+  const [desc, setDesc] = useState(video.description || "");
   const [tags, setTags] = useState("");
   const [visibility, setVisibility] = useState("private");
+  const [categoryId, setCategoryId] = useState("20");
+  const [gameTitle, setGameTitle] = useState("");
+  const [playlistId, setPlaylistId] = useState("");
+  const [pinnedComment, setPinnedComment] = useState(video.pinnedComment || "");
   const initSched = video.date ? (video.date + "T" + (video.time||"22:00")) : "";
   const [scheduledAt, setScheduledAt] = useState(initSched);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
 
-  // Buscar en Drive automáticamente al abrir (si está conectado)
+  // Playlists y "copiar de otro vídeo"
+  const [playlists, setPlaylists] = useState([]);
+  const [myVideos, setMyVideos] = useState([]);
+  const [loadingMeta, setLoadingMeta] = useState(false);
+  const [copyFrom, setCopyFrom] = useState("");
+  const [showTagMgr, setShowTagMgr] = useState(false);
+  const [newTplName, setNewTplName] = useState("");
+
+  // Buscar en Drive (usa el término editable)
+  const runDriveSearch = async (term) => {
+    setSearching(true); setSearchError(null);
+    try {
+      const files = await ytSearchDrive(term);
+      setDriveFiles(files);
+      const exact = files.find(f=> f.name === term || f.name.replace(/\.[^.]+$/,"") === term);
+      setSelected(exact || files[0] || null);
+    } catch(e){
+      setSearchError(e.message); if(/caducada|conectar/i.test(e.message)) setConnected(false);
+    } finally { setSearching(false); }
+  };
+
+  // Al abrir (si conectado): buscar en Drive + cargar playlists y mis vídeos
   useEffect(()=>{
     if(!connected) return;
-    let cancel = false;
+    runDriveSearch(video.title);
     (async ()=>{
-      setSearching(true); setSearchError(null);
+      setLoadingMeta(true);
       try {
-        const files = await ytSearchDrive(video.title);
-        if(cancel) return;
-        setDriveFiles(files);
-        // Selección automática: coincidencia exacta primero, si no la primera
-        const exact = files.find(f=> f.name === video.title || f.name.replace(/\.[^.]+$/,"") === video.title);
-        setSelected(exact || files[0] || null);
-      } catch(e){
-        if(!cancel){ setSearchError(e.message); if(/caducada|conectar/i.test(e.message)) setConnected(false); }
-      } finally {
-        if(!cancel) setSearching(false);
-      }
+        const [pls, vids] = await Promise.all([
+          ytListPlaylists().catch(()=>[]),
+          ytListMyVideos(15).catch(()=>[])
+        ]);
+        setPlaylists(pls); setMyVideos(vids);
+      } finally { setLoadingMeta(false); }
     })();
-    return ()=>{ cancel = true; };
-  },[connected, video.title]);
+  },[connected]);
 
   const handleConnect = () => {
-    // Guardamos qué vídeo estábamos subiendo para reabrir tras el redirect
     try { sessionStorage.setItem("rds_yt_pending", video.id); } catch(e){}
     ytStartAuth();
   };
+
+  // Copiar datos (descripción, etiquetas, categoría) de un vídeo ya subido
+  const handleCopyFrom = async (vid) => {
+    setCopyFrom(vid);
+    if(!vid) return;
+    setLoadingMeta(true);
+    try {
+      const d = await ytGetVideoDetails(vid);
+      if(d){
+        if(d.description) setDesc(d.description);
+        if(d.tags && d.tags.length) setTags(d.tags.join(", "));
+        if(d.categoryId) setCategoryId(d.categoryId);
+        toast("Datos copiados del vídeo seleccionado");
+      }
+    } catch(e){ toast("No se pudieron copiar los datos: "+e.message); }
+    finally { setLoadingMeta(false); }
+  };
+
+  // Aplicar una plantilla de etiquetas (añade sin duplicar)
+  const applyTagTemplate = (tpl) => {
+    const current = tags.split(",").map(s=>s.trim()).filter(Boolean);
+    const merged = [...current];
+    tpl.tags.forEach(t=>{ if(!merged.some(x=>x.toLowerCase()===t.toLowerCase())) merged.push(t); });
+    setTags(merged.join(", "));
+  };
+  // Guardar las etiquetas actuales como plantilla nueva
+  const saveTagTemplate = () => {
+    const name = newTplName.trim();
+    const list = tags.split(",").map(s=>s.trim()).filter(Boolean);
+    if(!name){ toast("Ponle un nombre a la plantilla"); return; }
+    if(list.length===0){ toast("No hay etiquetas que guardar"); return; }
+    setTagTemplates(prev=>[...(prev||[]).filter(t=>t.name!==name), { id:"tpl_"+Date.now(), name, tags:list }]);
+    setNewTplName(""); toast("Plantilla «"+name+"» guardada");
+  };
+  const deleteTagTemplate = (id) => setTagTemplates(prev=>(prev||[]).filter(t=>t.id!==id));
 
   const handleUpload = async () => {
     if(!selected){ toast("Selecciona un archivo de Drive"); return; }
@@ -752,13 +835,19 @@ function YouTubeUploadModal({ video, onClose, onDone, toast }) {
     if(!tok || !tok.access_token){ toast("Conecta con Google primero"); setConnected(false); return; }
     setUploading(true); setProgress("Enviando al servidor…");
     try {
+      // La descripción final incluye el título del juego si se indicó
+      let finalDesc = desc;
       const payload = {
         accessToken: tok.access_token,
         driveFileId: selected.id,
         videoTitle: title.trim(),
-        videoDesc: desc,
+        videoDesc: finalDesc,
         tags: tags.split(",").map(s=>s.trim()).filter(Boolean),
         visibility,
+        categoryId,
+        gameTitle: gameTitle.trim() || null,
+        playlistId: playlistId || null,
+        pinnedComment: pinnedComment.trim() || null,
         scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null
       };
       setProgress("Descargando de Drive y subiendo a YouTube… (puede tardar)");
@@ -767,7 +856,9 @@ function YouTubeUploadModal({ video, onClose, onDone, toast }) {
       onDone && onDone({
         youtubeId: result.videoId,
         youtubeStatus: scheduledAt ? "scheduled" : "uploaded",
-        youtubeUrl: result.youtubeUrl || ("https://youtu.be/"+result.videoId)
+        youtubeUrl: result.youtubeUrl || ("https://youtu.be/"+result.videoId),
+        description: desc,
+        pinnedComment: pinnedComment
       });
       onClose();
     } catch(e){
@@ -778,12 +869,12 @@ function YouTubeUploadModal({ video, onClose, onDone, toast }) {
     }
   };
 
-  const overlay = { position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,zIndex:200 };
-  const panel = { background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:16,width:"100%",maxWidth:540,maxHeight:"90vh",overflowY:"auto",padding:22 };
+  const overlay = { position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(3px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"4vh 16px",zIndex:200,overflowY:"auto" };
+  const panel = { background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:16,width:"100%",maxWidth:560,padding:22 };
 
   return (
     <div style={overlay} onClick={onClose}>
-      <div style={panel} onClick={e=>e.stopPropagation()}>
+      <div className="yt-modal-panel" style={panel} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
           <span style={{color:"#FF0000",display:"flex"}}>{Icons.youtube}</span>
           <h3 style={{fontSize:17,fontWeight:700,flex:1}}>Subir a YouTube</h3>
@@ -793,7 +884,7 @@ function YouTubeUploadModal({ video, onClose, onDone, toast }) {
         {!connected ? (
           <div style={{textAlign:"center",padding:"20px 0"}}>
             <p style={{fontSize:13.5,color:"var(--text-2)",marginBottom:16,lineHeight:1.5}}>
-              Conecta tu cuenta de Google para buscar el vídeo en Drive y subirlo a YouTube automáticamente.
+              Conecta tu cuenta de Google para buscar el vídeo en Drive y subirlo a YouTube.
             </p>
             <button onClick={handleConnect} className="grad-gold" style={{display:"inline-flex",alignItems:"center",gap:9,color:"#000",fontWeight:700,fontSize:14,padding:"12px 20px",borderRadius:11}}>
               {Icons.link} Conectar con Google
@@ -801,44 +892,132 @@ function YouTubeUploadModal({ video, onClose, onDone, toast }) {
           </div>
         ) : (
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            {/* Archivo de Drive */}
+            {/* Búsqueda en Drive (editable) */}
             <div>
-              <span style={labelStyle}>Archivo en Drive</span>
+              <span style={labelStyle}>Buscar vídeo en Drive</span>
+              <div style={{display:"flex",gap:7,marginTop:7}}>
+                <input value={driveQuery} onChange={e=>setDriveQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")runDriveSearch(driveQuery);}}
+                  placeholder="Nombre del archivo en Drive" style={{...inputStyle,flex:1}}/>
+                <button onClick={()=>runDriveSearch(driveQuery)} title="Buscar" style={{flexShrink:0,padding:"0 14px",borderRadius:9,border:"1px solid var(--border-gold)",color:"var(--gold)",background:"rgba(212,175,55,0.05)"}}>{Icons.search||"Buscar"}</button>
+              </div>
               {searching ? (
-                <div style={{marginTop:7,padding:"12px 14px",background:"var(--card)",borderRadius:9,fontSize:13,color:"var(--text-3)",display:"flex",alignItems:"center",gap:9}}>
-                  <span className="spinning" style={{display:"flex"}}>{Icons.refresh}</span> Buscando «{video.title}» en tu Drive…
+                <div style={{marginTop:7,padding:"10px 13px",background:"var(--card)",borderRadius:9,fontSize:12.5,color:"var(--text-3)",display:"flex",alignItems:"center",gap:9}}>
+                  <span className="spinning" style={{display:"flex"}}>{Icons.refresh}</span> Buscando en tu Drive…
                 </div>
               ) : searchError ? (
-                <div style={{marginTop:7,padding:"12px 14px",background:"rgba(248,113,113,0.1)",borderRadius:9,fontSize:12.5,color:"var(--red)"}}>
+                <div style={{marginTop:7,padding:"10px 13px",background:"rgba(248,113,113,0.1)",borderRadius:9,fontSize:12.5,color:"var(--red)"}}>
                   {searchError}
                   <button onClick={handleConnect} style={{display:"block",marginTop:8,color:"var(--gold)",fontWeight:600,fontSize:12.5}}>Reconectar con Google</button>
                 </div>
               ) : driveFiles.length === 0 ? (
-                <div style={{marginTop:7,padding:"12px 14px",background:"rgba(248,113,113,0.08)",borderRadius:9,fontSize:12.5,color:"var(--text-2)"}}>
-                  No encontré ningún vídeo llamado «{video.title}» en tu Drive. Revisa que el nombre coincida.
+                <div style={{marginTop:7,padding:"10px 13px",background:"rgba(248,113,113,0.08)",borderRadius:9,fontSize:12.5,color:"var(--text-2)"}}>
+                  No encontré «{driveQuery}» en tu Drive. Prueba a cambiar el término de búsqueda.
                 </div>
               ) : (
-                <select value={selected?.id||""} onChange={e=>setSelected(driveFiles.find(f=>f.id===e.target.value))}
-                  style={{...inputStyle, marginTop:7}}>
-                  {driveFiles.map(f=>(
-                    <option key={f.id} value={f.id}>{f.name}{f.size?` · ${(f.size/1048576).toFixed(0)} MB`:""}</option>
-                  ))}
-                </select>
+                <>
+                  <select value={selected?.id||""} onChange={e=>setSelected(driveFiles.find(f=>f.id===e.target.value))} style={{...inputStyle, marginTop:7}}>
+                    {driveFiles.map(f=>(
+                      <option key={f.id} value={f.id}>{f.name}{f.size?` · ${(f.size/1048576).toFixed(0)} MB`:""}</option>
+                    ))}
+                  </select>
+                  {selected && <div style={{marginTop:6,fontSize:11.5,color:"var(--green)"}}>✅ {selected.name}</div>}
+                </>
               )}
-              {selected && !searching && (
-                <div style={{marginTop:6,fontSize:11.5,color:"var(--green)"}}>✅ Seleccionado: {selected.name}</div>
-              )}
+            </div>
+
+            {/* Copiar datos de otro vídeo ya subido */}
+            <div>
+              <span style={labelStyle}>Copiar datos de otro vídeo (opcional)</span>
+              <select value={copyFrom} onChange={e=>handleCopyFrom(e.target.value)} style={{...inputStyle, marginTop:7}} disabled={loadingMeta}>
+                <option value="">— Rellenar manualmente —</option>
+                {myVideos.map(v=><option key={v.id} value={v.id}>{v.title}</option>)}
+              </select>
+              <div style={{fontSize:11,color:"var(--text-3)",marginTop:5}}>Copia descripción, etiquetas y categoría de un vídeo tuyo ya publicado.</div>
             </div>
 
             <Field label="Título en YouTube">
               <input value={title} onChange={e=>setTitle(e.target.value)} style={inputStyle}/>
             </Field>
+
             <Field label="Descripción">
-              <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={3} style={{...inputStyle, resize:"vertical"}}/>
+              <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={4} style={{...inputStyle, resize:"vertical"}}/>
             </Field>
-            <Field label="Etiquetas (separadas por comas)">
+
+            {/* Etiquetas + plantillas */}
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                <span style={labelStyle}>Etiquetas (separadas por comas)</span>
+                <button onClick={()=>setShowTagMgr(s=>!s)} style={{fontSize:11.5,color:"var(--gold)",fontWeight:600,display:"flex",alignItems:"center",gap:5}}>
+                  {Icons.tag||null} Plantillas
+                </button>
+              </div>
               <input value={tags} onChange={e=>setTags(e.target.value)} placeholder="gaming, tutorial, shorts" style={inputStyle}/>
+              {(tagTemplates||[]).length>0 && (
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+                  {(tagTemplates||[]).map(tpl=>(
+                    <button key={tpl.id} onClick={()=>applyTagTemplate(tpl)} title={tpl.tags.join(", ")} style={{
+                      fontSize:11.5,padding:"5px 10px",borderRadius:20,border:"1px solid var(--border-gold)",
+                      color:"var(--gold)",background:"rgba(212,175,55,0.05)"
+                    }}>+ {tpl.name}</button>
+                  ))}
+                </div>
+              )}
+              {showTagMgr && (
+                <div className="fade-in" style={{marginTop:10,padding:12,background:"var(--card)",borderRadius:10,border:"1px solid var(--border)"}}>
+                  <div style={{fontSize:12,color:"var(--text-2)",marginBottom:8,fontWeight:600}}>Gestionar plantillas de etiquetas</div>
+                  <div style={{display:"flex",gap:7,marginBottom:10}}>
+                    <input value={newTplName} onChange={e=>setNewTplName(e.target.value)} placeholder="Nombre (p.ej. Roblox)" style={{...inputStyle,flex:1,fontSize:12.5,padding:"8px 10px"}}/>
+                    <button onClick={saveTagTemplate} className="grad-gold" style={{flexShrink:0,color:"#000",fontWeight:700,fontSize:12,padding:"8px 12px",borderRadius:8}}>Guardar actuales</button>
+                  </div>
+                  {(tagTemplates||[]).length===0 ? (
+                    <div style={{fontSize:11.5,color:"var(--text-3)"}}>Aún no tienes plantillas. Escribe etiquetas arriba y pulsa «Guardar actuales».</div>
+                  ) : (
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {(tagTemplates||[]).map(tpl=>(
+                        <div key={tpl.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
+                          <span style={{fontWeight:600,color:"var(--text)"}}>{tpl.name}</span>
+                          <span style={{flex:1,color:"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tpl.tags.join(", ")}</span>
+                          <button onClick={()=>deleteTagTemplate(tpl.id)} style={{color:"var(--text-3)",display:"flex",padding:3}} onMouseEnter={e=>e.currentTarget.style.color="var(--red)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>{Icons.trash}</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Categoría + juego */}
+            <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:150}}>
+                <Field label="Categoría">
+                  <select value={categoryId} onChange={e=>setCategoryId(e.target.value)} style={inputStyle}>
+                    {YT_CATEGORIES.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                </Field>
+              </div>
+              {categoryId==="20" && (
+                <div style={{flex:1,minWidth:150}}>
+                  <Field label="Título del juego">
+                    <input value={gameTitle} onChange={e=>setGameTitle(e.target.value)} placeholder="p.ej. Roblox" style={inputStyle}/>
+                  </Field>
+                </div>
+              )}
+            </div>
+
+            {/* Lista de reproducción */}
+            <Field label="Lista de reproducción (opcional)">
+              <select value={playlistId} onChange={e=>setPlaylistId(e.target.value)} style={inputStyle} disabled={loadingMeta}>
+                <option value="">— Ninguna —</option>
+                {playlists.map(p=><option key={p.id} value={p.id}>{p.title}</option>)}
+              </select>
             </Field>
+
+            {/* Comentario fijado */}
+            <Field label="Comentario fijado (opcional)">
+              <textarea value={pinnedComment} onChange={e=>setPinnedComment(e.target.value)} rows={2} placeholder="Se publicará y fijará al subir el vídeo" style={{...inputStyle, resize:"vertical"}}/>
+            </Field>
+
+            {/* Visibilidad + programación */}
             <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:150}}>
                 <Field label="Visibilidad">
@@ -855,9 +1034,9 @@ function YouTubeUploadModal({ video, onClose, onDone, toast }) {
                 </Field>
               </div>
             </div>
-            {scheduledAt && visibility==="public" && (
+            {scheduledAt && (
               <div style={{fontSize:11.5,color:"var(--text-3)",marginTop:-6}}>
-                Nota: para programar, YouTube sube el vídeo como privado y lo hace público automáticamente a la hora indicada.
+                Para programar, YouTube sube el vídeo como privado y lo publica automáticamente a la hora indicada.
               </div>
             )}
 
@@ -869,7 +1048,7 @@ function YouTubeUploadModal({ video, onClose, onDone, toast }) {
 
             <div style={{display:"flex",gap:10,marginTop:4}}>
               <button onClick={onClose} style={{flex:"0 0 auto",padding:"11px 16px",borderRadius:10,border:"1px solid var(--border)",color:"var(--text-2)",fontSize:13.5,fontWeight:600}}>Cancelar</button>
-              <button onClick={handleUpload} disabled={uploading || !selected} className="grad-gold" style={{flex:1,padding:"11px 16px",borderRadius:10,color:"#000",fontWeight:700,fontSize:14,opacity:(uploading||!selected)?0.6:1}}>
+              <button onClick={handleUpload} disabled={uploading || !selected} style={{flex:1,padding:"11px 16px",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,background:"#FF0000",opacity:(uploading||!selected)?0.6:1}}>
                 {uploading ? "Subiendo…" : (scheduledAt ? "Subir y programar" : "Subir ahora")}
               </button>
             </div>
@@ -2029,6 +2208,166 @@ function StatCard({ label, value, sub, color, icon }) {
   );
 }
 
+/* ============================ VÍDEOS PROGRAMADOS / SUBIDOS ============================ */
+function ScheduledView({ videos, onOpen, onUpdateVideo, formats, toast }) {
+  const [checking, setChecking] = useState(false);
+  const [statusMap, setStatusMap] = useState({}); // videoId -> {exists, privacyStatus, publishAt}
+  const [deleting, setDeleting] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
+
+  // Vídeos que tienen relación con YouTube
+  const ytVideos = videos.filter(v=>v.youtubeId);
+
+  const refresh = async () => {
+    if(!ytIsConnected()){ toast("Conecta con Google desde un vídeo para comprobar el estado"); return; }
+    const ids = ytVideos.map(v=>v.youtubeId);
+    if(ids.length===0) return;
+    setChecking(true);
+    try {
+      const map = await ytCheckVideos(ids);
+      setStatusMap(map);
+      // Si alguno ya no existe en YouTube, lo reflejamos en la app
+      let cleared = 0;
+      ytVideos.forEach(v=>{
+        const st = map[v.youtubeId];
+        if(st && st.exists===false){ onUpdateVideo(v.id, { youtubeId:null, youtubeStatus:null, youtubeUrl:null }); cleared++; }
+        else if(st && st.exists){
+          // Actualizar estado: si ya es público, marcarlo como publicado
+          const ns = st.privacyStatus==="public" ? "published" : (st.publishAt ? "scheduled" : "uploaded");
+          if(ns!==v.youtubeStatus) onUpdateVideo(v.id, { youtubeStatus: ns });
+        }
+      });
+      if(cleared>0) toast(cleared+" vídeo(s) ya no estaban en YouTube · actualizado");
+      else toast("Estado actualizado");
+    } catch(e){
+      toast("❌ "+e.message);
+      if(/caducada|conectado/i.test(e.message)) ytClearTokens();
+    } finally { setChecking(false); }
+  };
+
+  // Comprobar al entrar (si hay vídeos y conexión válida)
+  useEffect(()=>{
+    if(ytVideos.length>0 && ytTokenValid()){ refresh(); }
+  // eslint-disable-next-line
+  },[]);
+
+  const doDelete = async (v) => {
+    setConfirmDel(null);
+    if(!ytIsConnected()){ toast("Conecta con Google primero"); return; }
+    setDeleting(v.id);
+    try {
+      await ytDeleteVideo(v.youtubeId);
+      onUpdateVideo(v.id, { youtubeId:null, youtubeStatus:null, youtubeUrl:null });
+      toast("Vídeo eliminado de YouTube");
+    } catch(e){ toast("❌ "+e.message); }
+    finally { setDeleting(null); }
+  };
+
+  const fmtDate = (v) => {
+    const st = statusMap[v.youtubeId];
+    if(st && st.publishAt) return new Date(st.publishAt).toLocaleString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+    if(v.date) return new Date(v.date+"T"+(v.time||"00:00")).toLocaleString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+    return "—";
+  };
+  const statusInfo = (v) => {
+    const st = statusMap[v.youtubeId];
+    if(st && st.exists===false) return { label:"No está en YouTube", color:"var(--red)" };
+    if(st && st.privacyStatus==="public") return { label:"Publicado", color:"var(--green)" };
+    if(v.youtubeStatus==="scheduled" || (st&&st.publishAt)) return { label:"Programado", color:"var(--gold)" };
+    if(st && st.privacyStatus==="private") return { label:"Privado", color:"var(--text-2)" };
+    if(st && st.privacyStatus==="unlisted") return { label:"No listado", color:"var(--blue)" };
+    return { label:"Subido", color:"var(--text-2)" };
+  };
+
+  return (
+    <div className="fade-in">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:700}}>Vídeos en YouTube</h2>
+          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Controla los vídeos que has subido o programado y gestiónalos sin salir de la app</p>
+        </div>
+        <button onClick={refresh} disabled={checking} style={{
+          display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",
+          border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 13px",background:"rgba(212,175,55,0.05)",opacity:checking?0.6:1
+        }}>
+          <span className={checking?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
+          {checking?"Comprobando…":"Comprobar estado"}
+        </button>
+      </div>
+
+      {ytVideos.length===0 ? (
+        <div style={{textAlign:"center",color:"var(--text-3)",fontSize:13.5,padding:"60px 20px",border:"1px dashed var(--border)",borderRadius:14}}>
+          <div style={{color:"#FF0000",display:"flex",justifyContent:"center",marginBottom:12,opacity:.6}}>{Icons.youtube}</div>
+          Todavía no has subido ni programado ningún vídeo en YouTube.<br/>
+          Abre un vídeo y pulsa «Subir a YouTube» para empezar.
+        </div>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {ytVideos.map(v=>{
+            const f = formats[v.format] || { color:"#6B6B6B", label:"" };
+            const si = statusInfo(v);
+            const gone = statusMap[v.youtubeId]?.exists===false;
+            return (
+              <div key={v.id} className="yt-row" style={{
+                display:"flex",alignItems:"center",gap:14,padding:"14px 16px",background:"var(--bg-2)",
+                border:`1px solid ${gone?"rgba(248,113,113,0.35)":"var(--border)"}`,borderLeft:`3px solid ${f.color}`,borderRadius:12,flexWrap:"wrap"
+              }}>
+                <div style={{flex:1,minWidth:180}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <span style={{color:f.color,display:"flex"}}>{v.type==="short"?Icons.short:Icons.largo}</span>
+                    <span style={{fontSize:14,fontWeight:600,color:"var(--text)",overflowWrap:"anywhere"}}>{v.title}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:12,fontSize:11.5,color:"var(--text-3)",flexWrap:"wrap"}}>
+                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{fmtDate(v)}</span>
+                    <span style={{color:si.color,fontWeight:600}}>● {si.label}</span>
+                  </div>
+                </div>
+                <div className="yt-row-actions" style={{display:"flex",alignItems:"center",gap:8}}>
+                  {!gone && (
+                    <a href={v.youtubeUrl||("https://youtu.be/"+v.youtubeId)} target="_blank" rel="noopener" title="Ver en YouTube" style={{
+                      display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"#FF0000",padding:"7px 11px",
+                      border:"1px solid rgba(255,0,0,0.3)",borderRadius:9
+                    }}>{Icons.youtube} Ver</a>
+                  )}
+                  <button onClick={()=>onOpen(v)} title="Editar en la app" style={{
+                    display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"var(--text-2)",padding:"7px 11px",
+                    border:"1px solid var(--border)",borderRadius:9
+                  }}>{Icons.edit} Editar</button>
+                  {gone ? (
+                    <button onClick={()=>onUpdateVideo(v.id,{youtubeId:null,youtubeStatus:null,youtubeUrl:null})} title="Quitar la marca de YouTube" style={{
+                      fontSize:12,fontWeight:600,color:"var(--text-2)",padding:"7px 11px",border:"1px solid var(--border)",borderRadius:9
+                    }}>Quitar marca</button>
+                  ) : (
+                    <button onClick={()=>setConfirmDel(v)} disabled={deleting===v.id} title="Eliminar de YouTube" style={{
+                      display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"var(--red)",padding:"7px 11px",
+                      border:"1px solid rgba(248,113,113,0.3)",borderRadius:9,opacity:deleting===v.id?0.5:1
+                    }}>{Icons.trash} {deleting===v.id?"Borrando…":"Borrar"}</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {confirmDel && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,zIndex:300}} onClick={()=>setConfirmDel(null)}>
+          <div style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:14,padding:22,maxWidth:400}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{fontSize:16,fontWeight:700,marginBottom:10}}>¿Eliminar de YouTube?</h3>
+            <p style={{fontSize:13,color:"var(--text-2)",lineHeight:1.5,marginBottom:18}}>
+              El vídeo «{confirmDel.title}» se borrará permanentemente de tu canal de YouTube. Esta acción no se puede deshacer.
+            </p>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={()=>setConfirmDel(null)} style={{padding:"9px 16px",borderRadius:9,border:"1px solid var(--border)",color:"var(--text-2)",fontSize:13,fontWeight:600}}>Cancelar</button>
+              <button onClick={()=>doDelete(confirmDel)} style={{padding:"9px 16px",borderRadius:9,background:"var(--red)",color:"#fff",fontSize:13,fontWeight:700}}>Sí, eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatsView({ videos, taskLists, formats }) {
   const now = Date.now();
   const DAY = 24*60*60*1000, WEEK = 7*DAY;
@@ -2448,8 +2787,8 @@ function loadStore() {
     return data;
   } catch(e) { return null; }
 }
-function saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], tombstones: tombstones||[], dailyArchive: dailyArchive||{}, savedAt: Date.now() })); return true; }
+function saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], tombstones: tombstones||[], dailyArchive: dailyArchive||{}, tagTemplates: tagTemplates||[], savedAt: Date.now() })); return true; }
   catch(e) { return false; }
 }
 function clearStore() { try { localStorage.removeItem(STORE_KEY); } catch(e){} }
@@ -2522,6 +2861,8 @@ const YT_REDIRECT = "https://manugrraa.github.io/random-studio/"; // debe coinci
 const YT_TOKEN_KEY = "rds_yt_tokens";
 const YT_SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
+  "https://www.googleapis.com/auth/youtube",
+  "https://www.googleapis.com/auth/youtube.force-ssl",
   "https://www.googleapis.com/auth/drive.readonly"
 ].join(" ");
 
@@ -2605,6 +2946,107 @@ async function ytUploadViaBackend(payload){
   if(!res.ok || !data.success) throw new Error(data.error || data.details || "Error al subir a YouTube");
   return data;
 }
+
+// Cabecera de autorización para llamadas directas a la API de YouTube
+function ytAuthHeader(){
+  const t = ytGetTokens();
+  if(!t || !t.access_token) throw new Error("No conectado a Google");
+  return { Authorization: "Bearer " + t.access_token };
+}
+
+// Lista las playlists del usuario (para elegir dónde añadir el vídeo)
+async function ytListPlaylists(){
+  const url = "https://www.googleapis.com/youtube/v3/playlists?" + new URLSearchParams({
+    part: "snippet", mine: "true", maxResults: "50"
+  });
+  const res = await fetch(url, { headers: ytAuthHeader() });
+  if(res.status===401){ ytClearTokens(); throw new Error("Sesión de Google caducada"); }
+  if(!res.ok) throw new Error("Error al leer playlists ("+res.status+")");
+  const data = await res.json();
+  return (data.items||[]).map(p=>({ id:p.id, title:p.snippet?.title||"(sin título)" }));
+}
+
+// Lista los vídeos subidos del canal (para copiar datos de uno ya existente)
+async function ytListMyVideos(max){
+  // 1. Obtener el playlist de subidas del canal
+  const chRes = await fetch("https://www.googleapis.com/youtube/v3/channels?" + new URLSearchParams({
+    part: "contentDetails", mine: "true"
+  }), { headers: ytAuthHeader() });
+  if(!chRes.ok) throw new Error("Error al leer el canal ("+chRes.status+")");
+  const chData = await chRes.json();
+  const uploads = chData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if(!uploads) return [];
+  // 2. Últimos vídeos de ese playlist
+  const plRes = await fetch("https://www.googleapis.com/youtube/v3/playlistItems?" + new URLSearchParams({
+    part: "snippet,contentDetails", playlistId: uploads, maxResults: String(max||15)
+  }), { headers: ytAuthHeader() });
+  if(!plRes.ok) throw new Error("Error al leer subidas ("+plRes.status+")");
+  const plData = await plRes.json();
+  return (plData.items||[]).map(it=>({
+    id: it.contentDetails?.videoId,
+    title: it.snippet?.title || "(sin título)"
+  })).filter(v=>v.id);
+}
+
+// Trae los datos completos de un vídeo (para copiar descripción, tags, categoría)
+async function ytGetVideoDetails(videoId){
+  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
+    part: "snippet", id: videoId
+  }), { headers: ytAuthHeader() });
+  if(!res.ok) throw new Error("Error al leer el vídeo ("+res.status+")");
+  const data = await res.json();
+  const s = data.items?.[0]?.snippet;
+  if(!s) return null;
+  return { title:s.title, description:s.description||"", tags:s.tags||[], categoryId:s.categoryId||"20" };
+}
+
+// Comprueba el estado de varios vídeos de golpe (existe / privacidad / fecha de publicación).
+// Devuelve un mapa { videoId: {exists, privacyStatus, publishAt} }.
+async function ytCheckVideos(ids){
+  const out = {};
+  if(!ids || ids.length===0) return out;
+  // La API admite hasta 50 ids por llamada
+  for(let i=0;i<ids.length;i+=50){
+    const chunk = ids.slice(i,i+50);
+    const res = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
+      part: "status", id: chunk.join(",")
+    }), { headers: ytAuthHeader() });
+    if(!res.ok){ throw new Error("Error al comprobar vídeos ("+res.status+")"); }
+    const data = await res.json();
+    const found = new Set();
+    (data.items||[]).forEach(it=>{
+      found.add(it.id);
+      out[it.id] = { exists:true, privacyStatus: it.status?.privacyStatus, publishAt: it.status?.publishAt || null };
+    });
+    // Los que no vuelven, ya no existen
+    chunk.forEach(id=>{ if(!found.has(id)) out[id] = { exists:false }; });
+  }
+  return out;
+}
+
+// Borra un vídeo de YouTube
+async function ytDeleteVideo(videoId){
+  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?id="+encodeURIComponent(videoId), {
+    method: "DELETE", headers: ytAuthHeader()
+  });
+  if(res.status===204) return true;
+  if(res.status===404) return true; // ya no existía
+  throw new Error("No se pudo borrar en YouTube ("+res.status+")");
+}
+
+// Categorías de YouTube más habituales (para el selector)
+const YT_CATEGORIES = [
+  { id:"20", label:"Videojuegos" },
+  { id:"22", label:"Gente y blogs" },
+  { id:"24", label:"Entretenimiento" },
+  { id:"23", label:"Comedia" },
+  { id:"27", label:"Educación" },
+  { id:"28", label:"Ciencia y tecnología" },
+  { id:"10", label:"Música" },
+  { id:"26", label:"Cómo hacer y estilo" },
+  { id:"17", label:"Deportes" },
+  { id:"1",  label:"Cine y animación" }
+];
 
 
 
@@ -2795,6 +3237,8 @@ function App() {
   });
   const [saved, setSaved] = useState(false);
   const [ytUpload, setYtUpload] = useState(null); // vídeo que se está subiendo a YouTube
+  // Plantillas de etiquetas para YouTube (se sincronizan)
+  const [tagTemplates, setTagTemplates] = useState(()=> (_initial && Array.isArray(_initial.tagTemplates)) ? _initial.tagTemplates : []);
   // Archivo semanal de tareas diarias realizadas: { "2026-W28": [{title, doneAt}], ... }
   const [dailyArchive, setDailyArchive] = useState(()=> (_initial && _initial.dailyArchive && typeof _initial.dailyArchive==="object") ? _initial.dailyArchive : {});
   const [view, setView] = useState("calendar");
@@ -2868,7 +3312,7 @@ function App() {
   const [rtKey, setRtKey] = useState(0); // al aumentar, se recrea el canal de tiempo real
 
   // Espejo del estado actual (para leerlo dentro de callbacks asíncronos sin datos obsoletos)
-  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists, tombstones, dailyArchive}; },[videos, formats, trash, taskLists, tombstones, dailyArchive]);
+  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates}; },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates]);
 
   const fp = (s) => JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[]});
 
@@ -2889,8 +3333,16 @@ function App() {
     const mergedFormats = remoteFmtN > localFmtN ? r.formats : s.formats;
     // Archivo diario: unión por semana, sin duplicados (por título+día)
     const mergedArchive = mergeDailyArchive(s.dailyArchive, r.dailyArchive);
-    const merged = { videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks, tombstones:mergedTombs, dailyArchive:mergedArchive };
-    const changed = fp(merged) !== fp(s) || JSON.stringify(mergedArchive) !== JSON.stringify(s.dailyArchive||{});
+    // Plantillas de etiquetas: unión por nombre (la más reciente/mayor gana)
+    const tplMap = {};
+    [...(s.tagTemplates||[]), ...(r.tagTemplates||[])].forEach(t=>{
+      if(!t || !t.name) return;
+      const prev = tplMap[t.name];
+      if(!prev || (t.tags||[]).length >= (prev.tags||[]).length) tplMap[t.name] = t;
+    });
+    const mergedTpls = Object.values(tplMap);
+    const merged = { videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks, tombstones:mergedTombs, dailyArchive:mergedArchive, tagTemplates:mergedTpls };
+    const changed = fp(merged) !== fp(s) || JSON.stringify(mergedArchive) !== JSON.stringify(s.dailyArchive||{}) || JSON.stringify(mergedTpls) !== JSON.stringify(s.tagTemplates||[]);
     return { merged, changed };
   };
 
@@ -2903,6 +3355,7 @@ function App() {
     setTaskLists(merged.taskLists.length?merged.taskLists:clone(DEFAULT_TASK_LISTS));
     setTombstones(merged.tombstones);
     if(merged.dailyArchive) setDailyArchive(merged.dailyArchive);
+    if(merged.tagTemplates) setTagTemplates(merged.tagTemplates);
     lastSyncedRef.current = fp(merged);
     lastRemoteTsRef.current = Date.now();
   };
@@ -2912,7 +3365,7 @@ function App() {
     const s = stateRef.current;
     const huella = fp(s);
     setSyncStatus("saving");
-    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, savedAt: Date.now() });
+    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], savedAt: Date.now() });
     lastSyncedRef.current = huella;
     lastRemoteTsRef.current = Date.now();
     setSyncStatus("online");
@@ -2921,7 +3374,7 @@ function App() {
   // Sube un estado ya fusionado
   const pushMerged = async (merged) => {
     setSyncStatus("saving");
-    await cloudSave(syncCode, { videos:merged.videos, formats:merged.formats, trash:merged.trash, taskLists:merged.taskLists, tombstones:pruneTombs(merged.tombstones), dailyArchive:merged.dailyArchive||{}, savedAt: Date.now() });
+    await cloudSave(syncCode, { videos:merged.videos, formats:merged.formats, trash:merged.trash, taskLists:merged.taskLists, tombstones:pruneTombs(merged.tombstones), dailyArchive:merged.dailyArchive||{}, tagTemplates:merged.tagTemplates||[], savedAt: Date.now() });
     lastSyncedRef.current = fp(merged);
     lastRemoteTsRef.current = Date.now();
     setSyncStatus("online");
@@ -3023,7 +3476,7 @@ function App() {
           "Authorization": "Bearer " + (token || SUPABASE_KEY),
           "Prefer": "resolution=merge-duplicates"
         },
-        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, savedAt: Date.now() }, updated_at: new Date().toISOString() }])
+        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], savedAt: Date.now() }, updated_at: new Date().toISOString() }])
       });
       // Nota: no marcamos nada como sincronizado aquí a propósito. Si este envío
       // fallara (sin red), la reconciliación volverá a subirlo; si llegó bien,
@@ -3149,7 +3602,7 @@ function App() {
         toast("Vinculado · datos descargados de la nube");
       } else {
         const s = stateRef.current;
-        await cloudSave(code, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, savedAt: Date.now() });
+        await cloudSave(code, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], savedAt: Date.now() });
         lastSyncedRef.current = fp(s);
         lastRemoteTsRef.current = Date.now();
         toast("Vinculado · se subieron tus datos actuales");
@@ -3166,7 +3619,7 @@ function App() {
   const firstRun = useRef(true);
   useEffect(()=>{
     if(firstRun.current){ firstRun.current=false; prevSnapRef.current = {videos, formats, trash, taskLists}; return; }
-    const ok = saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive);
+    const ok = saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates);
     if(ok){ setSaved(true); setTimeout(()=>setSaved(false), 1600); }
     // Si esta huella no coincide con lo último sincronizado, es una edición hecha aquí
     const huella = fp({videos, formats, trash, taskLists});
@@ -3182,14 +3635,17 @@ function App() {
       applyingHistoryRef.current = false;
     }
     prevSnapRef.current = {videos, formats, trash, taskLists};
-    // Guardar en la nube tras 1.2s sin cambios
+    // Feedback instantáneo: en cuanto hay un cambio propio, mostramos "guardando"
+    const huellaActual = fp(stateRef.current);
+    if(huellaActual !== lastSyncedRef.current) setSyncStatus("saving");
+    // Guardar en la nube tras 700ms sin cambios (antes 1200ms)
     if(saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async ()=>{
-      if(fp(stateRef.current) === lastSyncedRef.current) return; // nada nuevo que subir
+      if(fp(stateRef.current) === lastSyncedRef.current){ setSyncStatus("online"); return; } // nada nuevo que subir
       try { await pushLocal(); }
       catch(e) { setSyncStatus("offline"); }
-    }, 1200);
-  },[videos, formats, trash, taskLists, tombstones, dailyArchive]);
+    }, 700);
+  },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates]);
 
   const resetAll = () => {
     setConfirm({
@@ -3352,12 +3808,26 @@ function App() {
       }
       return a + l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length;
     },0)},
+    {id:"scheduled", label:"YouTube", icon:Icons.youtube, badge: videos.filter(v=>v.youtubeId).length},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
   ];
 
   // Registro del Service Worker + permiso al arrancar
   useEffect(()=>{ registerNotifSW(); },[]);
+
+  // Guardado inmediato al ocultar la pestaña o cerrar (para sincronizar rápido entre dispositivos)
+  useEffect(()=>{
+    const flushNow = () => {
+      if(fp(stateRef.current) === lastSyncedRef.current) return; // nada pendiente
+      if(saveTimer.current) clearTimeout(saveTimer.current);
+      pushLocal().catch(()=>{});
+    };
+    const onVis = () => { if(document.visibilityState==="hidden") flushNow(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", flushNow);
+    return ()=>{ document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", flushNow); };
+  },[]);
 
   // Al volver del login de Google (redirect con #access_token), guardar el token
   // y reabrir el modal de subida del vídeo que estábamos subiendo.
@@ -3659,24 +4129,34 @@ function App() {
         {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
         {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} dailyArchive={dailyArchive} toast={toast} onTaskDeleted={(id)=>addTomb(id,"task")} onListDeleted={(id)=>addTomb(id,"list")} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
         {view==="stats" && <StatsView videos={videos} taskLists={taskLists} formats={formats}/>}
+        {view==="scheduled" && <ScheduledView videos={videos} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} formats={formats} toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
 
-        <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-          <p style={{fontSize:12,color:"var(--text-3)",lineHeight:1.5,maxWidth:520}}>
-            Tus vídeos, formatos, notas y papelera se guardan automáticamente en este navegador. No se envían a ningún servidor. Si usas otro dispositivo o navegador, empezarás de cero.
-          </p>
-          <button onClick={resetAll} style={{
-            display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--text-3)",padding:"8px 13px",borderRadius:9,
-            border:"1px solid var(--border)",transition:"all .15s",whiteSpace:"nowrap"
-          }} onMouseEnter={e=>{e.currentTarget.style.color="var(--red)";e.currentTarget.style.borderColor="rgba(248,113,113,0.3)";}}
-             onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
-            {Icons.trash} Restablecer datos
-          </button>
+        <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+            <p style={{fontSize:12,color:"var(--text-3)",lineHeight:1.5,maxWidth:520}}>
+              Tus datos se guardan en este navegador y se sincronizan de forma segura en la nube con tu código de sincronización. Úsalo en otro dispositivo para tener todo al día.
+            </p>
+            <button onClick={resetAll} style={{
+              display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--text-3)",padding:"8px 13px",borderRadius:9,
+              border:"1px solid var(--border)",transition:"all .15s",whiteSpace:"nowrap"
+            }} onMouseEnter={e=>{e.currentTarget.style.color="var(--red)";e.currentTarget.style.borderColor="rgba(248,113,113,0.3)";}}
+               onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
+              {Icons.trash} Restablecer datos
+            </button>
+          </div>
+          <div style={{textAlign:"center",fontSize:11.5,color:"var(--text-3)",paddingTop:6,borderTop:"1px solid var(--border)"}}>
+            <span style={{fontFamily:"'Sora'",fontWeight:700}}>RDeRandom <span className="gold-text">Studio</span></span>
+            <span style={{margin:"0 8px",opacity:.5}}>·</span>
+            <span>v{APP_VERSION}</span>
+            <span style={{margin:"0 8px",opacity:.5}}>·</span>
+            <span>© {new Date().getFullYear()} RDeRandom. Todos los derechos reservados.</span>
+          </div>
         </footer>
       </main>
 
       {editing && <VideoModal v={editing} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} formats={formats}/>}
-      {ytUpload && <YouTubeUploadModal video={ytUpload} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?{...v, ...yt, updatedAt:Date.now()}:v)); }} toast={toast}/>}
+      {ytUpload && <YouTubeUploadModal video={ytUpload} allVideos={videos} tagTemplates={tagTemplates} setTagTemplates={setTagTemplates} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?{...v, ...yt, updatedAt:Date.now()}:v)); }} toast={toast}/>}
       {showFormats && <FormatsModal formats={formats} setFormats={setFormats} videos={videos} onClose={()=>setShowFormats(false)} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
       {showSync && <SyncModal syncCode={syncCode} status={syncStatus} onClose={()=>setShowSync(false)} onLink={linkToCode} onExport={exportData} onImport={importData} onSyncNow={syncNow} syncing={manualSyncing} toast={toast}/>}
       <ConfirmDialog
@@ -3756,10 +4236,12 @@ function App() {
           /* Estadísticas apiladas en móvil */
           .stats-grid { grid-template-columns: 1fr !important; }
           .stats-cards { grid-template-columns: repeat(2,1fr) !important; }
-          /* Deshacer/rehacer viven en el menú lateral en móvil */
           /* Deshacer/rehacer y formatos viven en el menú lateral en móvil */
           .undo-group { display:none !important; }
           .fmt-btn { display:none !important; }
+          /* La lista de vídeos en YouTube se apila para no desbordar */
+          .yt-row { flex-direction: column !important; align-items: stretch !important; }
+          .yt-row-actions { justify-content: flex-start !important; }
         }
         @media (max-width: 480px) {
           .stat-grid { grid-template-columns: repeat(2,1fr) !important; gap: 8px !important; }
@@ -3769,6 +4251,8 @@ function App() {
           .app-header { gap: 8px !important; }
           /* Modales casi a pantalla completa, respetando el notch */
           .modal-overlay { padding: calc(env(safe-area-inset-top) + 12px) 10px calc(env(safe-area-inset-bottom) + 16px) 10px !important; align-items: flex-start !important; }
+          /* El modal de YouTube ocupa casi toda la pantalla y permite scroll cómodo */
+          .yt-modal-panel { max-width: 100% !important; padding: 18px !important; }
         }
       `}</style>
     </div>
