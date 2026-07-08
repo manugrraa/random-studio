@@ -756,6 +756,8 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
   const [myVideos, setMyVideos] = useState([]);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [copyFrom, setCopyFrom] = useState("");
+  const [copyData, setCopyData] = useState(null); // datos del vídeo elegido para copiar
+  const [copyFields, setCopyFields] = useState({ description:true, tags:true, category:true });
   const [showTagMgr, setShowTagMgr] = useState(false);
   const [newTplName, setNewTplName] = useState("");
 
@@ -794,20 +796,26 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
   };
 
   // Copiar datos (descripción, etiquetas, categoría) de un vídeo ya subido
+  // Al elegir un vídeo, solo cargamos sus datos (no copiamos aún)
   const handleCopyFrom = async (vid) => {
     setCopyFrom(vid);
+    setCopyData(null);
     if(!vid) return;
     setLoadingMeta(true);
     try {
       const d = await ytGetVideoDetails(vid);
-      if(d){
-        if(d.description) setDesc(d.description);
-        if(d.tags && d.tags.length) setTags(d.tags.join(", "));
-        if(d.categoryId) setCategoryId(d.categoryId);
-        toast("Datos copiados del vídeo seleccionado");
-      }
-    } catch(e){ toast("No se pudieron copiar los datos: "+e.message); }
+      if(d) setCopyData(d);
+    } catch(e){ toast("No se pudieron leer los datos: "+e.message); }
     finally { setLoadingMeta(false); }
+  };
+  // Copiar solo los campos marcados
+  const applyCopy = () => {
+    if(!copyData) return;
+    let n = 0;
+    if(copyFields.description && copyData.description){ setDesc(copyData.description); n++; }
+    if(copyFields.tags && copyData.tags?.length){ setTags(copyData.tags.join(", ")); n++; }
+    if(copyFields.category && copyData.categoryId){ setCategoryId(copyData.categoryId); n++; }
+    toast(n>0 ? "Datos copiados ("+n+")" : "No marcaste ningún campo");
   };
 
   // Aplicar una plantilla de etiquetas (añade sin duplicar)
@@ -932,7 +940,29 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
                 <option value="">— Rellenar manualmente —</option>
                 {myVideos.map(v=><option key={v.id} value={v.id}>{v.title}</option>)}
               </select>
-              <div style={{fontSize:11,color:"var(--text-3)",marginTop:5}}>Copia descripción, etiquetas y categoría de un vídeo tuyo ya publicado.</div>
+              {copyFrom && copyData && (
+                <div className="fade-in" style={{marginTop:9,padding:12,background:"var(--card)",borderRadius:10,border:"1px solid var(--border)"}}>
+                  <div style={{fontSize:11.5,color:"var(--text-2)",marginBottom:9,fontWeight:600}}>Elige qué copiar:</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:11}}>
+                    {[
+                      {k:"description", label:"Descripción", preview:(copyData.description||"").slice(0,50)||"(vacía)"},
+                      {k:"tags", label:"Etiquetas", preview:copyData.tags?.length?copyData.tags.slice(0,4).join(", ")+(copyData.tags.length>4?"…":""):"(ninguna)"},
+                      {k:"category", label:"Categoría", preview:(YT_CATEGORIES.find(c=>c.id===copyData.categoryId)?.label)||copyData.categoryId}
+                    ].map(row=>(
+                      <label key={row.k} style={{display:"flex",alignItems:"flex-start",gap:9,cursor:"pointer"}}>
+                        <input type="checkbox" checked={copyFields[row.k]} onChange={e=>setCopyFields(f=>({...f,[row.k]:e.target.checked}))} style={{marginTop:2,accentColor:"var(--gold)"}}/>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:12.5,color:"var(--text)",fontWeight:600}}>{row.label}</div>
+                          <div style={{fontSize:11,color:"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row.preview}</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <button onClick={applyCopy} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:12.5,padding:"8px 14px",borderRadius:8,width:"100%"}}>Copiar lo seleccionado</button>
+                </div>
+              )}
+              {copyFrom && loadingMeta && <div style={{fontSize:11.5,color:"var(--text-3)",marginTop:7,display:"flex",alignItems:"center",gap:7}}><span className="spinning" style={{display:"flex"}}>{Icons.refresh}</span> Leyendo datos del vídeo…</div>}
+              {!copyFrom && <div style={{fontSize:11,color:"var(--text-3)",marginTop:5}}>Copia por separado la descripción, etiquetas o categoría de un vídeo tuyo ya publicado.</div>}
             </div>
 
             <Field label="Título en YouTube">
@@ -1003,6 +1033,11 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
                 </div>
               )}
             </div>
+            {categoryId==="20" && gameTitle && (
+              <div style={{fontSize:11,color:"var(--text-3)",marginTop:-6,lineHeight:1.5}}>
+                YouTube no permite fijar el juego por API como en Studio, así que lo añadimos como etiqueta y a la descripción para que YouTube lo detecte y lo asocie automáticamente. Si no aparece, podrás fijarlo en un segundo desde YouTube Studio.
+              </div>
+            )}
 
             {/* Lista de reproducción */}
             <Field label="Lista de reproducción (opcional)">
@@ -3314,7 +3349,7 @@ function App() {
   // Espejo del estado actual (para leerlo dentro de callbacks asíncronos sin datos obsoletos)
   useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates}; },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates]);
 
-  const fp = (s) => JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[]});
+  const fp = (s) => JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[], dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[]});
 
   // FUSIÓN NO DESTRUCTIVA: combina remoto + local por elementos, quedándose SIEMPRE con la
   // versión de updatedAt más alto de cada vídeo/tarea. Un dispositivo que suba datos viejos
@@ -3389,7 +3424,9 @@ function App() {
       // Nada nuevo que integrar. Pero si el remoto está incompleto respecto a lo nuestro
       // (p.ej. subió datos viejos), reafirmamos lo local subiéndolo.
       const s = stateRef.current;
-      if(fp({videos:merged.videos,formats:merged.formats,trash:merged.trash,taskLists:merged.taskLists}) !== fp({videos:r.videos,formats:r.formats,trash:r.trash,taskLists:r.taskLists})){
+      const localFull = fp(merged);
+      const remoteFull = fp({videos:r.videos,formats:r.formats,trash:r.trash,taskLists:r.taskLists,dailyArchive:r.dailyArchive,tagTemplates:r.tagTemplates});
+      if(localFull !== remoteFull){
         try { await pushMerged(merged); } catch(e){}
       } else {
         lastSyncedRef.current = fp(s);
@@ -3449,13 +3486,11 @@ function App() {
     window.addEventListener("focus", onWake);
     window.addEventListener("online", onOnline);
     window.addEventListener("pageshow", onWake);
-    const iv = setInterval(()=>{ if(document.visibilityState!=="hidden") pullRef.current(true); }, 60000);
     return ()=>{
       document.removeEventListener("visibilitychange", onWake);
       window.removeEventListener("focus", onWake);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("pageshow", onWake);
-      clearInterval(iv);
     };
   },[]);
 
@@ -3507,6 +3542,7 @@ function App() {
   };
 
   // Suscripción en tiempo real: si otro dispositivo cambia algo, lo recibimos al instante
+  const rtOkRef = useRef(false); // true si Realtime está funcionando
   useEffect(()=>{
     let channel = null;
     ensureAuth().then(sb => {
@@ -3515,7 +3551,7 @@ function App() {
           const r = payload && payload.new && payload.new.data;
           if(!r) return;
           const remoteTs = payload.new.updated_at ? new Date(payload.new.updated_at).getTime() : Date.now();
-          const incoming = fp({videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists});
+          const incoming = fp({videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists, dailyArchive:r.dailyArchive, tagTemplates:r.tagTemplates});
           // Eco de nuestro propio guardado: ya lo tenemos → solo actualizar marcas, sin tocar la app
           if(incoming === lastSyncedRef.current || incoming === fp(stateRef.current)){
             lastSyncedRef.current = fp(stateRef.current);
@@ -3528,10 +3564,30 @@ function App() {
           integrateRemote(r, false).catch(()=>{});
           setSyncStatus("online");
         })
-        .subscribe();
+        .subscribe((st)=>{
+          // st: 'SUBSCRIBED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CLOSED'
+          rtOkRef.current = (st === "SUBSCRIBED");
+          if(st === "CHANNEL_ERROR" || st === "TIMED_OUT"){
+            // Realtime no disponible → nos apoyamos en el sondeo rápido
+            rtOkRef.current = false;
+          }
+        });
     }).catch(()=>{});
     return ()=>{ try { if(channel) getClient()?.removeChannel(channel); } catch(e){} };
   },[syncCode, rtKey]);
+
+  // Sondeo adaptativo: si Realtime funciona, cada 20s basta; si no, cada 8s para compensar.
+  useEffect(()=>{
+    let stop = false;
+    const tick = async () => {
+      if(stop) return;
+      if(document.visibilityState !== "hidden"){ try { await pullRef.current(true); } catch(e){} }
+      const delay = rtOkRef.current ? 20000 : 8000;
+      if(!stop) setTimeout(tick, delay);
+    };
+    const t = setTimeout(tick, 8000);
+    return ()=>{ stop = true; clearTimeout(t); };
+  },[]);
 
   // Vincular este dispositivo a otro código de sincronización
   // Exportar todos los datos a un archivo JSON descargable
@@ -3619,13 +3675,17 @@ function App() {
   const firstRun = useRef(true);
   useEffect(()=>{
     if(firstRun.current){ firstRun.current=false; prevSnapRef.current = {videos, formats, trash, taskLists}; return; }
+    // Guardado local (siempre; es barato e instantáneo)
     const ok = saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates);
     if(ok){ setSaved(true); setTimeout(()=>setSaved(false), 1600); }
-    // Si esta huella no coincide con lo último sincronizado, es una edición hecha aquí
-    const huella = fp({videos, formats, trash, taskLists});
-    if(huella !== lastSyncedRef.current){
+
+    // Huella COMPLETA del estado actual (incluye archivo diario y plantillas)
+    const huella = fp({videos, formats, trash, taskLists, dailyArchive, tagTemplates});
+    const hayCambioReal = huella !== lastSyncedRef.current;
+
+    // Solo si hay un cambio real registramos historial y programamos subida a la nube.
+    if(hayCambioReal){
       localEditedAtRef.current = Date.now();
-      // Guardar el estado anterior en el historial (salvo que venga de deshacer/rehacer)
       if(!applyingHistoryRef.current && prevSnapRef.current){
         historyRef.current.past.push(prevSnapRef.current);
         if(historyRef.current.past.length>10) historyRef.current.past.shift();
@@ -3633,18 +3693,17 @@ function App() {
         setHistVersion(v=>v+1);
       }
       applyingHistoryRef.current = false;
+
+      setSyncStatus("saving");
+      if(saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(async ()=>{
+        // Reconfirmar justo antes de subir: si ya no hay nada nuevo, no tocamos la nube
+        if(fp(stateRef.current) === lastSyncedRef.current){ setSyncStatus("online"); return; }
+        try { await pushLocal(); }
+        catch(e) { setSyncStatus("offline"); }
+      }, 700);
     }
     prevSnapRef.current = {videos, formats, trash, taskLists};
-    // Feedback instantáneo: en cuanto hay un cambio propio, mostramos "guardando"
-    const huellaActual = fp(stateRef.current);
-    if(huellaActual !== lastSyncedRef.current) setSyncStatus("saving");
-    // Guardar en la nube tras 700ms sin cambios (antes 1200ms)
-    if(saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async ()=>{
-      if(fp(stateRef.current) === lastSyncedRef.current){ setSyncStatus("online"); return; } // nada nuevo que subir
-      try { await pushLocal(); }
-      catch(e) { setSyncStatus("offline"); }
-    }, 700);
   },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates]);
 
   const resetAll = () => {
