@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
-const APP_VERSION = "1.3";
+const APP_VERSION = "1.3.1";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -539,23 +539,37 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
   const [draft, setDraft] = useState(clone(v));
   const [notesBig, setNotesBig] = useState(false);
   const [selectedPrompt, setSelectedPrompt] = useState("");
+  const [promptDraft, setPromptDraft] = useState(""); // prompt adaptado a este vídeo
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
-  useEffect(()=>{ setDraft(clone(v)); setNotesBig(false); setSelectedPrompt(""); },[v]);
+  useEffect(()=>{ setDraft(clone(v)); setNotesBig(false); setSelectedPrompt(""); setPromptDraft(""); setShowPromptEditor(false); },[v]);
   const f = formats[draft.format] || { color:"#6B6B6B" };
   const set = (k,val)=>setDraft(d=>({...d,[k]:val}));
 
-  // Generar la descripción con IA usando la plantilla de prompt elegida
-  const genDesc = async () => {
-    if(!geminiHasKey()){ onSave(draft); toast && toast("Configura la IA en el apartado Agente"); return; }
-    const tpl = (promptTemplates||[]).find(t=>t.id===selectedPrompt);
-    if(!tpl){ toast && toast("Elige una plantilla de prompt"); return; }
-    setAiBusy(true);
-    try {
-      const tagsStr = "";
-      const finalPrompt = tpl.prompt
+  // Al elegir una plantilla, carga su prompt en el editor (para adaptarlo a este vídeo)
+  const pickPrompt = (id) => {
+    setSelectedPrompt(id);
+    const tpl = (promptTemplates||[]).find(t=>t.id===id);
+    if(tpl){
+      // Sustituimos las variables con los datos de ESTE vídeo, dejándolo editable
+      const filled = tpl.prompt
         .replace(/\{titulo\}/gi, draft.title||"")
         .replace(/\{juego\}/gi, draft.game||"")
-        .replace(/\{etiquetas\}/gi, tagsStr);
+        .replace(/\{etiquetas\}/gi, "");
+      setPromptDraft(filled);
+      setShowPromptEditor(true);
+    } else {
+      setPromptDraft(""); setShowPromptEditor(false);
+    }
+  };
+
+  // Generar la descripción con IA usando el prompt (ya adaptado) de la tarjeta
+  const genDesc = async () => {
+    if(!geminiHasKey()){ toast && toast("Configura la IA en el apartado Agente"); return; }
+    const finalPrompt = (promptDraft||"").trim();
+    if(!finalPrompt){ toast && toast("Elige una plantilla o escribe un prompt"); return; }
+    setAiBusy(true);
+    try {
       const out = await geminiGenerate(finalPrompt);
       set("description", out);
       toast && toast("Descripción generada con IA");
@@ -680,18 +694,35 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
               </div>
             </div>
             <div style={{display:"flex",gap:7,marginBottom:9,flexWrap:"wrap",alignItems:"center"}}>
-              <select value={selectedPrompt} onChange={e=>setSelectedPrompt(e.target.value)} style={{...inputStyle,flex:1,minWidth:160,padding:"8px 10px",fontSize:12.5}}>
+              <select value={selectedPrompt} onChange={e=>pickPrompt(e.target.value)} style={{...inputStyle,flex:1,minWidth:160,padding:"8px 10px",fontSize:12.5}}>
                 <option value="">{(promptTemplates||[]).length?"Elige una plantilla de prompt…":"Sin plantillas (créalas en Agente)"}</option>
                 {(promptTemplates||[]).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              <button onClick={genDesc} disabled={aiBusy || !selectedPrompt} title="Generar descripción con IA" style={{
+              <button onClick={genDesc} disabled={aiBusy || !promptDraft.trim()} title="Generar descripción con IA" style={{
                 display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:700,color:"#000",padding:"9px 14px",borderRadius:9,
-                background:"linear-gradient(135deg,var(--gold),#e8c860)",opacity:(aiBusy||!selectedPrompt)?0.55:1,flexShrink:0
+                background:"linear-gradient(135deg,var(--gold),#e8c860)",opacity:(aiBusy||!promptDraft.trim())?0.55:1,flexShrink:0
               }}>
                 <span className={aiBusy?"spinning":""} style={{display:"flex"}}>{aiBusy?Icons.refresh:Icons.sparkles}</span>
                 {aiBusy?"Generando…":"Generar descripción"}
               </button>
             </div>
+            {/* Editor del prompt adaptado a ESTE vídeo */}
+            {showPromptEditor && (
+              <div className="fade-in" style={{marginBottom:10,padding:12,background:"var(--card)",borderRadius:10,border:"1px solid var(--border-gold)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                  <span style={{fontSize:11.5,fontWeight:600,color:"var(--gold)"}}>Prompt para este vídeo (edítalo para afinarlo)</span>
+                  <button onClick={()=>{ const tpl=(promptTemplates||[]).find(t=>t.id===selectedPrompt); if(tpl) pickPrompt(selectedPrompt); }} title="Restaurar el prompt de la plantilla" style={{fontSize:11,color:"var(--text-3)",display:"flex",alignItems:"center",gap:5,padding:"3px 8px",border:"1px solid var(--border)",borderRadius:7}}>
+                    {Icons.refresh} Restaurar
+                  </button>
+                </div>
+                <textarea value={promptDraft} onChange={e=>setPromptDraft(e.target.value)} rows={4}
+                  placeholder="Adapta aquí el prompt al contexto de este vídeo…"
+                  style={{...inputStyle,resize:"vertical",fontSize:12.5,lineHeight:1.55}}/>
+                <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:5}}>
+                  Este prompt es solo para este vídeo. La plantilla original no se modifica.
+                </div>
+              </div>
+            )}
             <textarea value={draft.description||""} onChange={e=>set("description",e.target.value)}
               onFocus={e=>{ if(!notesBig && (draft.description||"").length>40) setNotesBig(true); }}
               placeholder="Descripción que aparecerá en YouTube: hook, enlaces, hashtags, redes... Pulsa «Ampliar» para más espacio."
@@ -2479,7 +2510,7 @@ function ChannelHeroCard({ subHistory, onRecordSubs, onConnect, toast }) {
   const pollRef = useRef(null);
 
   const load = async (silent) => {
-    if(!ytIsConnected()){ setConnected(false); return; }
+    if(!ytIsConnected()){ setConnected(false); if(!silent) toast("Conecta tu cuenta de Google primero"); return; }
     if(!silent) setLoading(true);
     try {
       const s = await ytGetChannelStats();
@@ -2490,9 +2521,13 @@ function ChannelHeroCard({ subHistory, onRecordSubs, onConnect, toast }) {
         });
         setConnected(true);
         if(s.subscribers!=null && onRecordSubs) onRecordSubs(s.subscribers);
+        if(!silent) toast("Datos actualizados");
+      } else if(!silent){
+        toast("No se pudo leer el canal");
       }
     } catch(e){
-      if(/caducada/i.test(e.message)){ setConnected(false); }
+      if(/caducada/i.test(e.message)){ setConnected(false); if(!silent) toast("Sesión de Google caducada · vuelve a conectar"); }
+      else if(!silent){ toast("❌ "+e.message); }
     } finally { if(!silent) setLoading(false); }
   };
 
@@ -2650,13 +2685,20 @@ function SubGrowthChart({ history }) {
 /* ============================ AGENTE (IA / Gemini) ============================ */
 function AgentView({ promptTemplates, setPromptTemplates, toast }) {
   const [aiKey, setAiKey] = useState(geminiGetKey());
+  const [aiModel, setAiModel] = useState(geminiGetModel() || "gemini-flash-latest");
+  const [aiSystem, setAiSystem] = useState(geminiGetSystem());
   const [editing, setEditing] = useState(null);
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [testing, setTesting] = useState(false);
   const [testOut, setTestOut] = useState("");
 
-  const saveKey = () => { geminiSaveKey(aiKey.trim()); toast(aiKey.trim()?"Clave de Gemini guardada":"Clave borrada"); };
+  const saveKey = () => {
+    geminiSaveKey(aiKey.trim());
+    geminiSaveModel(aiModel);
+    geminiSaveSystem(aiSystem);
+    toast(aiKey.trim()?"Configuración de IA guardada":"Clave borrada");
+  };
   const startNew = () => { setEditing("new"); setName(""); setPrompt(""); setTestOut(""); };
   const startEdit = (t) => { setEditing(t.id); setName(t.name); setPrompt(t.prompt); setTestOut(""); };
   const cancel = () => { setEditing(null); setName(""); setPrompt(""); setTestOut(""); };
@@ -2700,11 +2742,35 @@ function AgentView({ promptTemplates, setPromptTemplates, toast }) {
         <div style={{fontSize:12,color:"var(--text-3)",marginBottom:12,lineHeight:1.5}}>
           Consigue tu clave gratuita en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style={{color:"var(--gold)"}}>aistudio.google.com/apikey</a> (sin tarjeta). Se guarda solo en este dispositivo.
         </div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
           <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)} placeholder="AIza…" style={{...inputStyle,flex:1,minWidth:200}}/>
-          <button onClick={saveKey} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 18px",borderRadius:10}}>Guardar clave</button>
         </div>
-        <div style={{fontSize:11,color:geminiHasKey()?"var(--green)":"var(--text-3)",marginTop:8}}>
+
+        <Field label="Modelo de Gemini">
+          <select value={aiModel} onChange={e=>setAiModel(e.target.value)} style={inputStyle}>
+            <option value="gemini-flash-latest">Flash (recomendado · siempre el más reciente)</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (más rápido)</option>
+          </select>
+        </Field>
+        <div style={{fontSize:11,color:"var(--text-3)",marginTop:6,marginBottom:12}}>
+          Si un modelo te da error, la app prueba otros automáticamente. «Flash (más reciente)» es el más compatible.
+        </div>
+
+        <Field label="Instrucciones del agente (tu «Gem»)">
+          <textarea value={aiSystem} onChange={e=>setAiSystem(e.target.value)} rows={4}
+            placeholder={"Pega aquí las instrucciones de tu Gem: cómo quieres que escriba, tono, estructura, reglas fijas…\n\nEjemplo: Eres el gestor del canal RDeRandom. Escribe descripciones en español, cercanas, con emojis moderados y siempre 5 hashtags al final."}
+            style={{...inputStyle,resize:"vertical",lineHeight:1.55,fontSize:12.5}}/>
+        </Field>
+        <div style={{fontSize:11,color:"var(--text-3)",marginTop:6,lineHeight:1.5}}>
+          Estas instrucciones se aplican a todas las generaciones (como las «instrucciones» de un Gem).
+        </div>
+
+        <div style={{display:"flex",gap:8,marginTop:14}}>
+          <button onClick={saveKey} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 18px",borderRadius:10}}>Guardar configuración</button>
+        </div>
+        <div style={{fontSize:11,color:geminiHasKey()?"var(--green)":"var(--text-3)",marginTop:10}}>
           {geminiHasKey()?"✅ Clave configurada · la IA está lista":"Sin clave · configúrala para usar la generación"}
         </div>
       </div>
@@ -3441,31 +3507,74 @@ const YT_SCOPES = [
 /* ============================ GEMINI (IA gratuita, opcional) ============================ */
 // La clave la genera el usuario gratis en https://aistudio.google.com/apikey y se guarda local.
 const GEMINI_KEY_STORE = "rds_gemini_key";
-const GEMINI_MODEL = "gemini-2.5-flash"; // modelo gratuito
+const GEMINI_MODEL_STORE = "rds_gemini_model"; // modelo que el usuario prefiere / que funcionó
+const GEMINI_SYSTEM_STORE = "rds_gemini_system"; // instrucciones de sistema (tipo "Gem")
+// Modelos gratuitos a probar, del mejor al más compatible. gemini-flash-latest es un alias
+// estable que apunta siempre al Flash vigente (evita errores 404 por nombres caducados).
+const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite"];
+
 function geminiGetKey(){ try { return localStorage.getItem(GEMINI_KEY_STORE) || ""; } catch(e){ return ""; } }
 function geminiSaveKey(k){ try { localStorage.setItem(GEMINI_KEY_STORE, k||""); } catch(e){} }
 function geminiHasKey(){ return !!geminiGetKey(); }
+function geminiGetModel(){ try { return localStorage.getItem(GEMINI_MODEL_STORE) || ""; } catch(e){ return ""; } }
+function geminiSaveModel(m){ try { if(m) localStorage.setItem(GEMINI_MODEL_STORE, m); } catch(e){} }
+function geminiGetSystem(){ try { return localStorage.getItem(GEMINI_SYSTEM_STORE) || ""; } catch(e){ return ""; } }
+function geminiSaveSystem(s){ try { localStorage.setItem(GEMINI_SYSTEM_STORE, s||""); } catch(e){} }
 
-// Genera texto con Gemini. Devuelve el texto o lanza un error legible.
-async function geminiGenerate(prompt){
+// Llama a un modelo concreto de Gemini. Devuelve {ok, text, status, error}.
+async function geminiCall(model, prompt, system){
   const key = geminiGetKey();
-  if(!key) throw new Error("Falta la clave de Gemini");
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent?key=" + encodeURIComponent(key);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.9, maxOutputTokens: 800 }
-    })
-  });
-  const data = await res.json().catch(()=>({}));
-  if(res.status===400 && /API key/i.test(JSON.stringify(data))) throw new Error("Clave de Gemini no válida");
-  if(res.status===429) throw new Error("Límite de Gemini alcanzado, prueba en un minuto");
-  if(!res.ok) throw new Error(data?.error?.message || "Error de Gemini ("+res.status+")");
-  const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join("") || "";
-  if(!text) throw new Error("Gemini no devolvió texto");
-  return text.trim();
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.9, maxOutputTokens: 1200 }
+  };
+  // Instrucciones de sistema (equivalente a las "instrucciones" de un Gem)
+  if(system && system.trim()) body.systemInstruction = { parts: [{ text: system.trim() }] };
+  let res, data;
+  try {
+    res = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    data = await res.json().catch(()=>({}));
+  } catch(e){
+    return { ok:false, status:0, error:"No hay conexión con Gemini" };
+  }
+  if(res.ok){
+    const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join("") || "";
+    // Si la respuesta se cortó por seguridad u otro motivo sin texto
+    if(!text){
+      const reason = data?.candidates?.[0]?.finishReason;
+      return { ok:false, status:res.status, error: reason ? ("Gemini no generó texto ("+reason+")") : "Gemini no devolvió texto" };
+    }
+    return { ok:true, text: text.trim() };
+  }
+  const msg = data?.error?.message || "";
+  return { ok:false, status:res.status, error: msg || ("Error "+res.status), notFound: res.status===404 };
+}
+
+// Genera texto probando modelos hasta que uno funcione. Recuerda el que funcionó.
+async function geminiGenerate(prompt, systemOverride){
+  const key = geminiGetKey();
+  if(!key) throw new Error("Falta la clave de Gemini. Configúrala en el apartado Agente.");
+  const system = (systemOverride!=null ? systemOverride : geminiGetSystem());
+
+  // Orden de modelos a probar: primero el guardado por el usuario, luego la lista por defecto
+  const preferred = geminiGetModel();
+  const models = [preferred, ...GEMINI_MODELS].filter((m,i,arr)=> m && arr.indexOf(m)===i);
+
+  let lastErr = "No se pudo generar";
+  for(const model of models){
+    const r = await geminiCall(model, prompt, system);
+    if(r.ok){ geminiSaveModel(model); return r.text; }
+    // Errores que no se arreglan cambiando de modelo → cortar de inmediato
+    if(r.status===400 && /API key|API_KEY|invalid/i.test(r.error)) throw new Error("La clave de Gemini no es válida. Revísala en el apartado Agente.");
+    if(r.status===429) throw new Error("Límite de Gemini alcanzado. Espera un minuto e inténtalo de nuevo.");
+    if(r.status===403) throw new Error("Gemini rechazó la clave (403). Comprueba que la API «Generative Language» está habilitada para tu clave.");
+    lastErr = r.error || lastErr;
+    // Si es 404 (modelo no disponible en tu región/cuenta), probamos el siguiente modelo
+    if(r.notFound) continue;
+    // Otros errores 5xx: probamos el siguiente también
+  }
+  throw new Error(lastErr + " · prueba a elegir otro modelo en el apartado Agente.");
 }
 
 // Lee/guarda los tokens de Google en localStorage
@@ -3621,9 +3730,18 @@ async function ytListPlaylists(){
 }
 
 // Lee estadísticas del canal del usuario (suscriptores, vídeos, visitas)
-async function ytGetChannelStats(){  const res = await fetch("https://www.googleapis.com/youtube/v3/channels?" + new URLSearchParams({
+async function ytGetChannelStats(){
+  // Asegurar token válido (renovación silenciosa si hace falta)
+  await ytEnsureToken();
+  const doFetch = () => fetch("https://www.googleapis.com/youtube/v3/channels?" + new URLSearchParams({
     part: "statistics,snippet", mine: "true"
   }), { headers: ytAuthHeader() });
+  let res = await doFetch();
+  // Si el token caducó justo ahora, intentar renovar una vez y reintentar
+  if(res.status===401){
+    const ok = await ytSilentRefresh();
+    if(ok) res = await doFetch();
+  }
   if(res.status===401){ ytClearTokens(); throw new Error("Sesión de Google caducada"); }
   if(!res.ok) throw new Error("Error al leer el canal ("+res.status+")");
   const data = await res.json();
