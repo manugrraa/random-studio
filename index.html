@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "1.3.3";
+const APP_VERSION = "1.3.4";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -2727,7 +2727,7 @@ function SubGrowthChart({ history }) {
 /* ============================ AGENTE (IA / Gemini) ============================ */
 function AgentView({ promptTemplates, setPromptTemplates, toast }) {
   const [aiKey, setAiKey] = useState(geminiGetKey());
-  const [aiModel, setAiModel] = useState(geminiGetModel() || "gemini-flash-latest");
+  const [aiModel, setAiModel] = useState(geminiGetModel() || "gemini-2.5-flash");
   const [aiSystem, setAiSystem] = useState(geminiGetSystem());
   const [editing, setEditing] = useState(null);
   const [name, setName] = useState("");
@@ -2790,14 +2790,12 @@ function AgentView({ promptTemplates, setPromptTemplates, toast }) {
 
         <Field label="Modelo de Gemini">
           <select value={aiModel} onChange={e=>setAiModel(e.target.value)} style={inputStyle}>
-            <option value="gemini-flash-latest">Flash (recomendado · siempre el más reciente)</option>
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (recomendado)</option>
             <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (más rápido)</option>
           </select>
         </Field>
         <div style={{fontSize:11,color:"var(--text-3)",marginTop:6,marginBottom:12}}>
-          Si un modelo te da error, la app prueba otros automáticamente. «Flash (más reciente)» es el más compatible.
+          Estos son los modelos gratuitos actuales de Google. Si uno da error puntual, la app prueba el otro automáticamente. El plan gratis permite ~15 generaciones por minuto.
         </div>
 
         <Field label="Instrucciones del agente (tu «Gem»)">
@@ -3564,12 +3562,24 @@ const GEMINI_MODEL_STORE = "rds_gemini_model"; // modelo que el usuario prefiere
 const GEMINI_SYSTEM_STORE = "rds_gemini_system"; // instrucciones de sistema (tipo "Gem")
 // Modelos gratuitos a probar, del mejor al más compatible. gemini-flash-latest es un alias
 // estable que apunta siempre al Flash vigente (evita errores 404 por nombres caducados).
-const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite"];
+// Modelos gratuitos ESTABLES y vigentes (jul 2026), del mejor al de respaldo.
+// Nota: gemini-2.0-flash se discontinuó el 1-jun-2026 (daba 404) y gemini-flash-latest
+// es experimental con límites muy bajos (daba 429/503). Usamos solo los estables gratis.
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite"];
 
 function geminiGetKey(){ try { return localStorage.getItem(GEMINI_KEY_STORE) || ""; } catch(e){ return ""; } }
 function geminiSaveKey(k){ try { localStorage.setItem(GEMINI_KEY_STORE, k||""); } catch(e){} }
 function geminiHasKey(){ return !!geminiGetKey(); }
-function geminiGetModel(){ try { return localStorage.getItem(GEMINI_MODEL_STORE) || ""; } catch(e){ return ""; } }
+function geminiGetModel(){
+  try {
+    const m = localStorage.getItem(GEMINI_MODEL_STORE) || "";
+    // Ignorar modelos ya retirados o experimentales que guardaron versiones anteriores,
+    // para que no se usen como preferidos y provoquen 404/429.
+    const obsoletos = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"];
+    if(obsoletos.includes(m)){ localStorage.removeItem(GEMINI_MODEL_STORE); return ""; }
+    return m;
+  } catch(e){ return ""; }
+}
 function geminiSaveModel(m){ try { if(m) localStorage.setItem(GEMINI_MODEL_STORE, m); } catch(e){} }
 function geminiGetSystem(){ try { return localStorage.getItem(GEMINI_SYSTEM_STORE) || ""; } catch(e){ return ""; } }
 function geminiSaveSystem(s){ try { localStorage.setItem(GEMINI_SYSTEM_STORE, s||""); } catch(e){} }
@@ -3578,25 +3588,38 @@ function geminiSaveSystem(s){ try { localStorage.setItem(GEMINI_SYSTEM_STORE, s|
 async function geminiCall(model, prompt, system){
   const key = geminiGetKey();
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0.9,
-      maxOutputTokens: 2048,
-      // CLAVE: los modelos 2.5 tienen "thinking" activado por defecto y esos tokens
-      // se descuentan de maxOutputTokens, dejando la respuesta vacía. Lo desactivamos.
-      thinkingConfig: { thinkingBudget: 0 }
-    }
+  const build = (maxTok) => {
+    const b = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.9,
+        maxOutputTokens: maxTok,
+        // Los modelos 2.5 tienen "thinking" activado por defecto y esos tokens se
+        // descuentan de maxOutputTokens, dejando la respuesta vacía. Lo desactivamos.
+        thinkingConfig: { thinkingBudget: 0 }
+      }
+    };
+    if(system && system.trim()) b.systemInstruction = { parts: [{ text: system.trim() }] };
+    return b;
   };
-  // Instrucciones de sistema (equivalente a las "instrucciones" de un Gem)
-  if(system && system.trim()) body.systemInstruction = { parts: [{ text: system.trim() }] };
-  let res, data;
-  try {
-    res = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
-    data = await res.json().catch(()=>({}));
-  } catch(e){
-    return { ok:false, status:0, error:"No hay conexión con Gemini" };
+  const doPost = async (maxTok) => {
+    try {
+      const res = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(build(maxTok)) });
+      const data = await res.json().catch(()=>({}));
+      return { res, data };
+    } catch(e){ return { res:{ok:false,status:0}, data:{} }; }
+  };
+
+  let { res, data } = await doPost(2048);
+
+  // Si la respuesta salió vacía por MAX_TOKENS (thinking), reintentar UNA vez con más espacio.
+  const emptyByMaxTokens = (rr, dd) => rr.ok && !(dd?.candidates?.[0]?.content?.parts?.some(p=>p.text))
+    && dd?.candidates?.[0]?.finishReason==="MAX_TOKENS";
+  if(emptyByMaxTokens(res, data)){
+    const retry = await doPost(8192);
+    res = retry.res; data = retry.data;
   }
+
   if(res.ok){
     const cand = data?.candidates?.[0];
     const text = cand?.content?.parts?.map(p=>p.text).filter(Boolean).join("") || "";
@@ -3604,14 +3627,12 @@ async function geminiCall(model, prompt, system){
     // Respuesta vacía: distinguir la causa real
     const reason = cand?.finishReason;
     if(reason==="MAX_TOKENS"){
-      // El modelo agotó los tokens (normalmente por "thinking"). Señalamos para reintentar con más tokens.
-      return { ok:false, status:200, error:"La respuesta se quedó sin espacio", maxTokens:true };
+      return { ok:false, status:200, error:"La respuesta se quedó sin espacio. Prueba un prompt más corto." };
     }
     if(reason==="SAFETY" || reason==="PROHIBITED_CONTENT"){
       return { ok:false, status:200, error:"Gemini bloqueó la respuesta por seguridad. Reformula el prompt." };
     }
     if(!data?.candidates || data.candidates.length===0){
-      // Bloqueo a nivel de prompt
       const block = data?.promptFeedback?.blockReason;
       if(block) return { ok:false, status:200, error:"Gemini bloqueó la petición ("+block+"). Reformula el prompt." };
     }
@@ -3627,50 +3648,31 @@ async function geminiGenerate(prompt, systemOverride){
   if(!key) throw new Error("Falta la clave de Gemini. Configúrala en el apartado Agente.");
   const system = (systemOverride!=null ? systemOverride : geminiGetSystem());
 
-  // Orden de modelos a probar: primero el guardado por el usuario, luego la lista por defecto
+  // Orden de modelos: primero el que el usuario haya fijado, luego los estables por defecto.
   const preferred = geminiGetModel();
   const models = [preferred, ...GEMINI_MODELS].filter((m,i,arr)=> m && arr.indexOf(m)===i);
 
-  let lastErr = "No se pudo generar";
-  let rateLimited = false;
+  let lastErr = "No se pudo generar la descripción";
   for(const model of models){
-    let r = await geminiCall(model, prompt, system);
-    // Si se quedó sin tokens (thinking), reintentar una vez el MISMO modelo con tope alto
-    if(!r.ok && r.maxTokens){
-      r = await geminiCallBig(model, prompt, system);
-    }
+    const r = await geminiCall(model, prompt, system);
     if(r.ok){ geminiSaveModel(model); return r.text; }
-    // Clave inválida → no se arregla con otro modelo
-    if(r.status===400 && /API key|API_KEY|invalid/i.test(r.error)) throw new Error("La clave de Gemini no es válida. Revísala en el apartado Agente.");
-    if(r.status===403) throw new Error("Gemini rechazó la clave (403). Habilita la API «Generative Language» para tu clave en Google AI Studio.");
-    // 429: este modelo está limitado, pero otro modelo puede tener cuota → seguimos probando
-    if(r.status===429){ rateLimited = true; lastErr = "Límite de Gemini alcanzado en "+model; continue; }
-    lastErr = r.error || lastErr;
-    // 404 o cualquier otro → probar el siguiente modelo
-  }
-  if(rateLimited) throw new Error("Has alcanzado el límite gratuito de Gemini en todos los modelos. Espera un minuto (el plan gratis permite ~15 peticiones por minuto).");
-  throw new Error(lastErr + " · prueba a elegir otro modelo en el apartado Agente.");
-}
 
-// Reintento con presupuesto de salida grande (por si el modelo ignora thinkingBudget:0)
-async function geminiCallBig(model, prompt, system){
-  const key = geminiGetKey();
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.9, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } }
-  };
-  if(system && system.trim()) body.systemInstruction = { parts: [{ text: system.trim() }] };
-  try {
-    const res = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
-    const data = await res.json().catch(()=>({}));
-    if(res.ok){
-      const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).filter(Boolean).join("") || "";
-      if(text) return { ok:true, text: text.trim() };
-      return { ok:false, status:200, error:"Gemini no devolvió texto tras reintentar" };
-    }
-    return { ok:false, status:res.status, error: data?.error?.message || ("Error "+res.status), notFound:res.status===404 };
-  } catch(e){ return { ok:false, status:0, error:"No hay conexión con Gemini" }; }
+    // Errores DEFINITIVOS → parar de inmediato (no malgastar más peticiones ni cuota):
+    if(r.status===400 && /API key|API_KEY|invalid/i.test(r.error))
+      throw new Error("La clave de Gemini no es válida. Revísala en el apartado Agente.");
+    if(r.status===403)
+      throw new Error("Gemini rechazó la clave (403). Habilita la API «Generative Language» para tu clave en Google AI Studio.");
+    if(r.status===429)
+      // MUY IMPORTANTE: no seguimos probando otros modelos, porque cada intento consume
+      // más cuota del minuto y agrava el bloqueo. Paramos y avisamos.
+      throw new Error("Límite gratuito de Gemini alcanzado (máx. ~15 por minuto). Espera un minuto y vuelve a intentarlo.");
+    if(r.status===200 && /seguridad|bloqueó/i.test(r.error))
+      throw new Error(r.error); // bloqueo de contenido: cambiar de modelo no ayuda
+
+    // Errores recuperables (404 modelo no disponible, 5xx puntual, sin texto) → probar el siguiente
+    lastErr = r.error || lastErr;
+  }
+  throw new Error(lastErr + ". Prueba de nuevo en un momento o elige otro modelo en el apartado Agente.");
 }
 
 // Lee/guarda los tokens de Google en localStorage
@@ -4295,42 +4297,6 @@ function App() {
     setSyncStatus("online");
   };
 
-  // ——— SINCRONIZACIÓN MANUAL ———
-  // Sube los cambios locales a la nube ahora mismo (botón en modo manual)
-  const [manualSyncing, setManualSyncing] = useState(false);
-  const manualPush = async () => {
-    if(manualSyncing) return;
-    setManualSyncing(true);
-    try {
-      // Primero traemos lo remoto y lo fusionamos (para no pisar cambios de otro dispositivo),
-      // y después subimos el resultado combinado.
-      const remote = await cloudLoad(syncCode);
-      if(remote && remote.data){
-        const { merged } = computeMerge(remote.data);
-        applyMerged(merged);
-        await pushMerged(merged);
-      } else {
-        await pushLocal();
-      }
-      setPendingChanges(false);
-      toast("✅ Datos sincronizados con la nube");
-    } catch(e){
-      setSyncStatus("offline");
-      toast("❌ No se pudo sincronizar: "+(e.message||"error"));
-    } finally { setManualSyncing(false); }
-  };
-  // Baja/comprueba manualmente los cambios de la nube (botón en modo manual)
-  const manualPull = async () => {
-    if(manualSyncing) return;
-    setManualSyncing(true);
-    try {
-      await pullFromCloud(false);
-      toast("✅ Comprobado. Datos al día");
-    } catch(e){
-      toast("❌ No se pudo comprobar: "+(e.message||"error"));
-    } finally { setManualSyncing(false); }
-  };
-
   // Sube un estado ya fusionado
   const pushMerged = async (merged) => {
     setSyncStatus("saving");
@@ -4432,21 +4398,19 @@ function App() {
     const huella = fp(s);
     if(huella === lastSyncedRef.current) return; // nada pendiente
     try {
-      const token = window.__sbToken || null;
+      // Usamos SIEMPRE la apikey pública (estable). Un token de sesión puede haber caducado
+      // y provocaría un 500/error CORS al cerrar. La apikey funciona con las políticas RLS.
       fetch(SUPABASE_URL + "/rest/v1/rivals_data?on_conflict=user_id", {
         method: "POST",
         keepalive: true,
         headers: {
           "Content-Type": "application/json",
           "apikey": SUPABASE_KEY,
-          "Authorization": "Bearer " + (token || SUPABASE_KEY),
+          "Authorization": "Bearer " + SUPABASE_KEY,
           "Prefer": "resolution=merge-duplicates"
         },
         body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], savedAt: Date.now() }, updated_at: new Date().toISOString() }])
-      });
-      // Nota: no marcamos nada como sincronizado aquí a propósito. Si este envío
-      // fallara (sin red), la reconciliación volverá a subirlo; si llegó bien,
-      // reenviar lo mismo es inofensivo (upsert idéntico).
+      }).catch(()=>{}); // si falla (sin red), la reconciliación lo reintenta al volver
     } catch(e){}
   };
   const flushRef = useRef(flushNow);
@@ -4915,20 +4879,6 @@ function App() {
     const onVis = ()=>{ if(document.visibilityState==="visible") check(); };
     document.addEventListener("visibilitychange", onVis);
     return ()=>{ clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
-  },[]);
-
-  // Guardado inmediato al ocultar la pestaña o cerrar (para sincronizar rápido entre dispositivos)
-  useEffect(()=>{
-    const flushNow = () => {
-      if(syncModeRef.current === "manual") return; // en manual no subimos automáticamente
-      if(fp(stateRef.current) === lastSyncedRef.current) return; // nada pendiente
-      if(saveTimer.current) clearTimeout(saveTimer.current);
-      pushLocal().catch(()=>{});
-    };
-    const onVis = () => { if(document.visibilityState==="hidden") flushNow(); };
-    document.addEventListener("visibilitychange", onVis);
-    window.addEventListener("pagehide", flushNow);
-    return ()=>{ document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", flushNow); };
   },[]);
 
   // Al volver del login de Google (redirect con #access_token), guardar el token
