@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
-const APP_VERSION = "1.0";
+const APP_VERSION = "1.2";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -281,6 +281,7 @@ const Icons = {
   chart: <Icon d={<><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></>} size={17}/>,
   repeat: <Icon d={<><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></>} size={15}/>,
   youtube: <Icon d={<><path d="M22.54 6.42a2.78 2.78 0 00-1.95-2C18.88 4 12 4 12 4s-6.88 0-8.59.46a2.78 2.78 0 00-1.95 2A29 29 0 001 11.75a29 29 0 00.46 5.33A2.78 2.78 0 003.41 19c1.71.46 8.59.46 8.59.46s6.88 0 8.59-.46a2.78 2.78 0 001.95-2 29 29 0 00.46-5.25 29 29 0 00-.46-5.33z"/><polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02" fill="currentColor" stroke="none"/></>} size={17}/>,
+  sparkles: <Icon d={<><path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></>} size={15}/>,
   trashBig: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>}/>,
 };
 
@@ -760,6 +761,10 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
   const [copyFields, setCopyFields] = useState({ description:true, tags:true, category:true });
   const [showTagMgr, setShowTagMgr] = useState(false);
   const [newTplName, setNewTplName] = useState("");
+  // IA (Gemini)
+  const [aiKey, setAiKey] = useState(geminiGetKey());
+  const [showAiKey, setShowAiKey] = useState(false);
+  const [aiBusy, setAiBusy] = useState(null); // "desc" | "comment" | null
 
   // Buscar en Drive (usa el término editable)
   const runDriveSearch = async (term) => {
@@ -835,6 +840,36 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
     setNewTplName(""); toast("Plantilla «"+name+"» guardada");
   };
   const deleteTagTemplate = (id) => setTagTemplates(prev=>(prev||[]).filter(t=>t.id!==id));
+
+  // ——— Generación con IA (Gemini) ———
+  const saveAiKey = () => { geminiSaveKey(aiKey.trim()); toast(aiKey.trim()?"Clave de Gemini guardada":"Clave borrada"); setShowAiKey(false); };
+  const genDescription = async () => {
+    if(!geminiHasKey()){ setShowAiKey(true); toast("Añade tu clave gratuita de Gemini"); return; }
+    setAiBusy("desc");
+    try {
+      const prompt = `Eres un experto en YouTube. Escribe una descripción atractiva y optimizada para SEO en español para un vídeo de YouTube titulado "${title}".`
+        + (gameTitle?` El vídeo trata sobre el juego ${gameTitle}.`:"")
+        + (tags?` Palabras clave relacionadas: ${tags}.`:"")
+        + ` La descripción debe tener 2-3 párrafos cortos, un gancho al principio, y terminar con 3-5 hashtags relevantes. No uses markdown ni asteriscos. Devuelve solo la descripción, sin explicaciones.`;
+      const out = await geminiGenerate(prompt);
+      setDesc(out);
+      toast("Descripción generada con IA");
+    } catch(e){ toast("❌ "+e.message); if(/clave/i.test(e.message)) setShowAiKey(true); }
+    finally { setAiBusy(null); }
+  };
+  const genComment = async () => {
+    if(!geminiHasKey()){ setShowAiKey(true); toast("Añade tu clave gratuita de Gemini"); return; }
+    setAiBusy("comment");
+    try {
+      const prompt = `Eres un creador de YouTube. Escribe un comentario fijado breve, cercano y que invite a la interacción (preguntar algo o pedir opinión) en español para tu vídeo titulado "${title}".`
+        + (gameTitle?` Es un vídeo de ${gameTitle}.`:"")
+        + ` Máximo 2 frases. Puedes usar 1-2 emojis. Devuelve solo el comentario.`;
+      const out = await geminiGenerate(prompt);
+      setPinnedComment(out);
+      toast("Comentario generado con IA");
+    } catch(e){ toast("❌ "+e.message); if(/clave/i.test(e.message)) setShowAiKey(true); }
+    finally { setAiBusy(null); }
+  };
 
   const handleUpload = async () => {
     if(!selected){ toast("Selecciona un archivo de Drive"); return; }
@@ -969,9 +1004,19 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
               <input value={title} onChange={e=>setTitle(e.target.value)} style={inputStyle}/>
             </Field>
 
-            <Field label="Descripción">
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                <span style={labelStyle}>Descripción</span>
+                <button onClick={genDescription} disabled={aiBusy==="desc"} title="Generar con IA (Gemini)" style={{
+                  display:"flex",alignItems:"center",gap:6,fontSize:11.5,fontWeight:600,color:"var(--gold)",padding:"4px 10px",
+                  border:"1px solid var(--border-gold)",borderRadius:7,background:"rgba(212,175,55,0.05)",opacity:aiBusy==="desc"?0.6:1
+                }}>
+                  <span className={aiBusy==="desc"?"spinning":""} style={{display:"flex"}}>{Icons.sparkles||Icons.bolt}</span>
+                  {aiBusy==="desc"?"Generando…":"Generar con IA"}
+                </button>
+              </div>
               <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={4} style={{...inputStyle, resize:"vertical"}}/>
-            </Field>
+            </div>
 
             {/* Etiquetas + plantillas */}
             <div>
@@ -1048,9 +1093,38 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
             </Field>
 
             {/* Comentario fijado */}
-            <Field label="Comentario fijado (opcional)">
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+                <span style={labelStyle}>Comentario fijado (opcional)</span>
+                <button onClick={genComment} disabled={aiBusy==="comment"} title="Generar con IA (Gemini)" style={{
+                  display:"flex",alignItems:"center",gap:6,fontSize:11.5,fontWeight:600,color:"var(--gold)",padding:"4px 10px",
+                  border:"1px solid var(--border-gold)",borderRadius:7,background:"rgba(212,175,55,0.05)",opacity:aiBusy==="comment"?0.6:1
+                }}>
+                  <span className={aiBusy==="comment"?"spinning":""} style={{display:"flex"}}>{Icons.sparkles||Icons.bolt}</span>
+                  {aiBusy==="comment"?"Generando…":"Generar con IA"}
+                </button>
+              </div>
               <textarea value={pinnedComment} onChange={e=>setPinnedComment(e.target.value)} rows={2} placeholder="Se publicará y fijará al subir el vídeo" style={{...inputStyle, resize:"vertical"}}/>
-            </Field>
+            </div>
+
+            {/* Gestor de clave de Gemini */}
+            {showAiKey && (
+              <div className="fade-in" style={{padding:14,background:"var(--card)",borderRadius:11,border:"1px solid var(--border-gold)"}}>
+                <div style={{fontSize:12.5,fontWeight:600,color:"var(--text)",marginBottom:6}}>Clave de Gemini (IA gratuita)</div>
+                <div style={{fontSize:11.5,color:"var(--text-3)",marginBottom:10,lineHeight:1.5}}>
+                  Consíguela gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style={{color:"var(--gold)"}}>aistudio.google.com/apikey</a> (sin tarjeta). Se guarda solo en este dispositivo.
+                </div>
+                <div style={{display:"flex",gap:7}}>
+                  <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)} placeholder="AIza…" style={{...inputStyle,flex:1,fontSize:12.5,padding:"8px 10px"}}/>
+                  <button onClick={saveAiKey} className="grad-gold" style={{flexShrink:0,color:"#000",fontWeight:700,fontSize:12.5,padding:"8px 14px",borderRadius:8}}>Guardar</button>
+                </div>
+              </div>
+            )}
+            {!showAiKey && (
+              <button onClick={()=>setShowAiKey(true)} style={{alignSelf:"flex-start",fontSize:11.5,color:"var(--text-3)",display:"flex",alignItems:"center",gap:5,marginTop:-6}}>
+                {Icons.sparkles||Icons.bolt} {geminiHasKey()?"Cambiar clave de IA":"Configurar IA (Gemini gratis)"}
+              </button>
+            )}
 
             {/* Visibilidad + programación */}
             <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -2244,6 +2318,124 @@ function StatCard({ label, value, sub, color, icon }) {
 }
 
 /* ============================ VÍDEOS PROGRAMADOS / SUBIDOS ============================ */
+// Dígito con animación de rodillo vertical (estilo odómetro de YouTube)
+function OdometerDigit({ digit }) {
+  const d = /[0-9]/.test(digit) ? parseInt(digit,10) : null;
+  if(d===null) return <span style={{display:"inline-block"}}>{digit}</span>;
+  return (
+    <span style={{display:"inline-block",height:"1em",overflow:"hidden",verticalAlign:"top"}}>
+      <span style={{display:"flex",flexDirection:"column",transform:`translateY(-${d}em)`,transition:"transform .8s cubic-bezier(0.22,1,0.36,1)"}}>
+        {[0,1,2,3,4,5,6,7,8,9].map(n=><span key={n} style={{height:"1em",lineHeight:"1em"}}>{n}</span>)}
+      </span>
+    </span>
+  );
+}
+
+// Contador con animación por dígitos; formatea con separador de miles
+function SubscriberCounter({ value, prev }) {
+  const str = (value==null?0:value).toLocaleString("es-ES"); // "1.234"
+  return (
+    <span style={{display:"inline-flex",fontVariantNumeric:"tabular-nums",letterSpacing:"-0.01em"}}>
+      {str.split("").map((ch,i)=><OdometerDigit key={str.length-i} digit={ch}/>)}
+    </span>
+  );
+}
+
+// Tarjeta grande del canal con contador de suscriptores en vivo
+function ChannelHeroCard({ toast }) {
+  const [stats, setStats] = useState(null);
+  const [prevSubs, setPrevSubs] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [connected, setConnected] = useState(ytIsConnected());
+  const pollRef = useRef(null);
+
+  const load = async (silent) => {
+    if(!ytIsConnected()){ setConnected(false); return; }
+    if(!silent) setLoading(true);
+    try {
+      const s = await ytGetChannelStats();
+      if(s){
+        setStats(prev=>{
+          if(prev && prev.subscribers!==s.subscribers) setPrevSubs(prev.subscribers);
+          return s;
+        });
+        setConnected(true);
+      }
+    } catch(e){
+      if(/caducada/i.test(e.message)){ setConnected(false); }
+    } finally { if(!silent) setLoading(false); }
+  };
+
+  useEffect(()=>{
+    if(!connected) return;
+    load(false);
+    // Refrescar solo mientras la pestaña está visible (ahorra cuota y batería)
+    const startPoll = () => {
+      if(pollRef.current) return;
+      pollRef.current = setInterval(()=>{ if(document.visibilityState==="visible") load(true); }, 60000);
+    };
+    const stopPoll = () => { if(pollRef.current){ clearInterval(pollRef.current); pollRef.current=null; } };
+    startPoll();
+    const onVis = () => { if(document.visibilityState==="visible"){ load(true); startPoll(); } else stopPoll(); };
+    document.addEventListener("visibilitychange", onVis);
+    return ()=>{ stopPoll(); document.removeEventListener("visibilitychange", onVis); };
+  },[connected]);
+
+  if(!connected){
+    return (
+      <div style={{background:"linear-gradient(135deg,rgba(255,0,0,0.08),var(--bg-2))",border:"1px solid var(--border)",borderRadius:16,padding:"22px 24px",marginBottom:20,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+        <div style={{color:"#FF0000",display:"flex"}}>{Icons.youtube}</div>
+        <div style={{flex:1,minWidth:180}}>
+          <div style={{fontSize:14,fontWeight:600,color:"var(--text)"}}>Conecta tu canal de YouTube</div>
+          <div style={{fontSize:12.5,color:"var(--text-3)",marginTop:2}}>Verás tus suscriptores en vivo al conectar con Google desde cualquier vídeo.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const delta = (stats && prevSubs!=null) ? stats.subscribers - prevSubs : 0;
+
+  return (
+    <div style={{background:"linear-gradient(135deg,rgba(255,0,0,0.09),rgba(212,175,55,0.05),var(--bg-2))",border:"1px solid var(--border)",borderRadius:18,padding:"24px 26px",marginBottom:22,position:"relative",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+        {stats?.thumb && <img src={stats.thumb} alt="" style={{width:52,height:52,borderRadius:"50%",border:"2px solid var(--border-gold)"}}/>}
+        <div style={{flex:1,minWidth:200}}>
+          <div style={{fontSize:12.5,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".06em",fontWeight:600,marginBottom:4,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{color:"#FF0000",display:"flex",width:16,height:16}}>{Icons.youtube}</span>
+            {stats?.title || "Tu canal"}
+          </div>
+          <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap"}}>
+            <div style={{fontSize:"clamp(38px, 9vw, 64px)",fontWeight:800,fontFamily:"'Sora'",lineHeight:1,color:"var(--text)"}}>
+              {stats && stats.subscribers!=null ? <SubscriberCounter value={stats.subscribers} prev={prevSubs}/> : "—"}
+            </div>
+            {delta!==0 && (
+              <span className="fade-in" style={{fontSize:15,fontWeight:700,color:delta>0?"var(--green)":"var(--red)",display:"inline-flex",alignItems:"center",gap:3}}>
+                {delta>0?"▲":"▼"} {Math.abs(delta).toLocaleString("es-ES")}
+              </span>
+            )}
+          </div>
+          <div style={{fontSize:13,color:"var(--text-2)",marginTop:4,fontWeight:500}}>
+            {stats?.subscribers==null ? "Suscriptores ocultos" : "suscriptores"}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:22,flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:22,fontWeight:700,fontFamily:"'Sora'",color:"var(--text)"}}>{stats?.videos?.toLocaleString("es-ES")||"—"}</div>
+            <div style={{fontSize:10.5,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".04em"}}>Vídeos</div>
+          </div>
+          <div>
+            <div style={{fontSize:22,fontWeight:700,fontFamily:"'Sora'",color:"var(--text)"}}>{stats?.views?.toLocaleString("es-ES")||"—"}</div>
+            <div style={{fontSize:10.5,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".04em"}}>Visitas</div>
+          </div>
+          <button onClick={()=>load(false)} disabled={loading} title="Actualizar ahora" style={{alignSelf:"center",color:"var(--text-3)",display:"flex",padding:8,borderRadius:9,border:"1px solid var(--border)"}}>
+            <span className={loading?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScheduledView({ videos, onOpen, onUpdateVideo, formats, toast }) {
   const [checking, setChecking] = useState(false);
   const [statusMap, setStatusMap] = useState({}); // videoId -> {exists, privacyStatus, publishAt}
@@ -2316,6 +2508,7 @@ function ScheduledView({ videos, onOpen, onUpdateVideo, formats, toast }) {
 
   return (
     <div className="fade-in">
+      <ChannelHeroCard toast={toast}/>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
         <div>
           <h2 style={{fontSize:20,fontWeight:700}}>Vídeos en YouTube</h2>
@@ -2901,6 +3094,36 @@ const YT_SCOPES = [
   "https://www.googleapis.com/auth/drive.readonly"
 ].join(" ");
 
+/* ============================ GEMINI (IA gratuita, opcional) ============================ */
+// La clave la genera el usuario gratis en https://aistudio.google.com/apikey y se guarda local.
+const GEMINI_KEY_STORE = "rds_gemini_key";
+const GEMINI_MODEL = "gemini-2.5-flash"; // modelo gratuito
+function geminiGetKey(){ try { return localStorage.getItem(GEMINI_KEY_STORE) || ""; } catch(e){ return ""; } }
+function geminiSaveKey(k){ try { localStorage.setItem(GEMINI_KEY_STORE, k||""); } catch(e){} }
+function geminiHasKey(){ return !!geminiGetKey(); }
+
+// Genera texto con Gemini. Devuelve el texto o lanza un error legible.
+async function geminiGenerate(prompt){
+  const key = geminiGetKey();
+  if(!key) throw new Error("Falta la clave de Gemini");
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + GEMINI_MODEL + ":generateContent?key=" + encodeURIComponent(key);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.9, maxOutputTokens: 800 }
+    })
+  });
+  const data = await res.json().catch(()=>({}));
+  if(res.status===400 && /API key/i.test(JSON.stringify(data))) throw new Error("Clave de Gemini no válida");
+  if(res.status===429) throw new Error("Límite de Gemini alcanzado, prueba en un minuto");
+  if(!res.ok) throw new Error(data?.error?.message || "Error de Gemini ("+res.status+")");
+  const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join("") || "";
+  if(!text) throw new Error("Gemini no devolvió texto");
+  return text.trim();
+}
+
 // Lee/guarda los tokens de Google en localStorage
 function ytGetTokens(){
   try { return JSON.parse(localStorage.getItem(YT_TOKEN_KEY) || "null"); } catch(e){ return null; }
@@ -2999,6 +3222,25 @@ async function ytListPlaylists(){
   if(!res.ok) throw new Error("Error al leer playlists ("+res.status+")");
   const data = await res.json();
   return (data.items||[]).map(p=>({ id:p.id, title:p.snippet?.title||"(sin título)" }));
+}
+
+// Lee estadísticas del canal del usuario (suscriptores, vídeos, visitas)
+async function ytGetChannelStats(){  const res = await fetch("https://www.googleapis.com/youtube/v3/channels?" + new URLSearchParams({
+    part: "statistics,snippet", mine: "true"
+  }), { headers: ytAuthHeader() });
+  if(res.status===401){ ytClearTokens(); throw new Error("Sesión de Google caducada"); }
+  if(!res.ok) throw new Error("Error al leer el canal ("+res.status+")");
+  const data = await res.json();
+  const ch = data.items?.[0];
+  if(!ch) return null;
+  const st = ch.statistics || {};
+  return {
+    title: ch.snippet?.title || "",
+    thumb: ch.snippet?.thumbnails?.default?.url || null,
+    subscribers: st.hiddenSubscriberCount ? null : parseInt(st.subscriberCount||"0",10),
+    videos: parseInt(st.videoCount||"0",10),
+    views: parseInt(st.viewCount||"0",10)
+  };
 }
 
 // Lista los vídeos subidos del canal (para copiar datos de uno ya existente)
@@ -3576,17 +3818,38 @@ function App() {
     return ()=>{ try { if(channel) getClient()?.removeChannel(channel); } catch(e){} };
   },[syncCode, rtKey]);
 
-  // Sondeo adaptativo: si Realtime funciona, cada 20s basta; si no, cada 8s para compensar.
+  // Sondeo adaptativo que SOLO corre con la pestaña visible.
+  // Si la app está oculta (otra app, pantalla bloqueada, pestaña en segundo plano),
+  // no hace ninguna petición: cero carga en el servidor y cero gasto de batería.
   useEffect(()=>{
-    let stop = false;
-    const tick = async () => {
-      if(stop) return;
-      if(document.visibilityState !== "hidden"){ try { await pullRef.current(true); } catch(e){} }
+    let timer = null;
+    let stopped = false;
+    const schedule = () => {
+      if(stopped) return;
       const delay = rtOkRef.current ? 20000 : 8000;
-      if(!stop) setTimeout(tick, delay);
+      timer = setTimeout(run, delay);
     };
-    const t = setTimeout(tick, 8000);
-    return ()=>{ stop = true; clearTimeout(t); };
+    const run = async () => {
+      if(stopped) return;
+      if(document.visibilityState === "visible"){
+        try { await pullRef.current(true); } catch(e){}
+        schedule();
+      }
+      // Si no está visible, no reprogramamos; se reanudará al volver a la app.
+    };
+    const onVis = () => {
+      if(document.visibilityState === "visible"){
+        // Al volver: traer cambios enseguida y reanudar el sondeo
+        pullRef.current(true).catch(()=>{});
+        if(!timer) schedule();
+      } else {
+        // Al ocultar: cancelar cualquier sondeo pendiente
+        if(timer){ clearTimeout(timer); timer = null; }
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    if(document.visibilityState === "visible") schedule();
+    return ()=>{ stopped = true; if(timer) clearTimeout(timer); document.removeEventListener("visibilitychange", onVis); };
   },[]);
 
   // Vincular este dispositivo a otro código de sincronización
