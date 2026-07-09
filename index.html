@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo } = React;
 
-const APP_VERSION = "1.2";
+const APP_VERSION = "1.3";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -535,12 +535,33 @@ function CopyMini({ text, what }) {
   );
 }
 
-function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube, formats}) {
+function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube, promptTemplates, toast, formats}) {
   const [draft, setDraft] = useState(clone(v));
   const [notesBig, setNotesBig] = useState(false);
-  useEffect(()=>{ setDraft(clone(v)); setNotesBig(false); },[v]);
+  const [selectedPrompt, setSelectedPrompt] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  useEffect(()=>{ setDraft(clone(v)); setNotesBig(false); setSelectedPrompt(""); },[v]);
   const f = formats[draft.format] || { color:"#6B6B6B" };
   const set = (k,val)=>setDraft(d=>({...d,[k]:val}));
+
+  // Generar la descripción con IA usando la plantilla de prompt elegida
+  const genDesc = async () => {
+    if(!geminiHasKey()){ onSave(draft); toast && toast("Configura la IA en el apartado Agente"); return; }
+    const tpl = (promptTemplates||[]).find(t=>t.id===selectedPrompt);
+    if(!tpl){ toast && toast("Elige una plantilla de prompt"); return; }
+    setAiBusy(true);
+    try {
+      const tagsStr = "";
+      const finalPrompt = tpl.prompt
+        .replace(/\{titulo\}/gi, draft.title||"")
+        .replace(/\{juego\}/gi, draft.game||"")
+        .replace(/\{etiquetas\}/gi, tagsStr);
+      const out = await geminiGenerate(finalPrompt);
+      set("description", out);
+      toast && toast("Descripción generada con IA");
+    } catch(e){ toast && toast("❌ "+e.message); }
+    finally { setAiBusy(false); }
+  };
   const toggleCheck = id => setDraft(d=>({...d, checklist: d.checklist.map(c=>c.id===id?{...c,done:!c.done}:c)}));
   const done = draft.checklist.filter(c=>c.done).length;
   const pct = Math.round(done/draft.checklist.length*100);
@@ -657,6 +678,19 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
                 {notesBig?Icons.collapse:Icons.expand}{notesBig?"Reducir":"Ampliar"}
               </button>
               </div>
+            </div>
+            <div style={{display:"flex",gap:7,marginBottom:9,flexWrap:"wrap",alignItems:"center"}}>
+              <select value={selectedPrompt} onChange={e=>setSelectedPrompt(e.target.value)} style={{...inputStyle,flex:1,minWidth:160,padding:"8px 10px",fontSize:12.5}}>
+                <option value="">{(promptTemplates||[]).length?"Elige una plantilla de prompt…":"Sin plantillas (créalas en Agente)"}</option>
+                {(promptTemplates||[]).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <button onClick={genDesc} disabled={aiBusy || !selectedPrompt} title="Generar descripción con IA" style={{
+                display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:700,color:"#000",padding:"9px 14px",borderRadius:9,
+                background:"linear-gradient(135deg,var(--gold),#e8c860)",opacity:(aiBusy||!selectedPrompt)?0.55:1,flexShrink:0
+              }}>
+                <span className={aiBusy?"spinning":""} style={{display:"flex"}}>{aiBusy?Icons.refresh:Icons.sparkles}</span>
+                {aiBusy?"Generando…":"Generar descripción"}
+              </button>
             </div>
             <textarea value={draft.description||""} onChange={e=>set("description",e.target.value)}
               onFocus={e=>{ if(!notesBig && (draft.description||"").length>40) setNotesBig(true); }}
@@ -900,6 +934,7 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
         youtubeId: result.videoId,
         youtubeStatus: scheduledAt ? "scheduled" : "uploaded",
         youtubeUrl: result.youtubeUrl || ("https://youtu.be/"+result.videoId),
+        status: scheduledAt ? "programado" : (visibility==="public" ? "publicado" : "programado"),
         description: desc,
         pinnedComment: pinnedComment
       });
@@ -916,7 +951,7 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
   const panel = { background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:16,width:"100%",maxWidth:560,padding:22 };
 
   return (
-    <div style={overlay} onClick={onClose}>
+    <div style={overlay}>
       <div className="yt-modal-panel" style={panel} onClick={e=>e.stopPropagation()}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
           <span style={{color:"#FF0000",display:"flex"}}>{Icons.youtube}</span>
@@ -1216,7 +1251,7 @@ function FormatsModal({formats, setFormats, videos, onClose, toast, askConfirm})
   },[]);
 
   return (
-    <div onClick={onClose} className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"7vh 16px",overflowY:"auto",backdropFilter:"blur(3px)"}}>
+    <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"7vh 16px",overflowY:"auto",backdropFilter:"blur(3px)"}}>
       <div onClick={e=>e.stopPropagation()} className="pop" style={{background:"var(--bg-2)",border:"1px solid var(--border-gold)",borderRadius:18,width:"100%",maxWidth:520,boxShadow:"0 20px 70px rgba(0,0,0,0.7)"}}>
         <div style={{padding:"18px 22px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -1301,7 +1336,7 @@ function FormatsModal({formats, setFormats, videos, onClose, toast, askConfirm})
 }
 
 /* ============================ CALENDARIO ============================ */
-function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffset, setWeekOffset, onQuickAdd, onUnassign, formats}) {
+function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffset, setWeekOffset, calView, setCalView, onQuickAdd, onUnassign, formats}) {
   const [dragDay, setDragDay] = useState(null);
   const [dragUnassign, setDragUnassign] = useState(false);
   const base = new Date();
@@ -1310,82 +1345,175 @@ function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffse
   const isoOf = d => iso(d.getFullYear(), d.getMonth(), d.getDate());
   const todayIso = isoOf(new Date());
 
+  // Ordena los vídeos de un día por hora de subida (más temprano primero)
+  const timeSort = (a,b) => (a.time||"99:99").localeCompare(b.time||"99:99");
+
   const byDate = useMemo(()=>{
-    const m={}; videos.forEach(v=>{ if(v.date){ (m[v.date]=m[v.date]||[]).push(v); } }); return m;
+    const m={}; videos.forEach(v=>{ if(v.date){ (m[v.date]=m[v.date]||[]).push(v); } });
+    Object.keys(m).forEach(k=>m[k].sort(timeSort));
+    return m;
   },[videos]);
   const unassigned = useMemo(()=>{
-    const labelOf = v => (formats[v.format]?.label || "\uffff"); // los sin formato válido van al final
+    const labelOf = v => (formats[v.format]?.label || "\uffff");
     return videos.filter(v=>!v.date).sort((a,b)=>{
       const c = labelOf(a).localeCompare(labelOf(b), "es", {sensitivity:"base"});
       return c !== 0 ? c : a.title.localeCompare(b.title, "es", {sensitivity:"base"});
     });
   },[videos, formats]);
 
-  const monthLabel = weekDates[0].toLocaleDateString("es-ES",{month:"long",year:"numeric"});
   const weekCount = weekDates.reduce((acc,d)=>acc+(byDate[isoOf(d)]||[]).length,0);
+
+  let headerLabel;
+  if(calView==="month"){
+    const md = new Date(); md.setMonth(md.getMonth()+weekOffset); md.setDate(1);
+    headerLabel = md.toLocaleDateString("es-ES",{month:"long",year:"numeric"});
+  } else if(calView==="day"){
+    const dd = new Date(); dd.setDate(dd.getDate()+weekOffset);
+    headerLabel = dd.toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"});
+  } else {
+    headerLabel = weekDates[0].toLocaleDateString("es-ES",{month:"long",year:"numeric"});
+  }
+  const stepLabel = calView==="month" ? "mes" : calView==="day" ? "día" : "semana";
+
+  const DayCell = ({d, big, minH}) => {
+    const di = isoOf(d);
+    const dayKey = DAYS[(d.getDay()+6)%7];
+    const items = byDate[di]||[];
+    const isToday = di===todayIso;
+    const otherMonth = big && d._otherMonth;
+    return (
+      <div
+        data-drop="date" data-dropval={di}
+        onDragOver={e=>{e.preventDefault(); setDragDay(di);}}
+        onDragLeave={()=>setDragDay(null)}
+        onDrop={e=>{e.preventDefault(); onDrop(di); setDragDay(null);}}
+        className={dragDay===di?"drag-over":""}
+        style={{
+          background: otherMonth?"var(--bg)":"var(--bg-2)", border:`1px solid ${isToday?"var(--border-gold)":"var(--border)"}`, borderRadius:11,
+          minHeight:minH, padding:7, display:"flex", flexDirection:"column", transition:"all .15s", opacity: otherMonth?0.55:1,
+          ...(isToday?{boxShadow:"0 0 0 1px rgba(212,175,55,0.15)"}:{})
+        }}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 3px 6px"}}>
+          <div>
+            {big
+              ? <div style={{fontSize:13,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div>
+              : <><div style={{fontSize:10.5,color: isToday?"var(--gold)":"var(--text-3)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>{dayKey}</div>
+                  <div style={{fontSize:16,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div></>}
+          </div>
+          <button onClick={()=>onQuickAdd(di)} title="Añadir vídeo este día" style={{
+            width:20,height:20,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",
+            color:"var(--text-3)", border:"1px solid var(--border)", transition:"all .15s"
+          }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
+             onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
+            {Icons.plus}
+          </button>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:6,flex:1,overflow:"hidden"}}>
+          {items.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
+          {items.length===0 && !big && (
+            <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--empty)",fontSize:11,minHeight:60,border:"1px dashed var(--border)",borderRadius:8}}>
+              Vacío
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const monthGrid = useMemo(()=>{
+    const md = new Date(); md.setMonth(md.getMonth()+weekOffset); md.setDate(1);
+    const year=md.getFullYear(), month=md.getMonth();
+    const first = new Date(year, month, 1);
+    const start = new Date(first); start.setDate(1 - ((first.getDay()+6)%7));
+    const cells=[];
+    for(let i=0;i<42;i++){
+      const d=new Date(start); d.setDate(start.getDate()+i);
+      d._otherMonth = d.getMonth()!==month;
+      cells.push(d);
+    }
+    while(cells.length>35 && cells[cells.length-1]._otherMonth && cells[cells.length-7]._otherMonth){
+      cells.splice(cells.length-7,7);
+    }
+    return cells;
+  },[weekOffset]);
 
   return (
     <div className="fade-in" style={{padding:"4px 2px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
         <div>
-          <h2 style={{fontSize:20,fontWeight:700,textTransform:"capitalize"}}>{monthLabel}</h2>
+          <h2 style={{fontSize:20,fontWeight:700,textTransform:"capitalize"}}>{headerLabel}</h2>
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
-            <span className="hint-desktop">{weekCount} vídeo{weekCount!==1?"s":""} esta semana · arrastra para reprogramar</span>
-            <span className="hint-touch">{weekCount} vídeo{weekCount!==1?"s":""} · mantén pulsado un vídeo para moverlo</span>
+            <span className="hint-desktop">{calView==="week" && `${weekCount} vídeo${weekCount!==1?"s":""} esta semana · `}arrastra para reprogramar</span>
+            <span className="hint-touch">mantén pulsado un vídeo para moverlo</span>
           </p>
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <button onClick={()=>setWeekOffset(w=>w-1)} style={navBtn} title="Semana anterior">←</button>
-          <button onClick={()=>setWeekOffset(0)} style={{...navBtn, width:"auto", padding:"0 14px", fontSize:12.5, fontWeight:600, color: weekOffset===0?"var(--gold)":"var(--text-2)"}}>Hoy</button>
-          <button onClick={()=>setWeekOffset(w=>w+1)} style={navBtn} title="Semana siguiente">→</button>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{display:"flex",gap:3,background:"var(--card)",borderRadius:9,padding:3}}>
+            {[["month","Mes"],["week","Semana"],["day","Día"]].map(([k,label])=>(
+              <button key={k} onClick={()=>{ setCalView(k); setWeekOffset(0); }} style={{
+                fontSize:12,fontWeight:600,padding:"6px 12px",borderRadius:6,
+                background:calView===k?"var(--gold)":"transparent",color:calView===k?"#000":"var(--text-3)"
+              }}>{label}</button>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>setWeekOffset(w=>w-1)} style={navBtn} title={"Anterior "+stepLabel}>←</button>
+            <button onClick={()=>setWeekOffset(0)} style={{...navBtn, width:"auto", padding:"0 14px", fontSize:12.5, fontWeight:600, color: weekOffset===0?"var(--gold)":"var(--text-2)"}}>Hoy</button>
+            <button onClick={()=>setWeekOffset(w=>w+1)} style={navBtn} title={"Siguiente "+stepLabel}>→</button>
+          </div>
         </div>
       </div>
 
-      <div style={{display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:10}} className="cal-grid">
-        {weekDates.map((d,i)=>{
-          const di = isoOf(d);
-          const dayKey = DAYS[i];
-          const items = byDate[di]||[];
-          const isToday = di===todayIso;
-          return (
-            <div key={di}
-              data-drop="date" data-dropval={di}
-              onDragOver={e=>{e.preventDefault(); setDragDay(di);}}
-              onDragLeave={()=>setDragDay(null)}
-              onDrop={e=>{e.preventDefault(); onDrop(di); setDragDay(null);}}
-              className={dragDay===di?"drag-over":""}
-              style={{
-                background:"var(--bg-2)", border:`1px solid ${isToday?"var(--border-gold)":"var(--border)"}`, borderRadius:12,
-                minHeight:200, padding:8, display:"flex", flexDirection:"column", transition:"all .15s",
-                ...(isToday?{boxShadow:"0 0 0 1px rgba(212,175,55,0.15)"}:{})
-              }}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"3px 4px 9px"}}>
-                <div>
-                  <div style={{fontSize:10.5,color: isToday?"var(--gold)":"var(--text-3)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>{dayKey}</div>
-                  <div style={{fontSize:16,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div>
-                </div>
-                <button onClick={()=>onQuickAdd(di)} title="Añadir vídeo este día" style={{
-                  width:22,height:22,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",
-                  color:"var(--text-3)", border:"1px solid var(--border)", transition:"all .15s"
-                }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
-                   onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
-                  {Icons.plus}
-                </button>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:7,flex:1}}>
-                {items.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
-                {items.length===0 && (
-                  <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--empty)",fontSize:11,minHeight:60,border:"1px dashed var(--border)",borderRadius:8}}>
-                    Vacío
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {calView==="week" && (
+        <div style={{display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:10}} className="cal-grid">
+          {weekDates.map(d=><DayCell key={isoOf(d)} d={d} minH={200}/>)}
+        </div>
+      )}
 
-      {/* SIN ASIGNAR */}
+      {calView==="month" && (
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}} className="cal-month-head">
+            {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10.5,fontWeight:600,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".05em"}}>{d}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}} className="cal-month-grid">
+            {monthGrid.map(d=><DayCell key={d.getTime()} d={d} big minH={92}/>)}
+          </div>
+        </div>
+      )}
+
+      {calView==="day" && (()=>{
+        const dd = new Date(); dd.setDate(dd.getDate()+weekOffset);
+        const di = isoOf(dd);
+        const items = byDate[di]||[];
+        const isToday = di===todayIso;
+        return (
+          <div
+            data-drop="date" data-dropval={di}
+            onDragOver={e=>{e.preventDefault(); setDragDay(di);}}
+            onDragLeave={()=>setDragDay(null)}
+            onDrop={e=>{e.preventDefault(); onDrop(di); setDragDay(null);}}
+            className={dragDay===di?"drag-over":""}
+            style={{background:"var(--bg-2)",border:`1px solid ${isToday?"var(--border-gold)":"var(--border)"}`,borderRadius:14,padding:18,minHeight:300}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div style={{fontSize:15,fontWeight:700,color:isToday?"var(--gold)":"var(--text)"}}>
+                {items.length} vídeo{items.length!==1?"s":""} programado{items.length!==1?"s":""}
+              </div>
+              <button onClick={()=>onQuickAdd(di)} style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:9,padding:"8px 13px",background:"rgba(212,175,55,0.05)"}}>{Icons.plus} Añadir vídeo</button>
+            </div>
+            {items.length===0 ? (
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",color:"var(--empty)",fontSize:13,padding:"50px 0",border:"1px dashed var(--border)",borderRadius:10}}>
+                No hay vídeos programados este día
+              </div>
+            ) : (
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(220px, 1fr))",gap:10}}>
+                {items.map(v=><VideoCard key={v.id} v={v} onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {calView!=="day" && (
       <div
         data-drop="unassign"
         onDragOver={e=>{e.preventDefault(); setDragUnassign(true);}}
@@ -1433,6 +1561,7 @@ function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffse
           </>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -1588,7 +1717,7 @@ function SyncModal({ syncCode, status, onClose, onLink, onExport, onImport, onSy
   }[status] || { label:"—", color:"var(--text-3)" };
 
   return (
-    <div onClick={onClose} className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"7vh 16px",overflowY:"auto",backdropFilter:"blur(3px)"}}>
+    <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"7vh 16px",overflowY:"auto",backdropFilter:"blur(3px)"}}>
       <div onClick={e=>e.stopPropagation()} className="pop" style={{background:"var(--bg-2)",border:"1px solid var(--border-gold)",borderRadius:18,width:"100%",maxWidth:480,boxShadow:"0 20px 70px rgba(0,0,0,0.7)"}}>
         <div style={{padding:"18px 22px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -2342,7 +2471,7 @@ function SubscriberCounter({ value, prev }) {
 }
 
 // Tarjeta grande del canal con contador de suscriptores en vivo
-function ChannelHeroCard({ toast }) {
+function ChannelHeroCard({ subHistory, onRecordSubs, onConnect, toast }) {
   const [stats, setStats] = useState(null);
   const [prevSubs, setPrevSubs] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -2360,6 +2489,7 @@ function ChannelHeroCard({ toast }) {
           return s;
         });
         setConnected(true);
+        if(s.subscribers!=null && onRecordSubs) onRecordSubs(s.subscribers);
       }
     } catch(e){
       if(/caducada/i.test(e.message)){ setConnected(false); }
@@ -2387,8 +2517,11 @@ function ChannelHeroCard({ toast }) {
         <div style={{color:"#FF0000",display:"flex"}}>{Icons.youtube}</div>
         <div style={{flex:1,minWidth:180}}>
           <div style={{fontSize:14,fontWeight:600,color:"var(--text)"}}>Conecta tu canal de YouTube</div>
-          <div style={{fontSize:12.5,color:"var(--text-3)",marginTop:2}}>Verás tus suscriptores en vivo al conectar con Google desde cualquier vídeo.</div>
+          <div style={{fontSize:12.5,color:"var(--text-3)",marginTop:2}}>Verás tus suscriptores en vivo y podrás subir y gestionar vídeos.</div>
         </div>
+        <button onClick={onConnect} className="grad-gold" style={{display:"inline-flex",alignItems:"center",gap:8,color:"#000",fontWeight:700,fontSize:13.5,padding:"11px 18px",borderRadius:11,flexShrink:0}}>
+          {Icons.link} Conectar con Google
+        </button>
       </div>
     );
   }
@@ -2432,11 +2565,209 @@ function ChannelHeroCard({ toast }) {
           </button>
         </div>
       </div>
+      <SubGrowthChart history={subHistory}/>
     </div>
   );
 }
 
-function ScheduledView({ videos, onOpen, onUpdateVideo, formats, toast }) {
+// Gráfica de evolución de suscriptores a lo largo del tiempo
+function SubGrowthChart({ history }) {
+  const [range, setRange] = useState("all");
+  const data = useMemo(()=>{
+    let h = (history||[]).slice().sort((a,b)=>a.t-b.t);
+    if(range!=="all"){
+      const days = parseInt(range,10);
+      const cut = Date.now() - days*86400000;
+      h = h.filter(p=>p.t>=cut);
+    }
+    return h;
+  },[history, range]);
+
+  if(!history || history.length<2){
+    return (
+      <div style={{marginTop:16,paddingTop:16,borderTop:"1px solid var(--border)",fontSize:12,color:"var(--text-3)",textAlign:"center"}}>
+        La gráfica de evolución aparecerá cuando haya al menos dos lecturas de suscriptores. Vuelve dentro de un rato con la app abierta.
+      </div>
+    );
+  }
+
+  const W=640, H=120, pad=8;
+  const subs = data.map(p=>p.s);
+  const min = Math.min(...subs), max = Math.max(...subs);
+  const span = Math.max(1, max-min);
+  const t0 = data[0].t, t1 = data[data.length-1].t, tspan = Math.max(1, t1-t0);
+  const pts = data.map(p=>{
+    const x = pad + (W-2*pad) * (p.t - t0)/tspan;
+    const y = pad + (H-2*pad) * (1 - (p.s - min)/span);
+    return [x,y];
+  });
+  const path = pts.map((p,i)=>(i===0?"M":"L")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
+  const areaPath = path + ` L ${pts[pts.length-1][0].toFixed(1)} ${H-pad} L ${pts[0][0].toFixed(1)} ${H-pad} Z`;
+  const gained = subs[subs.length-1] - subs[0];
+  const fmtDay = t => new Date(t).toLocaleDateString("es-ES",{day:"numeric",month:"short"});
+
+  return (
+    <div style={{marginTop:16,paddingTop:16,borderTop:"1px solid var(--border)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:12.5,fontWeight:600,color:"var(--text-2)",display:"flex",alignItems:"center",gap:8}}>
+          Evolución de suscriptores
+          {gained!==0 && <span style={{color:gained>0?"var(--green)":"var(--red)",fontWeight:700}}>{gained>0?"+":""}{gained.toLocaleString("es-ES")}</span>}
+        </div>
+        <div style={{display:"flex",gap:4,background:"var(--card)",borderRadius:8,padding:3}}>
+          {[["7","7d"],["30","30d"],["all","Todo"]].map(([k,label])=>(
+            <button key={k} onClick={()=>setRange(k)} style={{
+              fontSize:11,fontWeight:600,padding:"4px 10px",borderRadius:6,
+              background:range===k?"var(--gold)":"transparent",color:range===k?"#000":"var(--text-3)"
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+      {data.length<2 ? (
+        <div style={{fontSize:11.5,color:"var(--text-3)",textAlign:"center",padding:"10px 0"}}>No hay datos en este rango todavía.</div>
+      ) : (
+        <>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}} preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="subgrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--gold)" stopOpacity="0.35"/>
+                <stop offset="100%" stopColor="var(--gold)" stopOpacity="0"/>
+              </linearGradient>
+            </defs>
+            <path d={areaPath} fill="url(#subgrad)"/>
+            <path d={path} fill="none" stroke="var(--gold)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+            {pts.length<=30 && pts.map((p,i)=><circle key={i} cx={p[0]} cy={p[1]} r="2.5" fill="var(--gold)"/>)}
+          </svg>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"var(--text-3)",marginTop:4}}>
+            <span>{fmtDay(t0)} · {min.toLocaleString("es-ES")}</span>
+            <span>{fmtDay(t1)} · {max.toLocaleString("es-ES")}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ============================ AGENTE (IA / Gemini) ============================ */
+function AgentView({ promptTemplates, setPromptTemplates, toast }) {
+  const [aiKey, setAiKey] = useState(geminiGetKey());
+  const [editing, setEditing] = useState(null);
+  const [name, setName] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testOut, setTestOut] = useState("");
+
+  const saveKey = () => { geminiSaveKey(aiKey.trim()); toast(aiKey.trim()?"Clave de Gemini guardada":"Clave borrada"); };
+  const startNew = () => { setEditing("new"); setName(""); setPrompt(""); setTestOut(""); };
+  const startEdit = (t) => { setEditing(t.id); setName(t.name); setPrompt(t.prompt); setTestOut(""); };
+  const cancel = () => { setEditing(null); setName(""); setPrompt(""); setTestOut(""); };
+
+  const save = () => {
+    const n = name.trim(), p = prompt.trim();
+    if(!n){ toast("Ponle un nombre a la plantilla"); return; }
+    if(!p){ toast("Escribe el prompt"); return; }
+    if(editing==="new"){
+      setPromptTemplates(prev=>[...(prev||[]), { id:"pr_"+Date.now(), name:n, prompt:p, updatedAt:Date.now() }]);
+      toast("Plantilla creada");
+    } else {
+      setPromptTemplates(prev=>(prev||[]).map(t=>t.id===editing?{...t,name:n,prompt:p,updatedAt:Date.now()}:t));
+      toast("Plantilla actualizada");
+    }
+    cancel();
+  };
+  const remove = (id) => { setPromptTemplates(prev=>(prev||[]).filter(t=>t.id!==id)); if(editing===id) cancel(); toast("Plantilla eliminada"); };
+
+  const test = async () => {
+    if(!geminiHasKey()){ toast("Configura primero la clave de Gemini"); return; }
+    if(!prompt.trim()){ toast("Escribe un prompt para probar"); return; }
+    setTesting(true); setTestOut("");
+    try {
+      const demo = prompt.replace(/\{titulo\}/gi,"Cómo conseguí la skin secreta").replace(/\{juego\}/gi,"Roblox").replace(/\{etiquetas\}/gi,"roblox, gaming, skins");
+      const out = await geminiGenerate(demo);
+      setTestOut(out);
+    } catch(e){ toast("❌ "+e.message); }
+    finally { setTesting(false); }
+  };
+
+  return (
+    <div className="fade-in">
+      <div style={{marginBottom:18}}>
+        <h2 style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:9}}><span style={{color:"var(--gold)",display:"flex"}}>{Icons.sparkles}</span> Agente de IA</h2>
+        <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Crea plantillas de prompt para generar descripciones con Gemini. Luego elígelas en cada vídeo.</p>
+      </div>
+
+      <div style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:14,padding:18,marginBottom:16}}>
+        <div style={{fontSize:13.5,fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:8}}>{Icons.sparkles} Conexión con Gemini (gratis)</div>
+        <div style={{fontSize:12,color:"var(--text-3)",marginBottom:12,lineHeight:1.5}}>
+          Consigue tu clave gratuita en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style={{color:"var(--gold)"}}>aistudio.google.com/apikey</a> (sin tarjeta). Se guarda solo en este dispositivo.
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)} placeholder="AIza…" style={{...inputStyle,flex:1,minWidth:200}}/>
+          <button onClick={saveKey} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 18px",borderRadius:10}}>Guardar clave</button>
+        </div>
+        <div style={{fontSize:11,color:geminiHasKey()?"var(--green)":"var(--text-3)",marginTop:8}}>
+          {geminiHasKey()?"✅ Clave configurada · la IA está lista":"Sin clave · configúrala para usar la generación"}
+        </div>
+      </div>
+
+      {editing ? (
+        <div className="fade-in" style={{background:"var(--bg-2)",border:"1px solid var(--border-gold)",borderRadius:14,padding:18,marginBottom:16}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:14}}>{editing==="new"?"Nueva plantilla":"Editar plantilla"}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:13}}>
+            <Field label="Nombre de la plantilla">
+              <input value={name} onChange={e=>setName(e.target.value)} placeholder="p.ej. Shorts de Roblox" style={inputStyle}/>
+            </Field>
+            <Field label="Prompt">
+              <textarea value={prompt} onChange={e=>setPrompt(e.target.value)} rows={6} style={{...inputStyle,resize:"vertical",lineHeight:1.6}}
+                placeholder={"Instrucciones para la IA. Variables: {titulo}, {juego}, {etiquetas}.\n\nEjemplo: Escribe una descripción para YouTube del vídeo \"{titulo}\" sobre {juego}. Incluye 3 hashtags."}/>
+            </Field>
+            <div style={{fontSize:11.5,color:"var(--text-3)",marginTop:-6}}>
+              Variables: <code style={{color:"var(--gold)"}}>{"{titulo}"}</code>, <code style={{color:"var(--gold)"}}>{"{juego}"}</code>, <code style={{color:"var(--gold)"}}>{"{etiquetas}"}</code>
+            </div>
+            <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
+              <button onClick={save} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13.5,padding:"10px 20px",borderRadius:10}}>Guardar plantilla</button>
+              <button onClick={test} disabled={testing} style={{display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:10,padding:"10px 16px",background:"rgba(212,175,55,0.05)"}}>
+                <span className={testing?"spinning":""} style={{display:"flex"}}>{testing?Icons.refresh:Icons.sparkles}</span>{testing?"Probando…":"Probar"}
+              </button>
+              <button onClick={cancel} style={{fontSize:13,fontWeight:600,color:"var(--text-2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 16px"}}>Cancelar</button>
+            </div>
+            {testOut && (
+              <div style={{marginTop:4,padding:14,background:"var(--card)",borderRadius:10,border:"1px solid var(--border)"}}>
+                <div style={{fontSize:11,color:"var(--text-3)",marginBottom:6,textTransform:"uppercase",letterSpacing:".04em"}}>Resultado de prueba</div>
+                <div style={{fontSize:13,color:"var(--text)",whiteSpace:"pre-wrap",lineHeight:1.6}}>{testOut}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <button onClick={startNew} style={{display:"flex",alignItems:"center",gap:8,fontSize:13.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:11,padding:"11px 18px",background:"rgba(212,175,55,0.05)",marginBottom:16}}>
+          {Icons.plus} Nueva plantilla de prompt
+        </button>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {(promptTemplates||[]).length===0 && !editing && (
+          <div style={{textAlign:"center",color:"var(--text-3)",fontSize:13,padding:"40px 20px",border:"1px dashed var(--border)",borderRadius:12}}>
+            Aún no tienes plantillas de prompt.<br/>Crea una para generar descripciones automáticamente en tus vídeos.
+          </div>
+        )}
+        {(promptTemplates||[]).map(t=>(
+          <div key={t.id} style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:12,padding:"14px 16px",display:"flex",alignItems:"flex-start",gap:14}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--text)",marginBottom:4}}>{t.name}</div>
+              <div style={{fontSize:12,color:"var(--text-3)",lineHeight:1.5,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{t.prompt}</div>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={()=>startEdit(t)} title="Editar" style={{color:"var(--text-3)",display:"flex",padding:7,borderRadius:8,border:"1px solid var(--border)"}} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>{Icons.edit}</button>
+              <button onClick={()=>remove(t.id)} title="Eliminar" style={{color:"var(--text-3)",display:"flex",padding:7,borderRadius:8,border:"1px solid var(--border)"}} onMouseEnter={e=>e.currentTarget.style.color="var(--red)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-3)"}>{Icons.trash}</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ScheduledView({ videos, onOpen, onUpdateVideo, subHistory, onRecordSubs, onConnect, formats, toast }) {
   const [checking, setChecking] = useState(false);
   const [statusMap, setStatusMap] = useState({}); // videoId -> {exists, privacyStatus, publishAt}
   const [deleting, setDeleting] = useState(null);
@@ -2459,9 +2790,14 @@ function ScheduledView({ videos, onOpen, onUpdateVideo, formats, toast }) {
         const st = map[v.youtubeId];
         if(st && st.exists===false){ onUpdateVideo(v.id, { youtubeId:null, youtubeStatus:null, youtubeUrl:null }); cleared++; }
         else if(st && st.exists){
-          // Actualizar estado: si ya es público, marcarlo como publicado
+          // youtubeStatus interno: published (público) | scheduled (programado) | uploaded (subido/privado)
           const ns = st.privacyStatus==="public" ? "published" : (st.publishAt ? "scheduled" : "uploaded");
-          if(ns!==v.youtubeStatus) onUpdateVideo(v.id, { youtubeStatus: ns });
+          // status del tablero: se mueve automáticamente a Publicado o Programado
+          const boardStatus = st.privacyStatus==="public" ? "publicado" : (st.publishAt ? "programado" : null);
+          const patch = {};
+          if(ns!==v.youtubeStatus) patch.youtubeStatus = ns;
+          if(boardStatus && boardStatus!==v.status) patch.status = boardStatus;
+          if(Object.keys(patch).length) onUpdateVideo(v.id, patch);
         }
       });
       if(cleared>0) toast(cleared+" vídeo(s) ya no estaban en YouTube · actualizado");
@@ -2508,19 +2844,27 @@ function ScheduledView({ videos, onOpen, onUpdateVideo, formats, toast }) {
 
   return (
     <div className="fade-in">
-      <ChannelHeroCard toast={toast}/>
+      <ChannelHeroCard subHistory={subHistory} onRecordSubs={onRecordSubs} onConnect={onConnect} toast={toast}/>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
         <div>
           <h2 style={{fontSize:20,fontWeight:700}}>Vídeos en YouTube</h2>
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Controla los vídeos que has subido o programado y gestiónalos sin salir de la app</p>
         </div>
-        <button onClick={refresh} disabled={checking} style={{
-          display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",
-          border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 13px",background:"rgba(212,175,55,0.05)",opacity:checking?0.6:1
-        }}>
-          <span className={checking?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
-          {checking?"Comprobando…":"Comprobar estado"}
-        </button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {!ytIsConnected() && (
+            <button onClick={onConnect} className="grad-gold" style={{
+              display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:700,color:"#000",
+              borderRadius:10,padding:"9px 14px"
+            }}>{Icons.link} Conectar Google</button>
+          )}
+          <button onClick={refresh} disabled={checking} style={{
+            display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",
+            border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 13px",background:"rgba(212,175,55,0.05)",opacity:checking?0.6:1
+          }}>
+            <span className={checking?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
+            {checking?"Comprobando…":"Comprobar estado"}
+          </button>
+        </div>
       </div>
 
       {ytVideos.length===0 ? (
@@ -3015,8 +3359,8 @@ function loadStore() {
     return data;
   } catch(e) { return null; }
 }
-function saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates) {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], tombstones: tombstones||[], dailyArchive: dailyArchive||{}, tagTemplates: tagTemplates||[], savedAt: Date.now() })); return true; }
+function saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], tombstones: tombstones||[], dailyArchive: dailyArchive||{}, tagTemplates: tagTemplates||[], subHistory: subHistory||[], promptTemplates: promptTemplates||[], savedAt: Date.now() })); return true; }
   catch(e) { return false; }
 }
 function clearStore() { try { localStorage.removeItem(STORE_KEY); } catch(e){} }
@@ -3159,15 +3503,67 @@ function ytStartAuth(){
   window.location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
 }
 
+// Renovación SILENCIOSA del token: pide uno nuevo sin interacción usando un iframe oculto
+// con prompt=none. Google renueva el token si la sesión sigue activa, sin recargar la app.
+let _ytSilentInFlight = null;
+function ytSilentRefresh(){
+  if(_ytSilentInFlight) return _ytSilentInFlight;
+  _ytSilentInFlight = new Promise((resolve)=>{
+    try {
+      const frame = document.createElement("iframe");
+      frame.style.display = "none";
+      const params = new URLSearchParams({
+        client_id: YT_CLIENT_ID,
+        redirect_uri: YT_REDIRECT,
+        response_type: "token",
+        scope: YT_SCOPES,
+        include_granted_scopes: "true",
+        prompt: "none",
+        state: "yt_silent"
+      });
+      let done = false;
+      const cleanup = (ok)=>{ if(done) return; done=true; try{ document.body.removeChild(frame); }catch(e){} window.removeEventListener("message", onMsg); _ytSilentInFlight=null; resolve(ok); };
+      const onMsg = (ev)=>{
+        if(ev.source !== frame.contentWindow) return;
+        const data = ev.data || {};
+        if(data.type === "yt_silent_token"){
+          if(data.access_token){
+            ytSaveTokens({ access_token: data.access_token, expires_at: Date.now() + (parseInt(data.expires_in||"3600",10))*1000 });
+            cleanup(true);
+          } else cleanup(false);
+        }
+      };
+      window.addEventListener("message", onMsg);
+      frame.src = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
+      document.body.appendChild(frame);
+      // Tiempo máximo de espera
+      setTimeout(()=>cleanup(false), 8000);
+    } catch(e){ _ytSilentInFlight=null; resolve(false); }
+  });
+  return _ytSilentInFlight;
+}
+
+// Asegura un token válido: si está por caducar, intenta renovarlo en silencio.
+async function ytEnsureToken(){
+  if(ytTokenValid()) return true;
+  if(!ytIsConnected()) return false;
+  return await ytSilentRefresh();
+}
+
 // Al volver de Google, la URL trae #access_token=...&expires_in=... → lo capturamos
 function ytCaptureAuthFromHash(){
   if(!window.location.hash) return false;
   const h = new URLSearchParams(window.location.hash.slice(1));
   const at = h.get("access_token");
+  const state = h.get("state");
   if(!at) return false;
   const expiresIn = parseInt(h.get("expires_in")||"3600",10);
+  // Si venimos de una renovación silenciosa (dentro de un iframe), avisamos al padre
+  if(state === "yt_silent" && window.parent !== window){
+    window.parent.postMessage({ type:"yt_silent_token", access_token: at, expires_in: expiresIn }, "*");
+    return false;
+  }
   ytSaveTokens({ access_token: at, expires_at: Date.now() + expiresIn*1000 });
-  // Limpiar el hash de la URL para que no quede el token a la vista
   history.replaceState(null, "", window.location.pathname + window.location.search);
   return true;
 }
@@ -3518,7 +3914,12 @@ function App() {
   const [tagTemplates, setTagTemplates] = useState(()=> (_initial && Array.isArray(_initial.tagTemplates)) ? _initial.tagTemplates : []);
   // Archivo semanal de tareas diarias realizadas: { "2026-W28": [{title, doneAt}], ... }
   const [dailyArchive, setDailyArchive] = useState(()=> (_initial && _initial.dailyArchive && typeof _initial.dailyArchive==="object") ? _initial.dailyArchive : {});
+  // Historial de suscriptores para la gráfica: [{t: timestamp, s: subs}, ...] (se sincroniza)
+  const [subHistory, setSubHistory] = useState(()=> (_initial && Array.isArray(_initial.subHistory)) ? _initial.subHistory : []);
+  // Plantillas de prompt para el Agente de IA (se sincronizan)
+  const [promptTemplates, setPromptTemplates] = useState(()=> (_initial && Array.isArray(_initial.promptTemplates)) ? _initial.promptTemplates : []);
   const [view, setView] = useState("calendar");
+  const [calView, setCalView] = useState("week"); // month | week | day
   const [editing, setEditing] = useState(null);
   const [showFormats, setShowFormats] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);
@@ -3589,9 +3990,9 @@ function App() {
   const [rtKey, setRtKey] = useState(0); // al aumentar, se recrea el canal de tiempo real
 
   // Espejo del estado actual (para leerlo dentro de callbacks asíncronos sin datos obsoletos)
-  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates}; },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates]);
+  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates}; },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates]);
 
-  const fp = (s) => JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[], dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[]});
+  const fp = (s) => JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[], dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[]});
 
   // FUSIÓN NO DESTRUCTIVA: combina remoto + local por elementos, quedándose SIEMPRE con la
   // versión de updatedAt más alto de cada vídeo/tarea. Un dispositivo que suba datos viejos
@@ -3618,8 +4019,24 @@ function App() {
       if(!prev || (t.tags||[]).length >= (prev.tags||[]).length) tplMap[t.name] = t;
     });
     const mergedTpls = Object.values(tplMap);
-    const merged = { videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks, tombstones:mergedTombs, dailyArchive:mergedArchive, tagTemplates:mergedTpls };
-    const changed = fp(merged) !== fp(s) || JSON.stringify(mergedArchive) !== JSON.stringify(s.dailyArchive||{}) || JSON.stringify(mergedTpls) !== JSON.stringify(s.tagTemplates||[]);
+    // Historial de suscriptores: unión por timestamp (redondeado al minuto), ordenado
+    const subMap = {};
+    [...(s.subHistory||[]), ...(r.subHistory||[])].forEach(p=>{
+      if(!p || p.t==null) return;
+      const k = Math.round(p.t/60000);
+      if(!subMap[k]) subMap[k] = p;
+    });
+    const mergedSubs = Object.values(subMap).sort((a,b)=>a.t-b.t);
+    // Plantillas de prompt: unión por nombre (la más reciente gana)
+    const promptMap = {};
+    [...(s.promptTemplates||[]), ...(r.promptTemplates||[])].forEach(p=>{
+      if(!p || !p.name) return;
+      const prev = promptMap[p.name];
+      if(!prev || (p.updatedAt||0) >= (prev.updatedAt||0)) promptMap[p.name] = p;
+    });
+    const mergedPrompts = Object.values(promptMap);
+    const merged = { videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks, tombstones:mergedTombs, dailyArchive:mergedArchive, tagTemplates:mergedTpls, subHistory:mergedSubs, promptTemplates:mergedPrompts };
+    const changed = fp(merged) !== fp(s);
     return { merged, changed };
   };
 
@@ -3633,6 +4050,8 @@ function App() {
     setTombstones(merged.tombstones);
     if(merged.dailyArchive) setDailyArchive(merged.dailyArchive);
     if(merged.tagTemplates) setTagTemplates(merged.tagTemplates);
+    if(merged.subHistory) setSubHistory(merged.subHistory);
+    if(merged.promptTemplates) setPromptTemplates(merged.promptTemplates);
     lastSyncedRef.current = fp(merged);
     lastRemoteTsRef.current = Date.now();
   };
@@ -3642,7 +4061,7 @@ function App() {
     const s = stateRef.current;
     const huella = fp(s);
     setSyncStatus("saving");
-    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], savedAt: Date.now() });
+    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], savedAt: Date.now() });
     lastSyncedRef.current = huella;
     lastRemoteTsRef.current = Date.now();
     setSyncStatus("online");
@@ -3651,7 +4070,7 @@ function App() {
   // Sube un estado ya fusionado
   const pushMerged = async (merged) => {
     setSyncStatus("saving");
-    await cloudSave(syncCode, { videos:merged.videos, formats:merged.formats, trash:merged.trash, taskLists:merged.taskLists, tombstones:pruneTombs(merged.tombstones), dailyArchive:merged.dailyArchive||{}, tagTemplates:merged.tagTemplates||[], savedAt: Date.now() });
+    await cloudSave(syncCode, { videos:merged.videos, formats:merged.formats, trash:merged.trash, taskLists:merged.taskLists, tombstones:pruneTombs(merged.tombstones), dailyArchive:merged.dailyArchive||{}, tagTemplates:merged.tagTemplates||[], subHistory:merged.subHistory||[], promptTemplates:merged.promptTemplates||[], savedAt: Date.now() });
     lastSyncedRef.current = fp(merged);
     lastRemoteTsRef.current = Date.now();
     setSyncStatus("online");
@@ -3753,7 +4172,7 @@ function App() {
           "Authorization": "Bearer " + (token || SUPABASE_KEY),
           "Prefer": "resolution=merge-duplicates"
         },
-        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], savedAt: Date.now() }, updated_at: new Date().toISOString() }])
+        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], savedAt: Date.now() }, updated_at: new Date().toISOString() }])
       });
       // Nota: no marcamos nada como sincronizado aquí a propósito. Si este envío
       // fallara (sin red), la reconciliación volverá a subirlo; si llegó bien,
@@ -3921,7 +4340,7 @@ function App() {
         toast("Vinculado · datos descargados de la nube");
       } else {
         const s = stateRef.current;
-        await cloudSave(code, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], savedAt: Date.now() });
+        await cloudSave(code, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], savedAt: Date.now() });
         lastSyncedRef.current = fp(s);
         lastRemoteTsRef.current = Date.now();
         toast("Vinculado · se subieron tus datos actuales");
@@ -3939,7 +4358,7 @@ function App() {
   useEffect(()=>{
     if(firstRun.current){ firstRun.current=false; prevSnapRef.current = {videos, formats, trash, taskLists}; return; }
     // Guardado local (siempre; es barato e instantáneo)
-    const ok = saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates);
+    const ok = saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates);
     if(ok){ setSaved(true); setTimeout(()=>setSaved(false), 1600); }
 
     // Huella COMPLETA del estado actual (incluye archivo diario y plantillas)
@@ -3967,7 +4386,7 @@ function App() {
       }, 700);
     }
     prevSnapRef.current = {videos, formats, trash, taskLists};
-  },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates]);
+  },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates]);
 
   const resetAll = () => {
     setConfirm({
@@ -4120,8 +4539,8 @@ function App() {
   };
 
   const tabs = [
-    {id:"calendar", label:"Calendario", icon:Icons.calendar},
-    {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban},
+    {id:"calendar", label:"Calendario", icon:Icons.calendar, primary:true},
+    {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban, primary:true},
     {id:"tasks", label:"Tareas", icon:Icons.tasks, badge: taskLists.reduce((a,l)=>{
       if(l.fixed){
         // Diarias: vencidas si no se hicieron hoy y pasó su hora límite
@@ -4130,13 +4549,49 @@ function App() {
       }
       return a + l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length;
     },0)},
-    {id:"scheduled", label:"YouTube", icon:Icons.youtube, badge: videos.filter(v=>v.youtubeId).length},
+    {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true, badge: videos.filter(v=>v.youtubeId).length},
+    {id:"agent", label:"Agente", icon:Icons.sparkles},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
   ];
+  const primaryTabs = tabs.filter(t=>t.primary);
 
   // Registro del Service Worker + permiso al arrancar
+  // Inicia la conexión con Google desde la vista de YouTube
+  const connectGoogle = () => {
+    try { sessionStorage.setItem("rds_yt_return", "scheduled"); } catch(e){}
+    ytStartAuth();
+  };
+
+  // Registra una lectura de suscriptores en el historial (máx. una cada 30 min)
+  const recordSubs = (subs) => {
+    setSubHistory(prev=>{
+      const list = prev || [];
+      const last = list[list.length-1];
+      const now = Date.now();
+      if(last && (now - last.t) < 30*60*1000 && last.s === subs) return list;
+      if(last && last.s === subs && (now - last.t) < 6*60*60*1000) return list;
+      const next = [...list, { t: now, s: subs }];
+      return next.length > 500 ? next.slice(next.length-500) : next;
+    });
+  };
+
   useEffect(()=>{ registerNotifSW(); },[]);
+
+  // Mantener viva la sesión de Google: renovar el token en silencio antes de que caduque.
+  useEffect(()=>{
+    const check = async () => {
+      if(document.visibilityState!=="visible") return;
+      if(ytIsConnected() && !ytTokenValid()){
+        await ytSilentRefresh(); // renueva sin recargar ni pedir login otra vez
+      }
+    };
+    check();
+    const iv = setInterval(check, 4*60*1000); // cada 4 min
+    const onVis = ()=>{ if(document.visibilityState==="visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return ()=>{ clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+  },[]);
 
   // Guardado inmediato al ocultar la pestaña o cerrar (para sincronizar rápido entre dispositivos)
   useEffect(()=>{
@@ -4159,13 +4614,16 @@ function App() {
       toast("✅ Conectado con Google");
       try {
         const pendingId = sessionStorage.getItem("rds_yt_pending");
+        const ret = sessionStorage.getItem("rds_yt_return");
         if(pendingId){
           sessionStorage.removeItem("rds_yt_pending");
-          // Buscar el vídeo en el estado actual y reabrir el modal de YouTube
           setTimeout(()=>{
             const vid = (stateRef.current.videos||[]).find(v=>v.id===pendingId);
             if(vid){ setView("calendar"); setYtUpload(vid); }
           }, 300);
+        } else if(ret){
+          sessionStorage.removeItem("rds_yt_return");
+          setView(ret);
         }
       } catch(e){}
     }
@@ -4282,9 +4740,9 @@ function App() {
       <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(12px)",background:"var(--header-bg)"}}>
         <div className="app-header" style={{maxWidth:1320,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
           <div style={{display:"flex",alignItems:"center",gap:13}}>
-            <button className="menu-btn" onClick={()=>setMenuOpen(true)} title="Abrir menú" style={{
-              display:"none",alignItems:"center",justifyContent:"center",width:40,height:40,borderRadius:11,
-              color:"var(--text)",border:"1px solid var(--border)"
+            <button onClick={()=>setMenuOpen(true)} title="Abrir menú" style={{
+              display:"flex",alignItems:"center",justifyContent:"center",width:40,height:40,borderRadius:11,
+              color:"var(--text)",border:"1px solid var(--border)",flexShrink:0
             }}>{Icons.menu}</button>
             <div className="grad-gold gold-glow" style={{width:40,height:40,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",color:"#000"}}>
               <span style={{fontFamily:"'Sora'",fontWeight:800,fontSize:19}}>R</span>
@@ -4296,7 +4754,7 @@ function App() {
           </div>
 
           <nav className="top-nav" style={{display:"flex",gap:4,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:4}}>
-            {tabs.map(tb=>(
+            {primaryTabs.map(tb=>(
               <button key={tb.id} onClick={()=>setView(tb.id)} style={{
                 display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,padding:"9px 15px",borderRadius:9,transition:"all .18s",position:"relative",
                 ...(view===tb.id
@@ -4310,6 +4768,7 @@ function App() {
               </button>
             ))}
           </nav>
+
 
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {/* Grupo edición: deshacer / rehacer (oculto en móvil, va al menú lateral) */}
@@ -4447,11 +4906,12 @@ function App() {
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar vídeo por título..." style={{...inputStyle,paddingLeft:38}}/>
           </div>
         )}
-        {view==="calendar" && <CalendarView videos={videos} onOpen={setEditing} onDrop={dropOnDate} onDragStart={onDragStart} onDragEnd={onDragEnd} weekOffset={weekOffset} setWeekOffset={setWeekOffset} onQuickAdd={quickAdd} onUnassign={unassignVideo} formats={formats}/>}
+        {view==="calendar" && <CalendarView videos={videos} onOpen={setEditing} onDrop={dropOnDate} onDragStart={onDragStart} onDragEnd={onDragEnd} weekOffset={weekOffset} setWeekOffset={setWeekOffset} calView={calView} setCalView={setCalView} onQuickAdd={quickAdd} onUnassign={unassignVideo} formats={formats}/>}
         {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
         {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} dailyArchive={dailyArchive} toast={toast} onTaskDeleted={(id)=>addTomb(id,"task")} onListDeleted={(id)=>addTomb(id,"list")} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
         {view==="stats" && <StatsView videos={videos} taskLists={taskLists} formats={formats}/>}
-        {view==="scheduled" && <ScheduledView videos={videos} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} formats={formats} toast={toast}/>}
+        {view==="scheduled" && <ScheduledView videos={videos} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast}/>}
+        {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
 
         <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:16}}>
@@ -4477,7 +4937,7 @@ function App() {
         </footer>
       </main>
 
-      {editing && <VideoModal v={editing} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} formats={formats}/>}
+      {editing && <VideoModal v={editing} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
       {ytUpload && <YouTubeUploadModal video={ytUpload} allVideos={videos} tagTemplates={tagTemplates} setTagTemplates={setTagTemplates} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?{...v, ...yt, updatedAt:Date.now()}:v)); }} toast={toast}/>}
       {showFormats && <FormatsModal formats={formats} setFormats={setFormats} videos={videos} onClose={()=>setShowFormats(false)} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
       {showSync && <SyncModal syncCode={syncCode} status={syncStatus} onClose={()=>setShowSync(false)} onLink={linkToCode} onExport={exportData} onImport={importData} onSyncNow={syncNow} syncing={manualSyncing} toast={toast}/>}
@@ -4554,6 +5014,7 @@ function App() {
           /* En móvil: menú lateral en vez de pestañas superiores */
           .top-nav { display:none !important; }
           .menu-btn { display:flex !important; }
+          .cal-month-grid > div { min-height: 62px !important; padding: 4px !important; }
           .tasks-grid { grid-template-columns: 1fr !important; }
           /* Estadísticas apiladas en móvil */
           .stats-grid { grid-template-columns: 1fr !important; }
