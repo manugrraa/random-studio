@@ -143,9 +143,9 @@
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "1.3.1";
+const APP_VERSION = "1.3.2";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -440,7 +440,7 @@ const touchDrag = {
   }
 };
 
-function VideoCard({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
+function VideoCardBase({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
   const f = formats[v.format] || { color:"#6B6B6B", label:"Sin formato" };
   const done = v.checklist.filter(c=>c.done).length;
   const pct = Math.round(done/v.checklist.length*100);
@@ -507,6 +507,17 @@ function VideoCard({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
 
 /* ============================ MODAL EDITOR ============================ */
 // Botoncito de copiar con confirmación visual (para título y notas)
+// VideoCard memoizada: si los datos del vídeo no cambian, NO se vuelve a renderizar
+// (evita que la animación de entrada se repita al sincronizar → sin parpadeo).
+const VideoCard = React.memo(VideoCardBase, (prev, next) => {
+  return prev.compact === next.compact
+    && prev.onOpen === next.onOpen
+    && prev.onDragStart === next.onDragStart
+    && prev.onDragEnd === next.onDragEnd
+    && prev.formats === next.formats
+    && JSON.stringify(prev.v) === JSON.stringify(next.v);
+});
+
 function CopyMini({ text, what }) {
   const [ok, setOk] = useState(false);
   const doCopy = async () => {
@@ -3527,7 +3538,13 @@ async function geminiCall(model, prompt, system){
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.9, maxOutputTokens: 1200 }
+    generationConfig: {
+      temperature: 0.9,
+      maxOutputTokens: 2048,
+      // CLAVE: los modelos 2.5 tienen "thinking" activado por defecto y esos tokens
+      // se descuentan de maxOutputTokens, dejando la respuesta vacía. Lo desactivamos.
+      thinkingConfig: { thinkingBudget: 0 }
+    }
   };
   // Instrucciones de sistema (equivalente a las "instrucciones" de un Gem)
   if(system && system.trim()) body.systemInstruction = { parts: [{ text: system.trim() }] };
@@ -3539,13 +3556,24 @@ async function geminiCall(model, prompt, system){
     return { ok:false, status:0, error:"No hay conexión con Gemini" };
   }
   if(res.ok){
-    const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).join("") || "";
-    // Si la respuesta se cortó por seguridad u otro motivo sin texto
-    if(!text){
-      const reason = data?.candidates?.[0]?.finishReason;
-      return { ok:false, status:res.status, error: reason ? ("Gemini no generó texto ("+reason+")") : "Gemini no devolvió texto" };
+    const cand = data?.candidates?.[0];
+    const text = cand?.content?.parts?.map(p=>p.text).filter(Boolean).join("") || "";
+    if(text) return { ok:true, text: text.trim() };
+    // Respuesta vacía: distinguir la causa real
+    const reason = cand?.finishReason;
+    if(reason==="MAX_TOKENS"){
+      // El modelo agotó los tokens (normalmente por "thinking"). Señalamos para reintentar con más tokens.
+      return { ok:false, status:200, error:"La respuesta se quedó sin espacio", maxTokens:true };
     }
-    return { ok:true, text: text.trim() };
+    if(reason==="SAFETY" || reason==="PROHIBITED_CONTENT"){
+      return { ok:false, status:200, error:"Gemini bloqueó la respuesta por seguridad. Reformula el prompt." };
+    }
+    if(!data?.candidates || data.candidates.length===0){
+      // Bloqueo a nivel de prompt
+      const block = data?.promptFeedback?.blockReason;
+      if(block) return { ok:false, status:200, error:"Gemini bloqueó la petición ("+block+"). Reformula el prompt." };
+    }
+    return { ok:false, status:200, error: reason ? ("Gemini no generó texto ("+reason+")") : "Gemini no devolvió texto" };
   }
   const msg = data?.error?.message || "";
   return { ok:false, status:res.status, error: msg || ("Error "+res.status), notFound: res.status===404 };
@@ -3562,19 +3590,45 @@ async function geminiGenerate(prompt, systemOverride){
   const models = [preferred, ...GEMINI_MODELS].filter((m,i,arr)=> m && arr.indexOf(m)===i);
 
   let lastErr = "No se pudo generar";
+  let rateLimited = false;
   for(const model of models){
-    const r = await geminiCall(model, prompt, system);
+    let r = await geminiCall(model, prompt, system);
+    // Si se quedó sin tokens (thinking), reintentar una vez el MISMO modelo con tope alto
+    if(!r.ok && r.maxTokens){
+      r = await geminiCallBig(model, prompt, system);
+    }
     if(r.ok){ geminiSaveModel(model); return r.text; }
-    // Errores que no se arreglan cambiando de modelo → cortar de inmediato
+    // Clave inválida → no se arregla con otro modelo
     if(r.status===400 && /API key|API_KEY|invalid/i.test(r.error)) throw new Error("La clave de Gemini no es válida. Revísala en el apartado Agente.");
-    if(r.status===429) throw new Error("Límite de Gemini alcanzado. Espera un minuto e inténtalo de nuevo.");
-    if(r.status===403) throw new Error("Gemini rechazó la clave (403). Comprueba que la API «Generative Language» está habilitada para tu clave.");
+    if(r.status===403) throw new Error("Gemini rechazó la clave (403). Habilita la API «Generative Language» para tu clave en Google AI Studio.");
+    // 429: este modelo está limitado, pero otro modelo puede tener cuota → seguimos probando
+    if(r.status===429){ rateLimited = true; lastErr = "Límite de Gemini alcanzado en "+model; continue; }
     lastErr = r.error || lastErr;
-    // Si es 404 (modelo no disponible en tu región/cuenta), probamos el siguiente modelo
-    if(r.notFound) continue;
-    // Otros errores 5xx: probamos el siguiente también
+    // 404 o cualquier otro → probar el siguiente modelo
   }
+  if(rateLimited) throw new Error("Has alcanzado el límite gratuito de Gemini en todos los modelos. Espera un minuto (el plan gratis permite ~15 peticiones por minuto).");
   throw new Error(lastErr + " · prueba a elegir otro modelo en el apartado Agente.");
+}
+
+// Reintento con presupuesto de salida grande (por si el modelo ignora thinkingBudget:0)
+async function geminiCallBig(model, prompt, system){
+  const key = geminiGetKey();
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.9, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } }
+  };
+  if(system && system.trim()) body.systemInstruction = { parts: [{ text: system.trim() }] };
+  try {
+    const res = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    const data = await res.json().catch(()=>({}));
+    if(res.ok){
+      const text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text).filter(Boolean).join("") || "";
+      if(text) return { ok:true, text: text.trim() };
+      return { ok:false, status:200, error:"Gemini no devolvió texto tras reintentar" };
+    }
+    return { ok:false, status:res.status, error: data?.error?.message || ("Error "+res.status), notFound:res.status===404 };
+  } catch(e){ return { ok:false, status:0, error:"No hay conexión con Gemini" }; }
 }
 
 // Lee/guarda los tokens de Google en localStorage
@@ -4161,15 +4215,20 @@ function App() {
   // Aplica un estado fusionado a la app
   const applyMerged = (merged) => {
     bumpIdFrom([...(merged.videos||[]), ...(merged.trash||[])]);
-    setVideos(merged.videos);
-    setFormats(merged.formats);
-    setTrash(merged.trash);
-    setTaskLists(merged.taskLists.length?merged.taskLists:clone(DEFAULT_TASK_LISTS));
-    setTombstones(merged.tombstones);
-    if(merged.dailyArchive) setDailyArchive(merged.dailyArchive);
-    if(merged.tagTemplates) setTagTemplates(merged.tagTemplates);
-    if(merged.subHistory) setSubHistory(merged.subHistory);
-    if(merged.promptTemplates) setPromptTemplates(merged.promptTemplates);
+    const s = stateRef.current;
+    // Actualizar SOLO lo que cambió de verdad. Si un array/objeto es idéntico (misma huella),
+    // no llamamos a su setter → React no re-renderiza esas tarjetas → sin parpadeo ni re-animación.
+    const j = (x)=>JSON.stringify(x);
+    if(j(merged.videos)!==j(s.videos)) setVideos(merged.videos);
+    if(j(merged.formats)!==j(s.formats)) setFormats(merged.formats);
+    if(j(merged.trash)!==j(s.trash)) setTrash(merged.trash);
+    const nextTasks = merged.taskLists.length?merged.taskLists:clone(DEFAULT_TASK_LISTS);
+    if(j(nextTasks)!==j(s.taskLists)) setTaskLists(nextTasks);
+    if(j(merged.tombstones)!==j(s.tombstones)) setTombstones(merged.tombstones);
+    if(merged.dailyArchive && j(merged.dailyArchive)!==j(s.dailyArchive)) setDailyArchive(merged.dailyArchive);
+    if(merged.tagTemplates && j(merged.tagTemplates)!==j(s.tagTemplates)) setTagTemplates(merged.tagTemplates);
+    if(merged.subHistory && j(merged.subHistory)!==j(s.subHistory)) setSubHistory(merged.subHistory);
+    if(merged.promptTemplates && j(merged.promptTemplates)!==j(s.promptTemplates)) setPromptTemplates(merged.promptTemplates);
     lastSyncedRef.current = fp(merged);
     lastRemoteTsRef.current = Date.now();
   };
@@ -4199,16 +4258,23 @@ function App() {
   // - Si aporta algo (otro dispositivo añadió/editó algo genuino) → lo integra y lo sube fusionado.
   const integrateRemote = async (r, silent) => {
     const { merged, changed } = computeMerge(r);
+    const s = stateRef.current;
     if(!changed){
-      // Nada nuevo que integrar. Pero si el remoto está incompleto respecto a lo nuestro
-      // (p.ej. subió datos viejos), reafirmamos lo local subiéndolo.
-      const s = stateRef.current;
-      const localFull = fp(merged);
-      const remoteFull = fp({videos:r.videos,formats:r.formats,trash:r.trash,taskLists:r.taskLists,dailyArchive:r.dailyArchive,tagTemplates:r.tagTemplates});
-      if(localFull !== remoteFull){
-        try { await pushMerged(merged); } catch(e){}
+      // La fusión no aporta nada nuevo a lo que YA tenemos aquí.
+      // ¿El remoto está desactualizado respecto a lo nuestro? Solo entonces subimos.
+      const localHuella = fp(merged);           // = fp(local), porque no cambió
+      const remoteHuella = fp({
+        videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists,
+        dailyArchive:r.dailyArchive, tagTemplates:r.tagTemplates,
+        subHistory:r.subHistory, promptTemplates:r.promptTemplates
+      });
+      if(localHuella !== remoteHuella){
+        // Nosotros tenemos algo que el remoto no → subir lo nuestro (sin tocar la UI)
+        try { await pushLocal(); } catch(e){}
       } else {
-        lastSyncedRef.current = fp(s);
+        // Idénticos: solo marcamos como sincronizado, sin tocar nada
+        lastSyncedRef.current = localHuella;
+        setSyncStatus("online");
       }
       return false;
     }
@@ -4219,23 +4285,21 @@ function App() {
     return true;
   };
 
-  // RECONCILIACIÓN al abrir / despertar / cada 60s: baja la nube y la integra sin retroceder.
+  // RECONCILIACIÓN al abrir / despertar / periódicamente: baja la nube y la integra sin retroceder.
   const pullFromCloud = async (silent) => {
     if(pullingRef.current) return;
     pullingRef.current = true;
     try {
       if(!silent) setSyncStatus("connecting");
       const remote = await cloudLoad(syncCode);
-      const s = stateRef.current;
-      const localDirty = fp(s) !== lastSyncedRef.current;
       if(remote && remote.data) {
         await integrateRemote(remote.data, silent);
-        // Si además teníamos cambios locales sin subir, integrateRemote ya los preservó y subió
-        void localDirty;
       } else {
         await pushLocal(); // nube vacía → sembrarla con lo local
       }
-      setSyncStatus("online");
+      // En modo silencioso no forzamos "online" para no pisar un "saving" en curso;
+      // integrateRemote/pushLocal ya dejan el estado correcto.
+      if(!silent) setSyncStatus("online");
     } catch(e) {
       setSyncStatus("offline");
     } finally {
@@ -4363,7 +4427,9 @@ function App() {
     let stopped = false;
     const schedule = () => {
       if(stopped) return;
-      const delay = rtOkRef.current ? 20000 : 8000;
+      // Realtime activo → basta con comprobar de vez en cuando (respaldo).
+      // Sin realtime → comprobamos algo más a menudo, pero sin saturar.
+      const delay = rtOkRef.current ? 25000 : 12000;
       timer = setTimeout(run, delay);
     };
     const run = async () => {
@@ -4540,8 +4606,8 @@ function App() {
     setVideos(vs=>vs.map(v=> formats[v.format] ? v : {...v, format:keys[0]}));
   },[formats]);
 
-  const onDragStart = (e,v) => { setDragId(v.id); dnd.dragId = v.id; e.dataTransfer.effectAllowed="move"; if(e.currentTarget.classList) e.currentTarget.classList.add("dragging"); };
-  const onDragEnd = e => { setDragId(null); dnd.dragId = null; if(e.currentTarget.classList) e.currentTarget.classList.remove("dragging"); };
+  const onDragStart = useCallback((e,v) => { setDragId(v.id); dnd.dragId = v.id; e.dataTransfer.effectAllowed="move"; if(e.currentTarget.classList) e.currentTarget.classList.add("dragging"); },[]);
+  const onDragEnd = useCallback(e => { setDragId(null); dnd.dragId = null; if(e.currentTarget.classList) e.currentTarget.classList.remove("dragging"); },[]);
 
   // Reordenar: inserta el vídeo arrastrado justo antes del vídeo objetivo.
   // Si el objetivo está en otro día o estado, además lo adopta.
