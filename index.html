@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "1.3.2";
+const APP_VERSION = "1.3.3";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -1735,7 +1735,7 @@ function ConfirmDialog({ open, title, message, confirmLabel="Eliminar", danger=t
 }
 
 /* ============================ MODAL DE SINCRONIZACIÓN ============================ */
-function SyncModal({ syncCode, status, onClose, onLink, onExport, onImport, onSyncNow, syncing, toast }) {
+function SyncModal({ syncCode, status, syncMode, setSyncMode, pendingChanges, onClose, onLink, onExport, onImport, onSyncNow, syncing, toast }) {
   const [copied, setCopied] = useState(false);
   const [input, setInput] = useState("");
   const [showLink, setShowLink] = useState(false);
@@ -1781,6 +1781,37 @@ function SyncModal({ syncCode, status, onClose, onLink, onExport, onImport, onSy
               <span className={syncing?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
               {syncing?"Sincronizando…":"Sincronizar ahora"}
             </button>
+          </div>
+
+          {/* Modo de sincronización: automático vs manual */}
+          <div>
+            <div style={{...labelStyle,marginBottom:8}}>Modo de sincronización</div>
+            <div style={{display:"flex",gap:8,background:"var(--card)",borderRadius:11,padding:4,border:"1px solid var(--border)"}}>
+              <button onClick={()=>setSyncMode("auto")} style={{
+                flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"10px 8px",borderRadius:8,transition:"all .15s",
+                background: syncMode==="auto"?"linear-gradient(135deg,rgba(212,175,55,0.18),rgba(212,175,55,0.08))":"transparent",
+                color: syncMode==="auto"?"var(--gold)":"var(--text-2)",
+                boxShadow: syncMode==="auto"?"0 0 0 1px rgba(212,175,55,0.25)":"none"
+              }}>
+                <span style={{fontSize:13,fontWeight:700}}>Automática</span>
+                <span style={{fontSize:10.5,color:"var(--text-3)",textAlign:"center",lineHeight:1.4}}>Sube y baja sola, en tiempo real</span>
+              </button>
+              <button onClick={()=>setSyncMode("manual")} style={{
+                flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"10px 8px",borderRadius:8,transition:"all .15s",
+                background: syncMode==="manual"?"linear-gradient(135deg,rgba(212,175,55,0.18),rgba(212,175,55,0.08))":"transparent",
+                color: syncMode==="manual"?"var(--gold)":"var(--text-2)",
+                boxShadow: syncMode==="manual"?"0 0 0 1px rgba(212,175,55,0.25)":"none"
+              }}>
+                <span style={{fontSize:13,fontWeight:700}}>Manual</span>
+                <span style={{fontSize:10.5,color:"var(--text-3)",textAlign:"center",lineHeight:1.4}}>Solo cuando pulses «Sincronizar»</span>
+              </button>
+            </div>
+            <p style={{fontSize:11.5,color:"var(--text-3)",lineHeight:1.5,marginTop:9}}>
+              {syncMode==="manual"
+                ? "Modo manual: tus cambios se guardan en este dispositivo y solo se suben a la nube cuando pulsas «Sincronizar ahora». Ideal para no sobrecargar el servidor."
+                : "Modo automático: los cambios se suben y bajan solos entre tus dispositivos. Recomendado para el día a día."}
+              {syncMode==="manual" && pendingChanges && <span style={{color:"var(--gold)",fontWeight:600}}> · Tienes cambios sin subir.</span>}
+            </p>
           </div>
 
           {/* Código de sincronización */}
@@ -2863,6 +2894,7 @@ function ScheduledView({ videos, onOpen, onUpdateVideo, subHistory, onRecordSubs
       setStatusMap(map);
       // Si alguno ya no existe en YouTube, lo reflejamos en la app
       let cleared = 0;
+      let justPublished = [];
       ytVideos.forEach(v=>{
         const st = map[v.youtubeId];
         if(st && st.exists===false){ onUpdateVideo(v.id, { youtubeId:null, youtubeStatus:null, youtubeUrl:null }); cleared++; }
@@ -2874,10 +2906,20 @@ function ScheduledView({ videos, onOpen, onUpdateVideo, subHistory, onRecordSubs
           const patch = {};
           if(ns!==v.youtubeStatus) patch.youtubeStatus = ns;
           if(boardStatus && boardStatus!==v.status) patch.status = boardStatus;
+          // ¿Se acaba de publicar un vídeo que estaba programado? → avisar
+          if(ns==="published" && v.youtubeStatus==="scheduled"){
+            justPublished.push(v);
+            patch.notifiedPublished = true;
+          }
           if(Object.keys(patch).length) onUpdateVideo(v.id, patch);
         }
       });
-      if(cleared>0) toast(cleared+" vídeo(s) ya no estaban en YouTube · actualizado");
+      // Notificaciones de publicación (una por vídeo recién publicado)
+      justPublished.forEach(v=>{
+        fireNotification("🎉 ¡Vídeo publicado!", "«"+(v.title||"Tu vídeo")+"» ya está disponible en YouTube");
+      });
+      if(justPublished.length>0) toast("🎉 "+justPublished.length+" vídeo(s) recién publicado(s)");
+      else if(cleared>0) toast(cleared+" vídeo(s) ya no estaban en YouTube · actualizado");
       else toast("Estado actualizado");
     } catch(e){
       toast("❌ "+e.message);
@@ -4101,6 +4143,14 @@ function App() {
   const [syncStatus, setSyncStatus] = useState("connecting"); // connecting | online | offline | saving
   const [showSync, setShowSync] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Modo de sincronización: "auto" (sube y baja solo) o "manual" (solo cuando pulsas el botón)
+  const [syncMode, setSyncMode] = useState(()=>{ try { return localStorage.getItem("rds_sync_mode")||"auto"; } catch(e){ return "auto"; } });
+  const [pendingChanges, setPendingChanges] = useState(false); // hay cambios locales sin subir (modo manual)
+  const syncModeRef = useRef(syncMode);
+  useEffect(()=>{
+    syncModeRef.current = syncMode;
+    try { localStorage.setItem("rds_sync_mode", syncMode); } catch(e){}
+  },[syncMode]);
 
   // TEMA claro/oscuro (preferencia por dispositivo)
   const [theme, setTheme] = useState(()=>{ try { return localStorage.getItem("rds_theme")||"dark"; } catch(e){ return "dark"; } });
@@ -4241,7 +4291,44 @@ function App() {
     await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], savedAt: Date.now() });
     lastSyncedRef.current = huella;
     lastRemoteTsRef.current = Date.now();
+    setPendingChanges(false);
     setSyncStatus("online");
+  };
+
+  // ——— SINCRONIZACIÓN MANUAL ———
+  // Sube los cambios locales a la nube ahora mismo (botón en modo manual)
+  const [manualSyncing, setManualSyncing] = useState(false);
+  const manualPush = async () => {
+    if(manualSyncing) return;
+    setManualSyncing(true);
+    try {
+      // Primero traemos lo remoto y lo fusionamos (para no pisar cambios de otro dispositivo),
+      // y después subimos el resultado combinado.
+      const remote = await cloudLoad(syncCode);
+      if(remote && remote.data){
+        const { merged } = computeMerge(remote.data);
+        applyMerged(merged);
+        await pushMerged(merged);
+      } else {
+        await pushLocal();
+      }
+      setPendingChanges(false);
+      toast("✅ Datos sincronizados con la nube");
+    } catch(e){
+      setSyncStatus("offline");
+      toast("❌ No se pudo sincronizar: "+(e.message||"error"));
+    } finally { setManualSyncing(false); }
+  };
+  // Baja/comprueba manualmente los cambios de la nube (botón en modo manual)
+  const manualPull = async () => {
+    if(manualSyncing) return;
+    setManualSyncing(true);
+    try {
+      await pullFromCloud(false);
+      toast("✅ Comprobado. Datos al día");
+    } catch(e){
+      toast("❌ No se pudo comprobar: "+(e.message||"error"));
+    } finally { setManualSyncing(false); }
   };
 
   // Sube un estado ya fusionado
@@ -4340,6 +4427,7 @@ function App() {
   // GUARDADO URGENTE: sube al instante aunque la app se esté cerrando o pasando a segundo plano.
   // fetch con keepalive sobrevive al cierre de la pestaña/app (el guardado normal con retardo no).
   const flushNow = () => {
+    if(syncModeRef.current === "manual") return; // en manual no subimos automáticamente
     const s = stateRef.current;
     const huella = fp(s);
     if(huella === lastSyncedRef.current) return; // nada pendiente
@@ -4378,10 +4466,22 @@ function App() {
   const syncNow = async () => {
     if(manualSyncing) return;
     setManualSyncing(true);
-    flushRef.current(); // primero, subir lo pendiente
-    await pullRef.current(false); // después, traer lo que haya
-    setManualSyncing(false);
-    toast("Sincronización completada");
+    try {
+      // Fusiona con la nube (sin pisar cambios de otro dispositivo) y sube el resultado.
+      const remote = await cloudLoad(syncCode);
+      if(remote && remote.data){
+        const { merged } = computeMerge(remote.data);
+        applyMerged(merged);
+        await pushMerged(merged);
+      } else {
+        await pushLocal();
+      }
+      setPendingChanges(false);
+      toast("✅ Sincronización completada");
+    } catch(e){
+      setSyncStatus("offline");
+      toast("❌ No se pudo sincronizar");
+    } finally { setManualSyncing(false); }
   };
 
   // Suscripción en tiempo real: si otro dispositivo cambia algo, lo recibimos al instante
@@ -4434,6 +4534,8 @@ function App() {
     };
     const run = async () => {
       if(stopped) return;
+      // En modo manual no bajamos datos automáticamente (cero carga al servidor).
+      if(syncModeRef.current === "manual"){ schedule(); return; }
       if(document.visibilityState === "visible"){
         try { await pullRef.current(true); } catch(e){}
         schedule();
@@ -4442,8 +4544,8 @@ function App() {
     };
     const onVis = () => {
       if(document.visibilityState === "visible"){
-        // Al volver: traer cambios enseguida y reanudar el sondeo
-        pullRef.current(true).catch(()=>{});
+        // Al volver: traer cambios enseguida (solo en modo auto) y reanudar el sondeo
+        if(syncModeRef.current !== "manual") pullRef.current(true).catch(()=>{});
         if(!timer) schedule();
       } else {
         // Al ocultar: cancelar cualquier sondeo pendiente
@@ -4537,7 +4639,7 @@ function App() {
     }
   };
 
-  // Auto-guardado: local al instante + nube con un pequeño retardo (debounce)
+  // Auto-guardado: local al instante + nube según el modo (auto = debounce, manual = solo local)
   const firstRun = useRef(true);
   useEffect(()=>{
     if(firstRun.current){ firstRun.current=false; prevSnapRef.current = {videos, formats, trash, taskLists}; return; }
@@ -4545,11 +4647,11 @@ function App() {
     const ok = saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates);
     if(ok){ setSaved(true); setTimeout(()=>setSaved(false), 1600); }
 
-    // Huella COMPLETA del estado actual (incluye archivo diario y plantillas)
-    const huella = fp({videos, formats, trash, taskLists, dailyArchive, tagTemplates});
+    // Huella COMPLETA del estado actual
+    const huella = fp(stateRef.current);
     const hayCambioReal = huella !== lastSyncedRef.current;
 
-    // Solo si hay un cambio real registramos historial y programamos subida a la nube.
+    // Solo si hay un cambio real registramos historial y (en modo auto) programamos subida.
     if(hayCambioReal){
       localEditedAtRef.current = Date.now();
       if(!applyingHistoryRef.current && prevSnapRef.current){
@@ -4560,14 +4662,19 @@ function App() {
       }
       applyingHistoryRef.current = false;
 
-      setSyncStatus("saving");
-      if(saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(async ()=>{
-        // Reconfirmar justo antes de subir: si ya no hay nada nuevo, no tocamos la nube
-        if(fp(stateRef.current) === lastSyncedRef.current){ setSyncStatus("online"); return; }
-        try { await pushLocal(); }
-        catch(e) { setSyncStatus("offline"); }
-      }, 700);
+      if(syncModeRef.current === "manual"){
+        // MODO MANUAL: no tocamos el servidor. Solo marcamos que hay cambios pendientes.
+        setPendingChanges(true);
+      } else {
+        // MODO AUTO: subimos tras un pequeño retardo (debounce)
+        setSyncStatus("saving");
+        if(saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(async ()=>{
+          if(fp(stateRef.current) === lastSyncedRef.current){ setSyncStatus("online"); return; }
+          try { await pushLocal(); }
+          catch(e) { setSyncStatus("offline"); }
+        }, 700);
+      }
     }
     prevSnapRef.current = {videos, formats, trash, taskLists};
   },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates]);
@@ -4760,6 +4867,39 @@ function App() {
     });
   };
 
+  // Aviso de publicación: comprueba periódicamente si algún vídeo PROGRAMADO ya se publicó
+  // y lanza una notificación. Solo con la app visible y la sesión de Google activa.
+  useEffect(()=>{
+    let stopped = false;
+    const checkPublished = async () => {
+      if(stopped || document.visibilityState!=="visible") return;
+      if(!ytIsConnected() || !ytTokenValid()) return;
+      const s = stateRef.current;
+      const scheduled = (s.videos||[]).filter(v=>v.youtubeId && v.youtubeStatus==="scheduled");
+      if(scheduled.length===0) return;
+      try {
+        const map = await ytCheckVideos(scheduled.map(v=>v.youtubeId));
+        const nowPublished = [];
+        scheduled.forEach(v=>{
+          const st = map[v.youtubeId];
+          if(st && st.exists && st.privacyStatus==="public"){
+            nowPublished.push(v);
+            setVideos(vs=>vs.map(x=>x.id===v.id?{...x, youtubeStatus:"published", status:"publicado", updatedAt:Date.now()}:x));
+          }
+        });
+        nowPublished.forEach(v=>{
+          fireNotification("🎉 ¡Vídeo publicado!", "«"+(v.title||"Tu vídeo")+"» ya está disponible en YouTube");
+        });
+        if(nowPublished.length>0) toast("🎉 "+nowPublished.length+" vídeo(s) recién publicado(s)");
+      } catch(e){ /* silencioso */ }
+    };
+    const iv = setInterval(checkPublished, 5*60*1000); // cada 5 min
+    const t0 = setTimeout(checkPublished, 8000);        // una primera pasada al arrancar
+    const onVis = ()=>{ if(document.visibilityState==="visible") checkPublished(); };
+    document.addEventListener("visibilitychange", onVis);
+    return ()=>{ stopped=true; clearInterval(iv); clearTimeout(t0); document.removeEventListener("visibilitychange", onVis); };
+  },[]);
+
   useEffect(()=>{ registerNotifSW(); },[]);
 
   // Mantener viva la sesión de Google: renovar el token en silencio antes de que caduque.
@@ -4780,6 +4920,7 @@ function App() {
   // Guardado inmediato al ocultar la pestaña o cerrar (para sincronizar rápido entre dispositivos)
   useEffect(()=>{
     const flushNow = () => {
+      if(syncModeRef.current === "manual") return; // en manual no subimos automáticamente
       if(fp(stateRef.current) === lastSyncedRef.current) return; // nada pendiente
       if(saveTimer.current) clearTimeout(saveTimer.current);
       pushLocal().catch(()=>{});
@@ -4985,6 +5126,7 @@ function App() {
 
             {/* Grupo sincronización: refrescar + estado */}
             {(()=>{
+              const manualPending = syncMode==="manual" && pendingChanges;
               const si = {
                 connecting:{c:"var(--gold)",t:"Conectando…",icon:Icons.cloud,pulse:true},
                 online:{c:"var(--green)",t:"Sincronizado",icon:Icons.cloudCheck,pulse:false},
@@ -4992,20 +5134,24 @@ function App() {
                 offline:{c:"var(--red)",t:"Sin conexión",icon:Icons.cloud,pulse:false},
               }[syncStatus] || {c:"var(--text-3)",t:"—",icon:Icons.cloud,pulse:false};
               const off = syncStatus==="offline";
+              // En modo manual con cambios sin subir, el badge lo indica claramente
+              const disp = manualPending
+                ? {c:"var(--gold)",t:"Cambios sin subir",pulse:true}
+                : (syncMode==="manual" ? {c:si.c,t:"Manual · al día",pulse:false} : si);
               return (
-                <div style={{display:"flex",gap:2,background:"var(--bg-2)",border:`1px solid ${off?"rgba(248,113,113,0.5)":"var(--border)"}`,borderRadius:11,padding:3}}>
-                  <button onClick={syncNow} title="Sincronizar ahora" style={{
+                <div style={{display:"flex",gap:2,background:"var(--bg-2)",border:`1px solid ${off?"rgba(248,113,113,0.5)":(manualPending?"var(--border-gold)":"var(--border)")}`,borderRadius:11,padding:3}}>
+                  <button onClick={syncNow} disabled={manualSyncing} title={syncMode==="manual"?"Sincronizar ahora (subir y bajar)":"Sincronizar ahora"} style={{
                     display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,
-                    color: manualSyncing?"var(--gold)":"var(--text-2)",transition:"color .15s"
-                  }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>{if(!manualSyncing)e.currentTarget.style.color="var(--text-2)";}}>
+                    color: (manualSyncing||manualPending)?"var(--gold)":"var(--text-2)",transition:"color .15s"
+                  }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>{if(!manualSyncing&&!manualPending)e.currentTarget.style.color="var(--text-2)";}}>
                     <span className={manualSyncing?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
                   </button>
                   <button onClick={()=>setShowSync(true)} title="Sincronización entre dispositivos" className="sync-btn" style={{
-                    display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:si.c,padding:"0 11px 0 9px",borderRadius:8,
-                    background: off?"rgba(248,113,113,0.1)":"transparent", transition:"all .15s",whiteSpace:"nowrap"
+                    display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:disp.c,padding:"0 11px 0 9px",borderRadius:8,
+                    background: off?"rgba(248,113,113,0.1)":(manualPending?"rgba(212,175,55,0.08)":"transparent"), transition:"all .15s",whiteSpace:"nowrap"
                   }}>
-                    <span className={"sync-dot"+(si.pulse?" pulsing":"")} style={{background:si.c}}/>
-                    <span className={off?"":"sync-label"}>{si.t}</span>
+                    <span className={"sync-dot"+(disp.pulse?" pulsing":"")} style={{background:disp.c}}/>
+                    <span className={off?"":"sync-label"}>{disp.t}</span>
                   </button>
                 </div>
               );
@@ -5124,7 +5270,7 @@ function App() {
       {editing && <VideoModal v={editing} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
       {ytUpload && <YouTubeUploadModal video={ytUpload} allVideos={videos} tagTemplates={tagTemplates} setTagTemplates={setTagTemplates} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?{...v, ...yt, updatedAt:Date.now()}:v)); }} toast={toast}/>}
       {showFormats && <FormatsModal formats={formats} setFormats={setFormats} videos={videos} onClose={()=>setShowFormats(false)} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
-      {showSync && <SyncModal syncCode={syncCode} status={syncStatus} onClose={()=>setShowSync(false)} onLink={linkToCode} onExport={exportData} onImport={importData} onSyncNow={syncNow} syncing={manualSyncing} toast={toast}/>}
+      {showSync && <SyncModal syncCode={syncCode} status={syncStatus} syncMode={syncMode} setSyncMode={setSyncMode} pendingChanges={pendingChanges} onClose={()=>setShowSync(false)} onLink={linkToCode} onExport={exportData} onImport={importData} onSyncNow={syncNow} syncing={manualSyncing} toast={toast}/>}
       <ConfirmDialog
         open={!!confirm}
         title={confirm?.title}
