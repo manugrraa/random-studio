@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "1.3.5";
+const APP_VERSION = "1.3.6";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -3958,46 +3958,24 @@ const YT_CATEGORIES = [
 
 
 let _sb = null;
-let _authReady = false; // true cuando ya hemos hecho sign-in anónimo
-let _authPromise = null; // promesa de auth para no lanzarla dos veces
 
 function getClient() {
   if(_sb) return _sb;
   if(typeof window === "undefined" || !window.supabase || !window.supabase.createClient) return null;
   try {
+    // SIN capa de Auth: usamos solo la clave pública (anon). Antes se hacía un
+    // sign-in anónimo por sesión, lo que creaba usuarios nuevos en Supabase Auth
+    // constantemente (cada dispositivo/recarga/limpieza) y saturaba el servicio.
     _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true }
+      auth: { persistSession: false, autoRefreshToken: false }
     });
     return _sb;
   } catch(e){ return null; }
 }
 
-// Hace sign-in anónimo si todavía no se ha hecho (solo una vez por sesión)
+// Compatibilidad: antes autenticaba; ahora solo devuelve el cliente (cero carga en Auth)
 async function ensureAuth() {
   const sb = getClient(); if(!sb) throw new Error("sin cliente");
-  if(_authReady) return sb;
-  if(_authPromise) { await _authPromise; return sb; }
-  _authPromise = (async () => {
-    try {
-      // Comprobar si ya hay sesión activa
-      const { data: { session } } = await sb.auth.getSession();
-      if(session) { _authReady = true; window.__sbToken = session.access_token; return; }
-      // Si no hay sesión, hacer sign-in anónimo
-      const { data: signData, error } = await sb.auth.signInAnonymously();
-      if(error) throw error;
-      if(signData && signData.session) window.__sbToken = signData.session.access_token;
-      _authReady = true;
-    } catch(e) {
-      _authPromise = null; // permitir reintento
-      throw e;
-    }
-  })();
-  await _authPromise;
-  // Mantener el token fresco para el guardado urgente (keepalive)
-  if(!window.__sbTokenWatch){
-    window.__sbTokenWatch = true;
-    sb.auth.onAuthStateChange((_e, session)=>{ if(session) window.__sbToken = session.access_token; });
-  }
   return sb;
 }
 // Reajusta el contador de IDs para no colisionar con datos venidos de la nube
@@ -4161,6 +4139,8 @@ function App() {
   const [search, setSearch] = useState("");
   const [confirm, setConfirm] = useState(null); // {title, message, confirmLabel, danger, onConfirm}
   const [syncStatus, setSyncStatus] = useState("connecting"); // connecting | online | offline | saving
+  const syncStatusRef = useRef("connecting");
+  useEffect(()=>{ syncStatusRef.current = syncStatus; },[syncStatus]);
   const [showSync, setShowSync] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   // Modo de sincronización: "auto" (sube y baja solo) o "manual" (solo cuando pulsas el botón)
@@ -4518,11 +4498,15 @@ function App() {
   useEffect(()=>{
     let timer = null;
     let stopped = false;
+    let failures = 0; // fallos seguidos → freno exponencial
     const schedule = () => {
       if(stopped) return;
-      // Realtime activo → basta con comprobar de vez en cuando (respaldo).
-      // Sin realtime → comprobamos algo más a menudo, pero sin saturar.
-      const delay = rtOkRef.current ? 25000 : 12000;
+      // Con Realtime activo, los cambios llegan al instante por el canal: el sondeo es solo
+      // un respaldo poco frecuente. Sin Realtime, sondeamos más a menudo pero con mesura.
+      let delay = rtOkRef.current ? 60000 : 20000;
+      // FRENO: si Supabase está fallando, esperar cada vez más (30s → 1m → 2m → 4m → máx 5m)
+      // para no martillear un servidor caído (eso agrava el agotamiento de recursos).
+      if(failures > 0) delay = Math.min(30000 * Math.pow(2, failures-1), 300000);
       timer = setTimeout(run, delay);
     };
     const run = async () => {
@@ -4530,7 +4514,13 @@ function App() {
       // En modo manual no bajamos datos automáticamente (cero carga al servidor).
       if(syncModeRef.current === "manual"){ schedule(); return; }
       if(document.visibilityState === "visible"){
-        try { await pullRef.current(true); } catch(e){}
+        try {
+          await pullRef.current(true);
+          failures = 0;
+        } catch(e){ failures++; }
+        // pullFromCloud captura sus propios errores; usamos el estado para detectar fallo
+        if(syncStatusRef.current === "offline") failures = Math.max(failures, 1);
+        else failures = 0;
         schedule();
       }
       // Si no está visible, no reprogramamos; se reanudará al volver a la app.
