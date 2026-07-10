@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "1.3.6";
+const APP_VERSION = "1.3.7";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -1378,6 +1378,51 @@ function FormatsModal({formats, setFormats, videos, onClose, toast, askConfirm})
 }
 
 /* ============================ CALENDARIO ============================ */
+// Celda de día del calendario, definida FUERA de CalendarView a propósito:
+// si se define dentro, cada render crea un componente "nuevo" y React desmonta y
+// remonta todas las celdas (y sus tarjetas), reproduciendo la animación de entrada
+// en cada interacción (el "parpadeo"). Fuera y memoizada, el árbol es estable.
+const CalDayCell = React.memo(function CalDayCell({d, di, big, minH, items, isToday, otherMonth, dragOver, setDragDay, onDrop, onQuickAdd, onOpen, onDragStart, onDragEnd, formats}){
+  const dayKey = DAYS[(d.getDay()+6)%7];
+  return (
+    <div
+      data-drop="date" data-dropval={di}
+      onDragOver={e=>{e.preventDefault(); setDragDay(di);}}
+      onDragLeave={()=>setDragDay(null)}
+      onDrop={e=>{e.preventDefault(); onDrop(di); setDragDay(null);}}
+      className={dragOver?"drag-over":""}
+      style={{
+        background: otherMonth?"var(--bg)":"var(--bg-2)", border:`1px solid ${isToday?"var(--border-gold)":"var(--border)"}`, borderRadius:11,
+        minHeight:minH, padding:7, display:"flex", flexDirection:"column", transition:"all .15s", opacity: otherMonth?0.55:1,
+        ...(isToday?{boxShadow:"0 0 0 1px rgba(212,175,55,0.15)"}:{})
+      }}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 3px 6px"}}>
+        <div>
+          {big
+            ? <div style={{fontSize:13,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div>
+            : <><div style={{fontSize:10.5,color: isToday?"var(--gold)":"var(--text-3)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>{dayKey}</div>
+                <div style={{fontSize:16,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div></>}
+        </div>
+        <button onClick={()=>onQuickAdd(di)} title="Añadir vídeo este día" style={{
+          width:20,height:20,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",
+          color:"var(--text-3)", border:"1px solid var(--border)", transition:"all .15s"
+        }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
+           onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
+          {Icons.plus}
+        </button>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,flex:1,overflow:"hidden"}}>
+        {items.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
+        {items.length===0 && !big && (
+          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--empty)",fontSize:11,minHeight:60,border:"1px dashed var(--border)",borderRadius:8}}>
+            Vacío
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
 function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffset, setWeekOffset, calView, setCalView, onQuickAdd, onUnassign, formats}) {
   const [dragDay, setDragDay] = useState(null);
   const [dragUnassign, setDragUnassign] = useState(false);
@@ -1416,51 +1461,6 @@ function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffse
     headerLabel = weekDates[0].toLocaleDateString("es-ES",{month:"long",year:"numeric"});
   }
   const stepLabel = calView==="month" ? "mes" : calView==="day" ? "día" : "semana";
-
-  const DayCell = ({d, big, minH}) => {
-    const di = isoOf(d);
-    const dayKey = DAYS[(d.getDay()+6)%7];
-    const items = byDate[di]||[];
-    const isToday = di===todayIso;
-    const otherMonth = big && d._otherMonth;
-    return (
-      <div
-        data-drop="date" data-dropval={di}
-        onDragOver={e=>{e.preventDefault(); setDragDay(di);}}
-        onDragLeave={()=>setDragDay(null)}
-        onDrop={e=>{e.preventDefault(); onDrop(di); setDragDay(null);}}
-        className={dragDay===di?"drag-over":""}
-        style={{
-          background: otherMonth?"var(--bg)":"var(--bg-2)", border:`1px solid ${isToday?"var(--border-gold)":"var(--border)"}`, borderRadius:11,
-          minHeight:minH, padding:7, display:"flex", flexDirection:"column", transition:"all .15s", opacity: otherMonth?0.55:1,
-          ...(isToday?{boxShadow:"0 0 0 1px rgba(212,175,55,0.15)"}:{})
-        }}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 3px 6px"}}>
-          <div>
-            {big
-              ? <div style={{fontSize:13,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div>
-              : <><div style={{fontSize:10.5,color: isToday?"var(--gold)":"var(--text-3)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>{dayKey}</div>
-                  <div style={{fontSize:16,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div></>}
-          </div>
-          <button onClick={()=>onQuickAdd(di)} title="Añadir vídeo este día" style={{
-            width:20,height:20,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",
-            color:"var(--text-3)", border:"1px solid var(--border)", transition:"all .15s"
-          }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
-             onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
-            {Icons.plus}
-          </button>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:6,flex:1,overflow:"hidden"}}>
-          {items.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
-          {items.length===0 && !big && (
-            <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--empty)",fontSize:11,minHeight:60,border:"1px dashed var(--border)",borderRadius:8}}>
-              Vacío
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
 
   const monthGrid = useMemo(()=>{
     const md = new Date(); md.setMonth(md.getMonth()+weekOffset); md.setDate(1);
@@ -1508,7 +1508,12 @@ function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffse
 
       {calView==="week" && (
         <div style={{display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:10}} className="cal-grid">
-          {weekDates.map(d=><DayCell key={isoOf(d)} d={d} minH={200}/>)}
+          {weekDates.map(d=>{ const di=isoOf(d); return (
+            <CalDayCell key={di} d={d} di={di} minH={200}
+              items={byDate[di]||[]} isToday={di===todayIso} dragOver={dragDay===di}
+              setDragDay={setDragDay} onDrop={onDrop} onQuickAdd={onQuickAdd}
+              onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>
+          );})}
         </div>
       )}
 
@@ -1518,7 +1523,12 @@ function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffse
             {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10.5,fontWeight:600,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".05em"}}>{d}</div>)}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}} className="cal-month-grid">
-            {monthGrid.map(d=><DayCell key={d.getTime()} d={d} big minH={92}/>)}
+            {monthGrid.map(d=>{ const di=isoOf(d); return (
+              <CalDayCell key={d.getTime()} d={d} di={di} big minH={92} otherMonth={!!d._otherMonth}
+                items={byDate[di]||[]} isToday={di===todayIso} dragOver={dragDay===di}
+                setDragDay={setDragDay} onDrop={onDrop} onQuickAdd={onQuickAdd}
+                onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>
+            );})}
           </div>
         </div>
       )}
