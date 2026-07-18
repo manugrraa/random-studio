@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "1.3.7";
+const APP_VERSION = "1.4";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -978,7 +978,10 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
         youtubeUrl: result.youtubeUrl || ("https://youtu.be/"+result.videoId),
         status: scheduledAt ? "programado" : (visibility==="public" ? "publicado" : "programado"),
         description: desc,
-        pinnedComment: pinnedComment
+        pinnedComment: pinnedComment,
+        // Si el backend ya publicó el comentario (vídeo público al subir), no repetirlo después.
+        // Si es programado, el backend no puede comentarlo aún → la app lo hará al publicarse.
+        pinnedCommentPosted: !!result.commentOk
       });
       onClose();
     } catch(e){
@@ -2883,7 +2886,66 @@ function AgentView({ promptTemplates, setPromptTemplates, toast }) {
   );
 }
 
-function ScheduledView({ videos, onOpen, onUpdateVideo, subHistory, onRecordSubs, onConnect, formats, toast }) {
+// Panel para preparar el comentario fijado de un vídeo PROGRAMADO: se guarda en el vídeo
+// y la app lo publica automáticamente en cuanto el vídeo pasa a público.
+// (Definido fuera de ScheduledView para no remontar el árbol en cada render.)
+function PinnedCommentPanel({ programados, onUpdateVideo, toast }){
+  const [selId, setSelId] = useState("");
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const sel = programados.find(v=>v.id===selId) || null;
+
+  const pick = (id) => {
+    setSelId(id);
+    const v = programados.find(x=>x.id===id);
+    setText(v ? (v.pinnedComment||"") : "");
+  };
+  const save = () => {
+    if(!sel){ toast("Elige un vídeo programado"); return; }
+    onUpdateVideo(sel.id, { pinnedComment: text.trim(), pinnedCommentPosted: false });
+    toast(text.trim() ? "💬 Comentario preparado · se publicará cuando el vídeo salga" : "Comentario quitado");
+  };
+
+  return (
+    <div style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
+      <button onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:9,width:"100%",textAlign:"left"}}>
+        <span style={{color:"var(--gold)",display:"flex"}}>{Icons.sparkles}</span>
+        <span style={{fontSize:13.5,fontWeight:700,color:"var(--text)",flex:1}}>Comentario fijado al publicarse</span>
+        <span style={{fontSize:11,color:"var(--text-3)"}}>{programados.length} programado{programados.length!==1?"s":""}</span>
+        <span style={{color:"var(--text-3)",transform:open?"rotate(180deg)":"none",transition:"transform .2s",display:"flex"}}>▾</span>
+      </button>
+      {open && (
+        <div className="fade-in" style={{marginTop:12,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontSize:11.5,color:"var(--text-3)",lineHeight:1.5}}>
+            Prepara aquí el comentario de un vídeo programado. En cuanto el vídeo se publique, la app lo publicará automáticamente como comentario de tu canal.
+          </div>
+          <select value={selId} onChange={e=>pick(e.target.value)} style={inputStyle}>
+            <option value="">Elige un vídeo programado…</option>
+            {programados.map(v=>(
+              <option key={v.id} value={v.id}>
+                {(v.pinnedComment?"💬 ":"")+(v.title||"(sin título)")}
+              </option>
+            ))}
+          </select>
+          {sel && (
+            <>
+              <textarea value={text} onChange={e=>setText(e.target.value)} rows={2}
+                placeholder="Escribe el comentario que quieres publicar cuando salga el vídeo…"
+                style={{...inputStyle,resize:"vertical",lineHeight:1.55}}/>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <button onClick={save} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:12.5,padding:"9px 16px",borderRadius:9}}>Guardar comentario</button>
+                {sel.pinnedComment && !sel.pinnedCommentPosted && <span style={{fontSize:11,color:"var(--gold)"}}>Pendiente de publicarse</span>}
+                {sel.pinnedCommentPosted && <span style={{fontSize:11,color:"var(--green)"}}>✅ Ya publicado</span>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos, subHistory, onRecordSubs, onConnect, formats, toast }) {
   const [checking, setChecking] = useState(false);
   const [statusMap, setStatusMap] = useState({}); // videoId -> {exists, privacyStatus, publishAt}
   const [deleting, setDeleting] = useState(null);
@@ -2894,39 +2956,79 @@ function ScheduledView({ videos, onOpen, onUpdateVideo, subHistory, onRecordSubs
 
   const refresh = async () => {
     if(!ytIsConnected()){ toast("Conecta con Google desde un vídeo para comprobar el estado"); return; }
-    const ids = ytVideos.map(v=>v.youtubeId);
-    if(ids.length===0) return;
     setChecking(true);
     try {
-      const map = await ytCheckVideos(ids);
-      setStatusMap(map);
-      // Si alguno ya no existe en YouTube, lo reflejamos en la app
+      // ——— A) Estado de los vídeos ya vinculados ———
+      const ids = ytVideos.map(v=>v.youtubeId);
       let cleared = 0;
       let justPublished = [];
-      ytVideos.forEach(v=>{
-        const st = map[v.youtubeId];
-        if(st && st.exists===false){ onUpdateVideo(v.id, { youtubeId:null, youtubeStatus:null, youtubeUrl:null }); cleared++; }
-        else if(st && st.exists){
-          // youtubeStatus interno: published (público) | scheduled (programado) | uploaded (subido/privado)
-          const ns = st.privacyStatus==="public" ? "published" : (st.publishAt ? "scheduled" : "uploaded");
-          // status del tablero: se mueve automáticamente a Publicado o Programado
-          const boardStatus = st.privacyStatus==="public" ? "publicado" : (st.publishAt ? "programado" : null);
-          const patch = {};
-          if(ns!==v.youtubeStatus) patch.youtubeStatus = ns;
-          if(boardStatus && boardStatus!==v.status) patch.status = boardStatus;
-          // ¿Se acaba de publicar un vídeo que estaba programado? → avisar
-          if(ns==="published" && v.youtubeStatus==="scheduled"){
-            justPublished.push(v);
-            patch.notifiedPublished = true;
+      if(ids.length>0){
+        const map = await ytCheckVideos(ids);
+        setStatusMap(map);
+        ytVideos.forEach(v=>{
+          const st = map[v.youtubeId];
+          if(st && st.exists===false){ onUpdateVideo(v.id, { youtubeId:null, youtubeStatus:null, youtubeUrl:null }); cleared++; }
+          else if(st && st.exists){
+            // youtubeStatus interno: published (público) | scheduled (programado) | uploaded (subido/privado)
+            const ns = st.privacyStatus==="public" ? "published" : (st.publishAt ? "scheduled" : "uploaded");
+            // status del tablero: se mueve automáticamente a Publicado o Programado
+            const boardStatus = st.privacyStatus==="public" ? "publicado" : (st.publishAt ? "programado" : null);
+            const patch = {};
+            if(ns!==v.youtubeStatus) patch.youtubeStatus = ns;
+            if(boardStatus && boardStatus!==v.status) patch.status = boardStatus;
+            // ¿Se acaba de publicar un vídeo que estaba programado? → avisar
+            if(ns==="published" && v.youtubeStatus==="scheduled"){
+              justPublished.push({...v, ...patch});
+              patch.notifiedPublished = true;
+            }
+            if(Object.keys(patch).length) onUpdateVideo(v.id, patch);
           }
-          if(Object.keys(patch).length) onUpdateVideo(v.id, patch);
+        });
+        // Notificaciones + comentario fijado pendiente de los recién publicados
+        for(const v of justPublished){
+          fireNotification("🎉 ¡Vídeo publicado!", "«"+(v.title||"Tu vídeo")+"» ya está disponible en YouTube");
+          if(v.pinnedComment && !v.pinnedCommentPosted){
+            try {
+              await ytPostComment(v.youtubeId, v.pinnedComment);
+              onUpdateVideo(v.id, { pinnedCommentPosted: true });
+              toast("💬 Comentario publicado en «"+(v.title||"el vídeo")+"»");
+            } catch(e){ toast("⚠ Comentario pendiente en «"+(v.title||"el vídeo")+"»: "+e.message); }
+          }
         }
-      });
-      // Notificaciones de publicación (una por vídeo recién publicado)
-      justPublished.forEach(v=>{
-        fireNotification("🎉 ¡Vídeo publicado!", "«"+(v.title||"Tu vídeo")+"» ya está disponible en YouTube");
-      });
-      if(justPublished.length>0) toast("🎉 "+justPublished.length+" vídeo(s) recién publicado(s)");
+      }
+
+      // ——— B) IMPORTAR vídeos subidos directamente en YouTube (no desde la app) ———
+      let imported = 0;
+      try {
+        const uploads = await ytListUploadsFull(50);
+        const known = new Set([
+          ...videos.map(v=>v.youtubeId).filter(Boolean),
+          ...(trashYtIds||[])
+        ]);
+        const nuevos = uploads.filter(u=>!known.has(u.id)).map(u=>{
+          // Fecha y hora locales: si está programado usamos publishAt; si no, publishedAt
+          const when = new Date(u.publishAt || u.publishedAt || Date.now());
+          const p = n=>String(n).padStart(2,"0");
+          const date = `${when.getFullYear()}-${p(when.getMonth()+1)}-${p(when.getDate())}`;
+          const time = `${p(when.getHours())}:${p(when.getMinutes())}`;
+          const esPublico = u.privacyStatus==="public";
+          const base = makeVideo({ title:u.title, date, time }, formats);
+          return {
+            ...base,
+            format: detectFormatFromTitle(u.title, u.durationSec, formats), // "" si no se detecta
+            type: (u.durationSec>0 && u.durationSec<=183) ? "short" : "video",
+            status: esPublico ? "publicado" : (u.publishAt ? "programado" : "edicion"),
+            youtubeId: u.id,
+            youtubeUrl: "https://youtu.be/"+u.id,
+            youtubeStatus: esPublico ? "published" : (u.publishAt ? "scheduled" : "uploaded"),
+            importedFromYT: true
+          };
+        });
+        if(nuevos.length>0){ onAddVideos(nuevos); imported = nuevos.length; }
+      } catch(e){ /* la importación no debe romper la comprobación de estado */ }
+
+      if(imported>0) toast("📥 "+imported+" vídeo(s) de YouTube añadidos al calendario");
+      else if(justPublished.length>0) toast("🎉 "+justPublished.length+" vídeo(s) recién publicado(s)");
       else if(cleared>0) toast(cleared+" vídeo(s) ya no estaban en YouTube · actualizado");
       else toast("Estado actualizado");
     } catch(e){
@@ -2935,9 +3037,9 @@ function ScheduledView({ videos, onOpen, onUpdateVideo, subHistory, onRecordSubs
     } finally { setChecking(false); }
   };
 
-  // Comprobar al entrar (si hay vídeos y conexión válida)
+  // Comprobar al entrar (si hay conexión válida; también importa los subidos desde YouTube)
   useEffect(()=>{
-    if(ytVideos.length>0 && ytTokenValid()){ refresh(); }
+    if(ytTokenValid()){ refresh(); }
   // eslint-disable-next-line
   },[]);
 
@@ -2993,6 +3095,13 @@ function ScheduledView({ videos, onOpen, onUpdateVideo, subHistory, onRecordSubs
           </button>
         </div>
       </div>
+
+      {/* ——— COMENTARIO FIJADO al publicarse un vídeo programado ——— */}
+      {(()=>{
+        const programados = ytVideos.filter(v=>v.youtubeStatus==="scheduled");
+        if(programados.length===0) return null;
+        return <PinnedCommentPanel programados={programados} onUpdateVideo={onUpdateVideo} toast={toast}/>;
+      })()}
 
       {ytVideos.length===0 ? (
         <div style={{textAlign:"center",color:"var(--text-3)",fontSize:13.5,padding:"60px 20px",border:"1px dashed var(--border)",borderRadius:14}}>
@@ -3905,9 +4014,86 @@ async function ytListMyVideos(max){
   })).filter(v=>v.id);
 }
 
+// Convierte una duración ISO 8601 (PT1H2M30S) a segundos
+function ytParseDuration(iso){
+  const m = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(iso||"");
+  if(!m) return 0;
+  return (parseInt(m[1]||"0",10)*3600) + (parseInt(m[2]||"0",10)*60) + parseInt(m[3]||"0",10);
+}
+
+// Lista COMPLETA de subidas del canal con fecha, duración y estado (para importar).
+// Devuelve [{id, title, publishedAt, publishAt, privacyStatus, durationSec}]
+async function ytListUploadsFull(max){
+  await ytEnsureToken();
+  // 1. Playlist de subidas
+  const chRes = await fetch("https://www.googleapis.com/youtube/v3/channels?" + new URLSearchParams({
+    part: "contentDetails", mine: "true"
+  }), { headers: ytAuthHeader() });
+  if(!chRes.ok) throw new Error("Error al leer el canal ("+chRes.status+")");
+  const chData = await chRes.json();
+  const uploads = chData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+  if(!uploads) return [];
+  // 2. Últimos N ids del playlist
+  const plRes = await fetch("https://www.googleapis.com/youtube/v3/playlistItems?" + new URLSearchParams({
+    part: "contentDetails", playlistId: uploads, maxResults: String(Math.min(max||50,50))
+  }), { headers: ytAuthHeader() });
+  if(!plRes.ok) throw new Error("Error al leer subidas ("+plRes.status+")");
+  const plData = await plRes.json();
+  const ids = (plData.items||[]).map(it=>it.contentDetails?.videoId).filter(Boolean);
+  if(ids.length===0) return [];
+  // 3. Detalles en lote (una sola llamada para hasta 50)
+  const vRes = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
+    part: "snippet,contentDetails,status", id: ids.join(",")
+  }), { headers: ytAuthHeader() });
+  if(!vRes.ok) throw new Error("Error al leer detalles ("+vRes.status+")");
+  const vData = await vRes.json();
+  return (vData.items||[]).map(it=>({
+    id: it.id,
+    title: it.snippet?.title || "(sin título)",
+    publishedAt: it.snippet?.publishedAt || null,
+    publishAt: it.status?.publishAt || null,
+    privacyStatus: it.status?.privacyStatus || "private",
+    durationSec: ytParseDuration(it.contentDetails?.duration)
+  }));
+}
+
+// Publica un comentario del propietario en un vídeo (aparece destacado como comentario del canal)
+async function ytPostComment(videoId, text){
+  await ytEnsureToken();
+  const res = await fetch("https://www.googleapis.com/youtube/v3/commentThreads?part=snippet", {
+    method: "POST",
+    headers: { ...ytAuthHeader(), "Content-Type": "application/json" },
+    body: JSON.stringify({ snippet: { videoId, topLevelComment: { snippet: { textOriginal: text } } } })
+  });
+  if(!res.ok){
+    const data = await res.json().catch(()=>({}));
+    throw new Error(data?.error?.message || "Error al publicar el comentario ("+res.status+")");
+  }
+  return true;
+}
+
+// Detecta el formato de un vídeo a partir del título (comparando con las etiquetas
+// de los formatos del usuario). Si es un Short (≤3 min) y existe un formato "short",
+// lo usa. Si no hay coincidencia, devuelve "" (sin formato, para elegirlo a mano).
+function detectFormatFromTitle(title, durationSec, formats){
+  const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const t = norm(title);
+  let best = "", bestLen = 0;
+  Object.entries(formats||{}).forEach(([key, f])=>{
+    const label = norm(f.label);
+    if(label && t.includes(label) && label.length > bestLen){ best = key; bestLen = label.length; }
+  });
+  if(best) return best;
+  // Shorts: duración ≤ 183s → buscar un formato cuyo nombre contenga "short"
+  if(durationSec > 0 && durationSec <= 183){
+    const shortKey = Object.entries(formats||{}).find(([k,f])=>/short/i.test(f.label));
+    if(shortKey) return shortKey[0];
+  }
+  return "";
+}
+
 // Trae los datos completos de un vídeo (para copiar descripción, tags, categoría)
-async function ytGetVideoDetails(videoId){
-  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
+async function ytGetVideoDetails(videoId){  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
     part: "snippet", id: videoId
   }), { headers: ytAuthHeader() });
   if(!res.ok) throw new Error("Error al leer el vídeo ("+res.status+")");
@@ -4869,6 +5055,15 @@ function App() {
       if(!ytIsConnected() || !ytTokenValid()) return;
       const s = stateRef.current;
       const scheduled = (s.videos||[]).filter(v=>v.youtubeId && v.youtubeStatus==="scheduled");
+      // Comentarios preparados que quedaron pendientes (p. ej. falló el primer intento)
+      const comentariosPendientes = (s.videos||[]).filter(v=>v.youtubeId && v.youtubeStatus==="published" && v.pinnedComment && !v.pinnedCommentPosted);
+      for(const v of comentariosPendientes){
+        try {
+          await ytPostComment(v.youtubeId, v.pinnedComment);
+          setVideos(vs=>vs.map(x=>x.id===v.id?{...x, pinnedCommentPosted:true, updatedAt:Date.now()}:x));
+          toast("💬 Comentario publicado en «"+(v.title||"el vídeo")+"»");
+        } catch(e){ /* reintento en el próximo ciclo */ }
+      }
       if(scheduled.length===0) return;
       try {
         const map = await ytCheckVideos(scheduled.map(v=>v.youtubeId));
@@ -4880,9 +5075,17 @@ function App() {
             setVideos(vs=>vs.map(x=>x.id===v.id?{...x, youtubeStatus:"published", status:"publicado", updatedAt:Date.now()}:x));
           }
         });
-        nowPublished.forEach(v=>{
+        for(const v of nowPublished){
           fireNotification("🎉 ¡Vídeo publicado!", "«"+(v.title||"Tu vídeo")+"» ya está disponible en YouTube");
-        });
+          // Comentario fijado preparado → publicarlo ahora que el vídeo es público
+          if(v.pinnedComment && !v.pinnedCommentPosted){
+            try {
+              await ytPostComment(v.youtubeId, v.pinnedComment);
+              setVideos(vs=>vs.map(x=>x.id===v.id?{...x, pinnedCommentPosted:true, updatedAt:Date.now()}:x));
+              toast("💬 Comentario publicado en «"+(v.title||"el vídeo")+"»");
+            } catch(e){ /* se reintentará en la próxima comprobación */ }
+          }
+        }
         if(nowPublished.length>0) toast("🎉 "+nowPublished.length+" vídeo(s) recién publicado(s)");
       } catch(e){ /* silencioso */ }
     };
@@ -5219,7 +5422,7 @@ function App() {
         {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
         {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} dailyArchive={dailyArchive} toast={toast} onTaskDeleted={(id)=>addTomb(id,"task")} onListDeleted={(id)=>addTomb(id,"list")} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
         {view==="stats" && <StatsView videos={videos} taskLists={taskLists} formats={formats}/>}
-        {view==="scheduled" && <ScheduledView videos={videos} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast}/>}
+        {view==="scheduled" && <ScheduledView videos={videos} trashYtIds={trash.map(t=>t.youtubeId).filter(Boolean)} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} onAddVideos={(nuevos)=>setVideos(vs=>[...vs, ...nuevos])} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast}/>}
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
 
