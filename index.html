@@ -145,7 +145,7 @@
 <script type="text/babel">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "1.4";
+const APP_VERSION = "1.4.1";
 
 /* ============================ DATOS BASE ============================ */
 const DEFAULT_FORMATS = {
@@ -2950,6 +2950,7 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
   const [statusMap, setStatusMap] = useState({}); // videoId -> {exists, privacyStatus, publishAt}
   const [deleting, setDeleting] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [downloadFor, setDownloadFor] = useState(null); // vídeo a descargar (modal de calidad)
 
   // Vídeos que tienen relación con YouTube
   const ytVideos = videos.filter(v=>v.youtubeId);
@@ -3137,6 +3138,12 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
                       border:"1px solid rgba(255,0,0,0.3)",borderRadius:9
                     }}>{Icons.youtube} Ver</a>
                   )}
+                  {!gone && (
+                    <button onClick={()=>setDownloadFor(v)} title="Descargar el vídeo" style={{
+                      display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"var(--gold)",padding:"7px 11px",
+                      border:"1px solid var(--border-gold)",borderRadius:9,background:"rgba(212,175,55,0.05)"
+                    }}>{Icons.download} Descargar</button>
+                  )}
                   <button onClick={()=>onOpen(v)} title="Editar en la app" style={{
                     display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"var(--text-2)",padding:"7px 11px",
                     border:"1px solid var(--border)",borderRadius:9
@@ -3155,6 +3162,37 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
               </div>
             );
           })}
+        </div>
+      )}
+
+      {downloadFor && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,zIndex:300}}>
+          <div style={{background:"var(--bg-2)",border:"1px solid var(--border-gold)",borderRadius:14,padding:22,maxWidth:440,width:"100%"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:6}}>
+              <h3 style={{fontSize:16,fontWeight:700,display:"flex",alignItems:"center",gap:8}}>{Icons.download} Descargar vídeo</h3>
+              <button onClick={()=>setDownloadFor(null)} style={{color:"var(--text-3)",fontSize:18,lineHeight:1,padding:"2px 6px"}}>✕</button>
+            </div>
+            <p style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.5,marginBottom:16,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>«{downloadFor.title}»</p>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {/* Opción 1: Studio (720p, directo) */}
+              <a href={"https://studio.youtube.com/video/"+downloadFor.youtubeId+"/edit"} target="_blank" rel="noopener"
+                 onClick={()=>{ toast("En Studio: menú Opciones (⋮) → Descargar"); setDownloadFor(null); }}
+                 style={{display:"block",padding:"13px 15px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:11,textDecoration:"none"}}>
+                <div style={{fontSize:13.5,fontWeight:700,color:"var(--text)",marginBottom:3}}>MP4 hasta 720p · YouTube Studio</div>
+                <div style={{fontSize:11.5,color:"var(--text-3)",lineHeight:1.5}}>Descarga oficial en un clic. Se abre la página del vídeo en Studio: pulsa el menú Opciones (⋮) → «Descargar». Vale también para directos archivados.</div>
+              </a>
+              {/* Opción 2: Takeout (calidad original / 1080p) */}
+              <a href="https://takeout.google.com/settings/takeout/custom/youtube" target="_blank" rel="noopener"
+                 onClick={()=>{ setDownloadFor(null); }}
+                 style={{display:"block",padding:"13px 15px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:11,textDecoration:"none"}}>
+                <div style={{fontSize:13.5,fontWeight:700,color:"var(--text)",marginBottom:3}}>Calidad original (1080p o superior) · Google Takeout</div>
+                <div style={{fontSize:11.5,color:"var(--text-3)",lineHeight:1.5}}>Exporta tus vídeos tal y como los subiste, en su resolución original. Elige «YouTube y YouTube Music» → contenido «videos». Google prepara el archivo y te avisa por correo.</div>
+              </a>
+            </div>
+            <p style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5,marginTop:14}}>
+              La API de YouTube no permite descargar el archivo directamente desde la app, así que estas son las dos vías oficiales para tus propios vídeos.
+            </p>
+          </div>
         </div>
       )}
 
