@@ -4,16 +4,20 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.1.0";
 
 /* ============================ DATOS BASE ============================ */
+/* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
+   Las claves son fijas (el clasificador las usa); las etiquetas y colores se pueden cambiar. */
 const DEFAULT_FORMATS = {
-  competitivo: { label: "Competitivo 1v1", color: "#60a5fa", score: 95, ideal: ["Lun","Mar","Vie","Dom"] },
-  cajas:       { label: "Cajas / Recompensas", color: "#a78bfa", score: 88, ideal: ["Mar","Jue","Sab"] },
-  retos:       { label: "Retos y Dinámicas", color: "#4ade80", score: 98, ideal: ["Lun","Mie","Vie","Dom"] },
-  educativo:   { label: "Educativo Rápido", color: "#9ca3af", score: 72, ideal: ["Jue","Sab"] },
-  mix:         { label: "Mix (2 temáticas)", color: "#fb923c", score: 90, ideal: ["Mie","Jue","Sab"] },
-  reacciones:  { label: "Reacciones (nuevo)", color: "#f472b6", score: 75, ideal: ["Mar","Mie","Dom"] },
+  combates:  { label: "Combates",             color: "#ef4444", score: 95, ideal: ["Lun","Mie","Vie","Dom"] },
+  jugadas:   { label: "Jugadas y momentos",   color: "#60a5fa", score: 90, ideal: ["Mar","Jue","Sab"] },
+  cajas:     { label: "Cajas y regalos",      color: "#a78bfa", score: 92, ideal: ["Mar","Jue","Sab"] },
+  retos:     { label: "Retos y dinámicas",    color: "#4ade80", score: 88, ideal: ["Lun","Mie","Sab"] },
+  comunidad: { label: "Comunidad y preguntas", color: "#f472b6", score: 86, ideal: ["Mar","Jue","Dom"] },
+  ropa:      { label: "Ropa y equipaciones",  color: "#22d3ee", score: 82, ideal: ["Mar","Vie"] },
+  novedades: { label: "Novedades y eventos",  color: "#fb923c", score: 84, ideal: ["Lun","Sab","Dom"] },
+  directos:  { label: "Directos",             color: "#D4AF37", score: 80, ideal: ["Vie","Sab","Dom"] },
 };
 const PALETTE = [
   // Rojos / corales
@@ -60,11 +64,12 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const sortedFormats = (formats) => Object.entries(formats).sort((a,b)=>a[1].label.localeCompare(b[1].label, "es", {sensitivity:"base"}));
 
 function makeVideo(opts={}, formats) {
-  const firstFormat = Object.keys(formats||DEFAULT_FORMATS)[0];
   return {
     id: uid(),
     title: opts.title || "Nueva idea",
-    format: opts.format || firstFormat,
+    // Sin formato por defecto: lo decide el clasificador o el usuario (antes se
+    // colaba el primer formato de la lista y acababa todo como "Ropa")
+    format: opts.format || "",
     type: opts.type || "short",
     status: opts.status || "idea",
     date: opts.date || null,
@@ -113,6 +118,7 @@ const Icons = {
   scissors: <Icon d={<><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></>}/>,
   short: <Icon d={<><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M10.5 8.5l4 2.5-4 2.5z"/></>}/>,
   largo: <Icon d={<><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></>}/>,
+  live: <Icon d={<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></>}/>,
   trash: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>} size={16}/>,
   edit: <Icon d={<><path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></>} size={14}/>,
   drag: <Icon d={<path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/>} size={16}/>,
@@ -299,14 +305,23 @@ const touchDrag = {
   }
 };
 
+/* Estado global de tarjetas (contraídas/expandidas); cada tarjeta puede ajustarse aparte */
+const ExpandCtx = React.createContext(false);
+
 function VideoCardBase({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
   const f = formats[v.format] || { color:"#6B6B6B", label:"Sin formato" };
   const done = v.checklist.filter(c=>c.done).length;
   const pct = Math.round(done/v.checklist.length*100);
   const ref = useRef(null);
-  const isLargo = v.type === "largo";
-  // Los vídeos largos van con fondo blanco; los Shorts, con fondo oscuro
-  // Largos siempre claros y Shorts siempre oscuros, en ambos temas
+  const globalExp = React.useContext(ExpandCtx);
+  const [ajuste, setAjuste] = useState(null); // ajuste manual de ESTA tarjeta
+  useEffect(()=>{ setAjuste(null); }, [globalExp]); // el botón global resetea los ajustes
+  const expanded = ajuste===null ? globalExp : ajuste;
+  const esDirecto = v.type==="directo";
+  const isLargo = v.type === "largo" || v.type === "video";
+  const iconoTipo = esDirecto ? Icons.live : (v.type==="short" ? Icons.short : Icons.largo);
+  const tipoLabel = esDirecto ? "Directo" : (v.type==="short" ? "Short" : "Vídeo largo");
+  // Los vídeos largos van con fondo blanco; Shorts y directos, con fondo oscuro
   const th = isLargo
     ? { bg:"#F4F4F2", bgHover:"#FFFFFF", text:"#141414", text2:"#555", text3:"#8a8a8a", track:"#e2e2e0", border:"#d8d8d4" }
     : { bg:"#141414", bgHover:"#1F1F1F", text:"#F5F5F5", text2:"#A3A3A3", text3:"#8a8a8a", track:"#0a0a0a", border:"#2e2e2e" };
@@ -314,6 +329,12 @@ function VideoCardBase({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
     if(Date.now() < dnd.suppressClickUntil) return; // veníamos de arrastrar: no abrir
     onOpen(v);
   };
+  const toggle = (
+    <button onClick={e=>{e.stopPropagation(); setAjuste(expanded?false:true);}} title={expanded?"Contraer":"Expandir"}
+      style={{display:"flex",color:th.text3,padding:2,flexShrink:0,transform:expanded?"rotate(180deg)":"none",transition:"transform .18s",background:"none",border:"none",cursor:"pointer"}}>
+      {Icons.chevron}
+    </button>
+  );
   return (
     <div draggable ref={ref}
       data-drop="card" data-dropval={v.id}
@@ -327,38 +348,63 @@ function VideoCardBase({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
       className="fade-in"
       style={{
         background:th.bg, border:`1px solid ${th.border}`, borderLeft:`3px solid ${f.color}`,
-        borderRadius:10, padding: compact?"9px 11px":"12px 13px", cursor:"pointer", position:"relative",
+        borderRadius:10, padding: expanded ? (compact?"9px 11px":"12px 13px") : (compact?"7px 9px":"8px 11px"),
+        cursor:"pointer", position:"relative",
         transition:"background .15s, border-color .15s"
       }}
       onMouseEnter={e=>{e.currentTarget.style.background=th.bgHover;e.currentTarget.style.borderColor= isLargo?"#c8b46a":"var(--border-gold)";e.currentTarget.style.borderLeftColor=f.color;}}
       onMouseLeave={e=>{e.currentTarget.style.background=th.bg;e.currentTarget.style.borderColor=th.border;e.currentTarget.style.borderLeftColor=f.color;}}
     >
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:7, color:th.text3}}>
-          <span style={{color:f.color, display:"flex"}}>{v.type==="short"?Icons.short:Icons.largo}</span>
-          {!compact && <span style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:".06em", color:th.text3}}>{v.type==="short"?"Short":"Vídeo largo"}</span>}
-        </div>
-        <span style={{color:th.text3, display:"flex"}}>{Icons.drag}</span>
-      </div>
-      <div style={{fontSize: compact?12.5:13.5, fontWeight:600, color:th.text, margin:"7px 0 8px", lineHeight:1.35}}>{v.title}</div>
-      <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
-        <FormatPill fmt={f} small/>
-        {v.date && <span style={{fontSize:10.5,color:th.text3,display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{v.time}</span>}
-        {v.youtubeId && (
-          <span title={v.youtubeStatus==="scheduled"?"Programado en YouTube":"Subido a YouTube"} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,fontWeight:700,color:"#FF0000",background:"rgba(255,0,0,0.1)",padding:"2px 7px",borderRadius:20}}>
-            <span style={{display:"flex",width:12,height:12}}>{Icons.youtube}</span>{v.youtubeStatus==="scheduled"?"Prog.":"YT"}
-          </span>
-        )}
-      </div>
-      {!compact && (
-        <div style={{marginTop:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:th.text3,marginBottom:4}}>
-            <StatusDot status={v.status}/><span>{done}/{v.checklist.length}</span>
+      {!expanded ? (
+        <>
+          {/* ——— CONTRAÍDA: título en una línea + formato + hora ——— */}
+          <div style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
+            <span style={{color:f.color, display:"flex", flexShrink:0}}>{iconoTipo}</span>
+            <span style={{fontSize: compact?12:12.5, fontWeight:600, color:th.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1, minWidth:0}}>{v.title}</span>
+            {toggle}
           </div>
-          <div style={{height:4, background:th.track, borderRadius:4, overflow:"hidden"}}>
-            <div style={{height:"100%", width:`${pct}%`, background: pct===100?"var(--green)":"linear-gradient(90deg,#D4AF37,#FFD700)", transition:"width .3s", borderRadius:4}}/>
+          <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center", marginTop:5}}>
+            <FormatPill fmt={f} small/>
+            {v.date && <span style={{fontSize:10.5,color:th.text3,display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{v.time}</span>}
+            {v.youtubeId && (
+              <span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:9.5,fontWeight:700,color:"#FF0000",background:"rgba(255,0,0,0.1)",padding:"1px 6px",borderRadius:20}}>
+                <span style={{display:"flex",width:11,height:11}}>{Icons.youtube}</span>{v.youtubeStatus==="scheduled"?"Prog.":"YT"}
+              </span>
+            )}
           </div>
-        </div>
+        </>
+      ) : (
+        <>
+          {/* ——— EXPANDIDA: todos los datos ——— */}
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:7, color:th.text3}}>
+              <span style={{color:f.color, display:"flex"}}>{iconoTipo}</span>
+              {!compact && <span style={{fontSize:10.5, textTransform:"uppercase", letterSpacing:".06em", color:th.text3}}>{tipoLabel}</span>}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{color:th.text3, display:"flex"}}>{Icons.drag}</span>
+              {toggle}
+            </div>
+          </div>
+          <div style={{fontSize: compact?12.5:13.5, fontWeight:600, color:th.text, margin:"7px 0 8px", lineHeight:1.35}}>{v.title}</div>
+          <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center"}}>
+            <FormatPill fmt={f} small/>
+            {v.date && <span style={{fontSize:10.5,color:th.text3,display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{v.time}</span>}
+            {v.youtubeId && (
+              <span title={v.youtubeStatus==="scheduled"?"Programado en YouTube":"Subido a YouTube"} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,fontWeight:700,color:"#FF0000",background:"rgba(255,0,0,0.1)",padding:"2px 7px",borderRadius:20}}>
+                <span style={{display:"flex",width:12,height:12}}>{Icons.youtube}</span>{v.youtubeStatus==="scheduled"?"Prog.":"YT"}
+              </span>
+            )}
+          </div>
+          <div style={{marginTop:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:th.text3,marginBottom:4}}>
+              <StatusDot status={v.status}/><span>{done}/{v.checklist.length}</span>
+            </div>
+            <div style={{height:4, background:th.track, borderRadius:4, overflow:"hidden"}}>
+              <div style={{height:"100%", width:`${pct}%`, background: pct===100?"var(--green)":"linear-gradient(90deg,#D4AF37,#FFD700)", transition:"width .3s", borderRadius:4}}/>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -477,7 +523,7 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
       }}>
         <div style={{padding:"18px 22px", borderBottom:"1px solid var(--border)", display:"flex",justifyContent:"space-between",alignItems:"center", background:`linear-gradient(180deg, ${f.color}10, transparent)`}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{color:f.color,display:"flex"}}>{draft.type==="short"?Icons.short:Icons.largo}</span>
+            <span style={{color:f.color,display:"flex"}}>{draft.type==="short"?Icons.short:(draft.type==="directo"?Icons.live:Icons.largo)}</span>
             <span style={{fontSize:12.5,color:"var(--text-2)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>Editar vídeo</span>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -687,6 +733,43 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
 
+  // ——— Vídeo desde el PC (solo en la app de escritorio) ———
+  const esEscritorio = !!(typeof window!=="undefined" && window.studioFS && window.studioFS.ytUpload);
+  const [carpetaLocal, setCarpetaLocal] = useState(()=>{ try { return localStorage.getItem("rds_video_folder")||""; } catch(e){ return ""; } });
+  const [archivosLocales, setArchivosLocales] = useState([]); // candidatos que casan con el título
+  const [selectedLocal, setSelectedLocal] = useState(null);   // {path,name,size}
+  const [uploadPct, setUploadPct] = useState(null);
+
+  // Buscar en la carpeta local archivos que se parezcan al título
+  const buscarLocal = async (carpeta, titulo) => {
+    if(!esEscritorio || !carpeta) return;
+    try {
+      const todos = await window.studioFS.scanVideos(carpeta);
+      const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9ñ ]+/g," ");
+      const tokens = norm(titulo).split(/\s+/).filter(t=>t.length>2);
+      const puntuados = todos.map(a=>{
+        const n = norm(a.name.replace(/\.[^.]+$/,""));
+        let puntos = 0;
+        tokens.forEach(t=>{ if(n.includes(t)) puntos++; });
+        return { ...a, puntos };
+      }).filter(a=>a.puntos>0).sort((a,b)=> b.puntos-a.puntos || b.mtime-a.mtime).slice(0,8);
+      // Si nada casa, ofrecer los 8 más recientes de la carpeta
+      const lista = puntuados.length ? puntuados : todos.sort((a,b)=>b.mtime-a.mtime).slice(0,8);
+      setArchivosLocales(lista);
+      setSelectedLocal(puntuados.length ? puntuados[0] : null);
+    } catch(e){ setArchivosLocales([]); }
+  };
+  const elegirCarpeta = async () => {
+    const dir = await window.studioFS.pickFolder();
+    if(dir){ setCarpetaLocal(dir); try { localStorage.setItem("rds_video_folder", dir); } catch(e){} buscarLocal(dir, title); }
+  };
+  const elegirArchivo = async () => {
+    const p = await window.studioFS.pickVideo();
+    if(p){ const nombre = p.split(/[\\/]/).pop(); setSelectedLocal({ path:p, name:nombre, size:0 }); }
+  };
+  useEffect(()=>{ if(esEscritorio && carpetaLocal) buscarLocal(carpetaLocal, video.title); // eslint-disable-next-line
+  },[]);
+
   // Playlists y "copiar de otro vídeo"
   const [playlists, setPlaylists] = useState([]);
   const [myVideos, setMyVideos] = useState([]);
@@ -807,14 +890,62 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
   };
 
   const handleUpload = async () => {
-    if(!selected){ toast("Selecciona un archivo de Drive"); return; }
+    const usaLocal = esEscritorio && selectedLocal;
+    if(!usaLocal && !selected){ toast("Selecciona un archivo (del PC o de Drive)"); return; }
     if(!title.trim()){ toast("El título no puede estar vacío"); return; }
+    await ytEnsureToken();
     const tok = ytGetTokens();
     if(!tok || !tok.access_token){ toast("Conecta con Google primero"); setConnected(false); return; }
-    setUploading(true); setProgress("Enviando al servidor…");
+    setUploading(true);
     try {
       // La descripción final incluye el título del juego si se indicó
       let finalDesc = desc;
+      const schedIso = scheduledAt ? new Date(scheduledAt).toISOString() : null;
+
+      if(usaLocal){
+        // ——— SUBIDA DIRECTA DESDE EL PC (sin Drive y sin servidor) ———
+        const juego = gameTitle.trim() || null;
+        let tagsFinal = tags.split(",").map(s=>s.trim()).filter(Boolean);
+        if(juego){
+          if(!tagsFinal.some(t=>t.toLowerCase()===juego.toLowerCase())) tagsFinal.unshift(juego);
+          if(!finalDesc.toLowerCase().includes(juego.toLowerCase())) finalDesc = (finalDesc?finalDesc+"\n\n":"")+"🎮 "+juego;
+        }
+        const status = { selfDeclaredMadeForKids:false };
+        if(schedIso){ status.privacyStatus = "private"; status.publishAt = schedIso; }
+        else status.privacyStatus = visibility;
+        setUploadPct(0); setProgress("Subiendo desde tu PC a YouTube…");
+        const off = window.studioFS.onUploadProgress(d=>setUploadPct(d.pct));
+        let resultado;
+        try {
+          resultado = await window.studioFS.ytUpload({
+            filePath: selectedLocal.path,
+            token: tok.access_token,
+            meta: { snippet: { title: title.trim(), description: finalDesc, tags: tagsFinal, categoryId }, status }
+          });
+        } finally { if(off) off(); setUploadPct(null); }
+        const videoId = resultado.videoId;
+        // Lista de reproducción y comentario (lo que antes hacía el servidor)
+        let commentOk = false;
+        if(playlistId){ try { await ytAddToPlaylist(playlistId, videoId); } catch(e){ toast("⚠ Subido, pero no se pudo añadir a la lista: "+e.message); } }
+        if(pinnedComment.trim() && !schedIso && visibility==="public"){
+          try { await ytPostComment(videoId, pinnedComment.trim()); commentOk = true; } catch(e){}
+        }
+        toast("✅ Vídeo " + (schedIso?"programado":"subido") + " en YouTube");
+        onDone && onDone({
+          youtubeId: videoId,
+          youtubeStatus: schedIso ? "scheduled" : "uploaded",
+          youtubeUrl: "https://youtu.be/"+videoId,
+          status: schedIso ? "programado" : (visibility==="public" ? "publicado" : "programado"),
+          description: desc,
+          pinnedComment: pinnedComment,
+          pinnedCommentPosted: commentOk
+        });
+        onClose();
+        return;
+      }
+
+      // ——— VÍA DRIVE + SERVIDOR (web, o si no elegiste archivo del PC) ———
+      setProgress("Enviando al servidor…");
       const payload = {
         accessToken: tok.access_token,
         driveFileId: selected.id,
@@ -826,7 +957,7 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
         gameTitle: gameTitle.trim() || null,
         playlistId: playlistId || null,
         pinnedComment: pinnedComment.trim() || null,
-        scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null
+        scheduledAt: schedIso
       };
       setProgress("Descargando de Drive y subiendo a YouTube… (puede tardar)");
       const result = await ytUploadViaBackend(payload);
@@ -847,7 +978,7 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
       toast("❌ " + e.message);
       setProgress("");
     } finally {
-      setUploading(false);
+      setUploading(false); setUploadPct(null);
     }
   };
 
@@ -874,9 +1005,39 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
           </div>
         ) : (
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {/* ——— Vídeo desde tu PC (app de escritorio): subida directa, sin Drive ——— */}
+            {esEscritorio && (
+              <div style={{padding:13,background:"var(--card)",borderRadius:11,border:"1px solid var(--border-gold)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                  <span style={{...labelStyle, color:"var(--gold)"}}>Vídeo desde tu PC (recomendado)</span>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={elegirCarpeta} style={{fontSize:11,fontWeight:600,color:"var(--text-2)",border:"1px solid var(--border)",borderRadius:7,padding:"4px 9px"}}>
+                      {carpetaLocal?"Cambiar carpeta":"Elegir carpeta"}
+                    </button>
+                    <button onClick={elegirArchivo} style={{fontSize:11,fontWeight:600,color:"var(--text-2)",border:"1px solid var(--border)",borderRadius:7,padding:"4px 9px"}}>Elegir archivo…</button>
+                  </div>
+                </div>
+                {!carpetaLocal && !selectedLocal && (
+                  <div style={{fontSize:11.5,color:"var(--text-3)",lineHeight:1.5}}>Elige tu carpeta de vídeos y la app encontrará sola el archivo que corresponde a cada título. La subida va directa de tu PC a YouTube, sin pasar por Drive.</div>
+                )}
+                {carpetaLocal && (
+                  <div style={{fontSize:10.5,color:"var(--text-3)",marginBottom:7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={carpetaLocal}>📁 {carpetaLocal}</div>
+                )}
+                {archivosLocales.length>0 && (
+                  <select value={selectedLocal?.path||""} onChange={e=>setSelectedLocal(archivosLocales.find(a=>a.path===e.target.value)||null)} style={{...inputStyle,fontSize:12.5,padding:"8px 10px"}}>
+                    <option value="">— No usar archivo del PC —</option>
+                    {archivosLocales.map(a=>(
+                      <option key={a.path} value={a.path}>{a.name}{a.size?` · ${(a.size/1048576).toFixed(0)} MB`:""}</option>
+                    ))}
+                  </select>
+                )}
+                {selectedLocal && <div style={{marginTop:6,fontSize:11.5,color:"var(--green)"}}>✅ {selectedLocal.name} — se subirá directo desde tu PC</div>}
+              </div>
+            )}
+
             {/* Búsqueda en Drive (editable) */}
-            <div>
-              <span style={labelStyle}>Buscar vídeo en Drive</span>
+            <div style={{opacity: selectedLocal?0.55:1}}>
+              <span style={labelStyle}>{esEscritorio?"O buscar en Drive (alternativa)":"Buscar vídeo en Drive"}</span>
               <div style={{display:"flex",gap:7,marginTop:7}}>
                 <input value={driveQuery} onChange={e=>setDriveQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")runDriveSearch(driveQuery);}}
                   placeholder="Nombre del archivo en Drive" style={{...inputStyle,flex:1}}/>
@@ -1089,14 +1250,21 @@ function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTemplates, o
             )}
 
             {progress && (
-              <div style={{padding:"10px 12px",background:"var(--card)",borderRadius:9,fontSize:12.5,color:"var(--gold)",display:"flex",alignItems:"center",gap:9}}>
-                <span className="spinning" style={{display:"flex"}}>{Icons.refresh}</span> {progress}
+              <div style={{padding:"10px 12px",background:"var(--card)",borderRadius:9,fontSize:12.5,color:"var(--gold)"}}>
+                <div style={{display:"flex",alignItems:"center",gap:9}}>
+                  <span className="spinning" style={{display:"flex"}}>{Icons.refresh}</span> {progress}{uploadPct!=null?` ${uploadPct}%`:""}
+                </div>
+                {uploadPct!=null && (
+                  <div style={{height:6,background:"var(--bg-2)",borderRadius:6,overflow:"hidden",marginTop:8}}>
+                    <div style={{height:"100%",width:uploadPct+"%",background:"linear-gradient(90deg,#D4AF37,#FFD700)",transition:"width .3s",borderRadius:6}}/>
+                  </div>
+                )}
               </div>
             )}
 
             <div style={{display:"flex",gap:10,marginTop:4}}>
               <button onClick={onClose} style={{flex:"0 0 auto",padding:"11px 16px",borderRadius:10,border:"1px solid var(--border)",color:"var(--text-2)",fontSize:13.5,fontWeight:600}}>Cancelar</button>
-              <button onClick={handleUpload} disabled={uploading || !selected} style={{flex:1,padding:"11px 16px",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,background:"#FF0000",opacity:(uploading||!selected)?0.6:1}}>
+              <button onClick={handleUpload} disabled={uploading || (!selected && !selectedLocal)} style={{flex:1,padding:"11px 16px",borderRadius:10,color:"#fff",fontWeight:700,fontSize:14,background:"#FF0000",opacity:(uploading||(!selected&&!selectedLocal))?0.6:1}}>
                 {uploading ? "Subiendo…" : (scheduledAt ? "Subir y programar" : "Subir ahora")}
               </button>
             </div>
@@ -2804,15 +2972,309 @@ function PinnedCommentPanel({ programados, onUpdateVideo, toast }){
   );
 }
 
-function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos, subHistory, onRecordSubs, onConnect, formats, toast }) {
+/* ============================ OBJETIVOS (dinero → visitas, con RPM real) ============================ */
+const BarraProgreso = ({pct, alto=8, color}) => (
+  <div style={{height:alto, background:"var(--card)", borderRadius:alto, overflow:"hidden"}}>
+    <div style={{height:"100%", width:Math.min(100,Math.max(0,pct||0))+"%", borderRadius:alto, transition:"width .4s",
+      background: color || (pct>=100 ? "var(--green)" : "linear-gradient(90deg,#D4AF37,#FFD700)")}}/>
+  </div>
+);
+
+function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
+  const cfg = (goals && goals.cfg) || { targetEur: 100, shortsPerDay: 3, rpmManual: null };
+  const rpmInfo = (goals && goals.rpm) || null;
+  const daily = (goals && goals.daily) || {};
+  const [cargando, setCargando] = useState(false);
+  const [errorApi, setErrorApi] = useState(null); // "off" | "permisos" | "conectar" | mensaje
+  const [liveViews, setLiveViews] = useState({});
+  const [liveAt, setLiveAt] = useState(0);
+  const [editCfg, setEditCfg] = useState(false);
+  const [fTarget, setFTarget] = useState(String(cfg.targetEur));
+  const [fShorts, setFShorts] = useState(String(cfg.shortsPerDay));
+  const [fRpm, setFRpm] = useState(cfg.rpmManual!=null ? String(cfg.rpmManual) : "");
+
+  const hoy = new Date();
+  const hoyKey = fechaISO(hoy);
+  const nf = new Intl.NumberFormat("es-ES");
+  const nfc = new Intl.NumberFormat("es-ES", {notation:"compact", maximumFractionDigits:1});
+  const eur = (x) => x==null ? "—" : x.toLocaleString("es-ES",{minimumFractionDigits:2, maximumFractionDigits:2})+" €";
+
+  // RPM efectivo: manual (si lo fijaste) > RPM real de tus Shorts (API)
+  const rpm = cfg.rpmManual!=null ? cfg.rpmManual : (rpmInfo && rpmInfo.shorts ? rpmInfo.shorts.rpm : null);
+  const diasMes = new Date(hoy.getFullYear(), hoy.getMonth()+1, 0).getDate();
+  const objetivoMesVistas = (rpm && rpm>0) ? Math.round(cfg.targetEur / rpm * 1000) : null;
+  const objetivoDiaVistas = objetivoMesVistas ? Math.round(objetivoMesVistas / diasMes) : null;
+  const objetivoShort = objetivoDiaVistas ? Math.round(objetivoDiaVistas / (cfg.shortsPerDay||3)) : null;
+
+  const guardarCfg = () => {
+    const t = parseFloat(String(fTarget).replace(",","."));
+    const s = parseInt(fShorts,10);
+    const rm = String(fRpm).trim()==="" ? null : parseFloat(String(fRpm).replace(",","."));
+    if(!(t>0)){ toast("Pon un objetivo de € válido"); return; }
+    if(!(s>0)){ toast("Los Shorts diarios deben ser al menos 1"); return; }
+    setGoals(g=>({ ...(g||{}), daily:(g&&g.daily)||{}, rpm:(g&&g.rpm)||null,
+      cfg:{ targetEur:t, shortsPerDay:s, rpmManual:(rm && rm>0)?rm:null, updatedAt:Date.now() } }));
+    setEditCfg(false);
+    toast("Objetivo guardado");
+  };
+
+  // Refrescar analíticas: RPM real (1 vez al día) + visitas/ingresos por día
+  const refrescar = async (fuerza) => {
+    if(!ytIsConnected()){ setErrorApi("conectar"); return; }
+    setCargando(true); setErrorApi(null);
+    try {
+      let rpmNuevo = rpmInfo;
+      if(fuerza || !rpmInfo || (Date.now()-(rpmInfo.at||0)) > 24*3600*1000){
+        rpmNuevo = await ytFetchRpmReal();
+      }
+      const ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+      ini.setDate(ini.getDate()-7); // también la semana previa, para la vista semanal
+      const dias = await ytFetchDiario(fechaISO(ini), hoyKey);
+      setGoals(g=>{
+        const base = g||{};
+        const nuevoDaily = { ...(base.daily||{}) };
+        Object.entries(dias).forEach(([k,v])=>{
+          const p = nuevoDaily[k];
+          if(!p || (v.views||0) >= (p.views||0)) nuevoDaily[k]=v;
+        });
+        return { ...base, cfg: base.cfg || {...cfg, updatedAt:Date.now()}, rpm: rpmNuevo, daily: nuevoDaily, dailyAt: Date.now() };
+      });
+    } catch(e){
+      if(e.message==="ANALYTICS_API_OFF") setErrorApi("off");
+      else if(e.message==="ANALYTICS_PERMISOS") setErrorApi("permisos");
+      else setErrorApi(e.message);
+    } finally { setCargando(false); }
+  };
+
+  // Shorts de HOY con sus visitas en vivo
+  const shortsHoy = videos.filter(v=> v.type==="short" && v.date===hoyKey && v.youtubeId);
+  const refrescarLive = async () => {
+    const ids = shortsHoy.filter(v=>v.youtubeStatus==="published").map(v=>v.youtubeId);
+    if(!ids.length) return;
+    try { setLiveViews(await ytViewCounts(ids)); setLiveAt(Date.now()); } catch(e){}
+  };
+  useEffect(()=>{
+    if(ytTokenValid()){ refrescar(false); refrescarLive(); }
+    else if(!ytIsConnected()) setErrorApi("conectar");
+  // eslint-disable-next-line
+  },[]);
+
+  const vistasHoyShorts = shortsHoy.reduce((a,v)=>a+(liveViews[v.youtubeId]||0),0);
+
+  // Semana: últimos 7 días (hoy incluido)
+  const semana = Array.from({length:7},(_,i)=>{
+    const d = new Date(hoy); d.setDate(d.getDate()-(6-i));
+    const k = fechaISO(d);
+    return { k, dia: d.toLocaleDateString("es-ES",{weekday:"short"}), num: d.getDate(), views: daily[k]?.views ?? null, esHoy: k===hoyKey };
+  });
+  const maxSemana = Math.max(objetivoDiaVistas||0, ...semana.map(s=>s.views||0), 1);
+
+  // Mes en curso
+  const mesPrefix = hoyKey.slice(0,7);
+  const vistasMes = Object.entries(daily).filter(([k])=>k.startsWith(mesPrefix)).reduce((a,[,v])=>a+(v.views||0),0);
+  const ingresosMes = Object.entries(daily).filter(([k])=>k.startsWith(mesPrefix)).reduce((a,[,v])=>a+(v.revenue||0),0);
+
+  // Calendario del mes: celdas con el % del objetivo diario
+  const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const offsetLunes = (primerDia.getDay()+6)%7;
+  const celdas = [];
+  for(let i=0;i<offsetLunes;i++) celdas.push(null);
+  for(let d=1; d<=diasMes; d++){
+    const k = `${mesPrefix}-${String(d).padStart(2,"0")}`;
+    celdas.push({ d, k, views: daily[k]?.views ?? null, futuro: k>hoyKey, esHoy: k===hoyKey });
+  }
+  const colorCelda = (c) => {
+    if(!c || c.futuro || c.views==null || !objetivoDiaVistas) return "transparent";
+    const pct = c.views/objetivoDiaVistas*100;
+    if(pct>=100) return "rgba(74,222,128,0.35)";
+    if(pct>=50) return "rgba(212,175,55,0.3)";
+    return "rgba(248,113,113,0.22)";
+  };
+
+  const caja = { background:"var(--bg-2)", border:"1px solid var(--border)", borderRadius:14, padding:16 };
+  const tituloZona = { fontSize:11.5, fontWeight:700, color:"var(--text-3)", textTransform:"uppercase", letterSpacing:".07em", marginBottom:11 };
+
+  return (
+    <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:14}}>
+      {/* ——— Configuración / resumen del objetivo ——— */}
+      <div style={caja}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+          <div>
+            <div style={tituloZona}>Objetivo económico</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:26,fontWeight:800,fontFamily:"'Sora'",color:"var(--gold)"}}>{eur(cfg.targetEur)}</span>
+              <span style={{fontSize:12.5,color:"var(--text-2)"}}>al mes · {cfg.shortsPerDay} Shorts/día</span>
+            </div>
+            <div style={{fontSize:12,color:"var(--text-3)",marginTop:6,lineHeight:1.6}}>
+              {rpm ? <>
+                Con tu RPM {cfg.rpmManual!=null ? "manual" : "real de Shorts"} de <b style={{color:"var(--text-2)"}}>{rpm.toLocaleString("es-ES",{maximumFractionDigits:3})} €/1.000</b> necesitas{" "}
+                <b style={{color:"var(--text-2)"}}>{nfc.format(objetivoMesVistas)}</b> visitas/mes · <b style={{color:"var(--text-2)"}}>{nf.format(objetivoDiaVistas)}</b>/día · <b style={{color:"var(--text-2)"}}>{nf.format(objetivoShort)}</b> por Short
+                {cfg.rpmManual==null && rpmInfo && rpmInfo.at ? <span> · RPM calculado con la API ({new Date(rpmInfo.at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})})</span> : null}
+              </> : "Refresca las analíticas para calcular tu RPM real, o fija un RPM manual."}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{ setFTarget(String(cfg.targetEur)); setFShorts(String(cfg.shortsPerDay)); setFRpm(cfg.rpmManual!=null?String(cfg.rpmManual):""); setEditCfg(e=>!e); }} style={{
+              fontSize:12,fontWeight:600,color:"var(--text-2)",border:"1px solid var(--border)",borderRadius:9,padding:"8px 12px"
+            }}>{editCfg?"Cerrar":"Editar"}</button>
+            <button onClick={()=>{ refrescar(true); refrescarLive(); }} disabled={cargando} style={{
+              display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"var(--gold)",
+              border:"1px solid var(--border-gold)",borderRadius:9,padding:"8px 12px",background:"rgba(212,175,55,0.05)",opacity:cargando?0.6:1
+            }}><span className={cargando?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>{cargando?"Leyendo…":"Refrescar"}</button>
+          </div>
+        </div>
+
+        {editCfg && (
+          <div className="fade-in" style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:14,alignItems:"flex-end"}}>
+            <div style={{flex:"1 1 120px"}}><Field label="Objetivo € / mes"><input value={fTarget} onChange={e=>setFTarget(e.target.value)} inputMode="decimal" style={inputStyle}/></Field></div>
+            <div style={{flex:"1 1 120px"}}><Field label="Shorts al día"><input value={fShorts} onChange={e=>setFShorts(e.target.value)} inputMode="numeric" style={inputStyle}/></Field></div>
+            <div style={{flex:"1 1 160px"}}><Field label="RPM manual (vacío = usar el real)"><input value={fRpm} onChange={e=>setFRpm(e.target.value)} placeholder={rpmInfo?.shorts?.rpm ? rpmInfo.shorts.rpm.toLocaleString("es-ES",{maximumFractionDigits:3}) : "p. ej. 0,06"} inputMode="decimal" style={inputStyle}/></Field></div>
+            <button onClick={guardarCfg} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 18px",borderRadius:9}}>Guardar</button>
+          </div>
+        )}
+
+        {errorApi && (
+          <div className="fade-in" style={{marginTop:12,padding:"11px 13px",background:"rgba(212,175,55,0.07)",border:"1px solid var(--border-gold)",borderRadius:10,fontSize:12.5,color:"var(--text-2)",lineHeight:1.6}}>
+            {errorApi==="off" ? <>
+              Falta activar <b>YouTube Analytics API</b> en tu proyecto de Google (1 clic):{" "}
+              <a href="https://console.cloud.google.com/apis/library/youtubeanalytics.googleapis.com" target="_blank" rel="noopener" style={{color:"var(--gold)",fontWeight:600}}>abrir Google Cloud → pulsa «Habilitar»</a>. Después vuelve y pulsa «Refrescar».
+            </> : errorApi==="permisos" ? <>
+              Google necesita tu permiso para leer las analíticas.{" "}
+              <button onClick={onConnect} style={{color:"var(--gold)",fontWeight:700}}>Reconectar con Google</button> y acepta los permisos nuevos.
+            </> : errorApi==="conectar" ? <>
+              <button onClick={onConnect} style={{color:"var(--gold)",fontWeight:700}}>Conecta con Google</button> para leer visitas e ingresos reales.
+            </> : <>⚠ {errorApi}</>}
+          </div>
+        )}
+      </div>
+
+      {/* ——— HOY: los Shorts del día ——— */}
+      <div style={caja}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11}}>
+          <div style={{...tituloZona, marginBottom:0}}>Hoy · {hoy.toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}</div>
+          {liveAt>0 && <span style={{fontSize:10.5,color:"var(--text-3)"}}>visitas en vivo · {new Date(liveAt).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"})}</span>}
+        </div>
+        {shortsHoy.length===0 ? (
+          <div style={{fontSize:12.5,color:"var(--text-3)",padding:"8px 0"}}>Hoy todavía no hay Shorts subidos ni programados. {cfg.shortsPerDay} al día es tu plan.</div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {shortsHoy.map(v=>{
+              const vistas = liveViews[v.youtubeId];
+              const publicado = v.youtubeStatus==="published";
+              const pct = (publicado && objetivoShort && vistas!=null) ? vistas/objetivoShort*100 : 0;
+              return (
+                <div key={v.id}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,marginBottom:5}}>
+                    <span style={{color:"var(--text)",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{v.title}</span>
+                    <span style={{color: pct>=100?"var(--green)":"var(--text-2)",flexShrink:0,fontWeight:600}}>
+                      {publicado
+                        ? (vistas!=null ? `${nf.format(vistas)}${objetivoShort?` / ${nf.format(objetivoShort)} (${Math.round(pct)}%)`:""}` : "…")
+                        : `programado · ${v.time||""}`}
+                    </span>
+                  </div>
+                  <BarraProgreso pct={pct}/>
+                </div>
+              );
+            })}
+            {objetivoDiaVistas && (
+              <div style={{marginTop:2,paddingTop:12,borderTop:"1px solid var(--border)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
+                  <span style={{fontWeight:700,color:"var(--text-2)"}}>Total del día</span>
+                  <span style={{fontWeight:700,color: vistasHoyShorts>=objetivoDiaVistas?"var(--green)":"var(--text-2)"}}>{nf.format(vistasHoyShorts)} / {nf.format(objetivoDiaVistas)}</span>
+                </div>
+                <BarraProgreso pct={objetivoDiaVistas?vistasHoyShorts/objetivoDiaVistas*100:0} alto={10}/>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ——— SEMANA ——— */}
+      <div style={caja}>
+        <div style={tituloZona}>Última semana · visitas del canal por día{objetivoDiaVistas?` (línea = objetivo ${nfc.format(objetivoDiaVistas)})`:""}</div>
+        <div style={{display:"flex",gap:8,alignItems:"flex-end",height:110,position:"relative"}}>
+          {objetivoDiaVistas && <div style={{position:"absolute",left:0,right:0,bottom:(Math.min(1,objetivoDiaVistas/maxSemana)*86)+"px",borderTop:"1.5px dashed var(--border-gold)",opacity:.7}}/>}
+          {semana.map(s=>{
+            const h = s.views!=null ? Math.max(3, s.views/maxSemana*86) : 3;
+            const cumple = objetivoDiaVistas && s.views!=null && s.views>=objetivoDiaVistas;
+            return (
+              <div key={s.k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}} title={s.views!=null?nf.format(s.views)+" visitas":"sin datos aún"}>
+                <span style={{fontSize:10,color: cumple?"var(--green)":"var(--text-3)",fontWeight:600}}>{s.views!=null?nfc.format(s.views):"—"}</span>
+                <div style={{width:"100%",maxWidth:34,height:h,borderRadius:5,background: cumple?"var(--green)":(s.esHoy?"linear-gradient(180deg,#FFD700,#D4AF37)":"var(--card-2)"),border:"1px solid "+(cumple?"transparent":"var(--border)")}}/>
+                <span style={{fontSize:10,color:s.esHoy?"var(--gold)":"var(--text-3)",fontWeight:s.esHoy?700:400}}>{s.dia} {s.num}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:8}}>Los datos de visitas de la API cierran con ~2 días de retraso: los últimos días pueden crecer todavía.</div>
+      </div>
+
+      {/* ——— MES + calendario ——— */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:14}}>
+        <div style={caja}>
+          <div style={tituloZona}>{hoy.toLocaleDateString("es-ES",{month:"long",year:"numeric"})}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
+                <span style={{fontWeight:600,color:"var(--text-2)"}}>Ingresos reales</span>
+                <span style={{fontWeight:700,color: ingresosMes>=cfg.targetEur?"var(--green)":"var(--text)"}}>{eur(ingresosMes)} / {eur(cfg.targetEur)}</span>
+              </div>
+              <BarraProgreso pct={cfg.targetEur?ingresosMes/cfg.targetEur*100:0} alto={10}/>
+              <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:5}}>Los ingresos del mes en curso llegan con ~2 días de retraso y son estimados.</div>
+            </div>
+            {objetivoMesVistas && (
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
+                  <span style={{fontWeight:600,color:"var(--text-2)"}}>Visitas del mes</span>
+                  <span style={{fontWeight:700,color: vistasMes>=objetivoMesVistas?"var(--green)":"var(--text)"}}>{nfc.format(vistasMes)} / {nfc.format(objetivoMesVistas)}</span>
+                </div>
+                <BarraProgreso pct={vistasMes/objetivoMesVistas*100} alto={10}/>
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={caja}>
+          <div style={tituloZona}>Días que cumplen el objetivo</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+            {["L","M","X","J","V","S","D"].map(d=><div key={d} style={{fontSize:9.5,color:"var(--text-3)",textAlign:"center",fontWeight:700}}>{d}</div>)}
+            {celdas.map((c,i)=>(
+              <div key={i} style={{
+                aspectRatio:"1", borderRadius:7, display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:10.5, fontWeight: c&&c.esHoy?800:500,
+                color: c ? (c.futuro?"var(--text-3)":"var(--text)") : "transparent",
+                background: colorCelda(c),
+                border: c&&c.esHoy ? "1.5px solid var(--gold)" : "1px solid "+(c&&!c.futuro?"var(--border)":"transparent")
+              }} title={c&&c.views!=null?nf.format(c.views)+" visitas":""}>{c?c.d:""}</div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:12,marginTop:10,fontSize:10,color:"var(--text-3)",flexWrap:"wrap"}}>
+            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(74,222,128,0.35)",marginRight:4}}/>≥100%</span>
+            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(212,175,55,0.3)",marginRight:4}}/>≥50%</span>
+            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(248,113,113,0.22)",marginRight:4}}/>&lt;50%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos, subHistory, onRecordSubs, onConnect, formats, toast, goals, setGoals }) {
   const [checking, setChecking] = useState(false);
   const [statusMap, setStatusMap] = useState({}); // videoId -> {exists, privacyStatus, publishAt}
   const [deleting, setDeleting] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [downloadFor, setDownloadFor] = useState(null); // vídeo a descargar (modal de calidad)
 
+  // Sub-pestañas: Objetivos / Shorts / Directos / Vídeos
+  const [ytTab, setYtTab] = useState(()=>{ try { return localStorage.getItem("rds_yt_tab")||"objetivos"; } catch(e){ return "objetivos"; } });
+  useEffect(()=>{ try { localStorage.setItem("rds_yt_tab", ytTab); } catch(e){} },[ytTab]);
+  const [busca, setBusca] = useState("");
+  const [fmtFiltro, setFmtFiltro] = useState("");
+  const [abiertos, setAbiertos] = useState({}); // filas expandidas (id → true)
+
   // Vídeos que tienen relación con YouTube
   const ytVideos = videos.filter(v=>v.youtubeId);
+  const vTipo = (v) => v.type==="directo" ? "directo" : (v.type==="short" ? "short" : "video");
 
   const refresh = async () => {
     if(!ytIsConnected()){ toast("Conecta con Google desde un vídeo para comprobar el estado"); return; }
@@ -2836,6 +3298,13 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
             const patch = {};
             if(ns!==v.youtubeStatus) patch.youtubeStatus = ns;
             if(boardStatus && boardStatus!==v.status) patch.status = boardStatus;
+            // Corregir el tipo real (los directos importados antes figuraban como "vídeo")
+            const tipoReal = st.live ? "directo" : (st.durationSec>0 && st.durationSec<=183 ? "short" : "video");
+            if(tipoReal !== v.type){
+              patch.type = tipoReal;
+              patch.durationSec = st.durationSec||0;
+              if(tipoReal==="directo") patch.format = "directos";
+            }
             // ¿Se acaba de publicar un vídeo que estaba programado? → avisar
             if(ns==="published" && v.youtubeStatus==="scheduled"){
               justPublished.push({...v, ...patch});
@@ -2872,11 +3341,13 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
           const date = `${when.getFullYear()}-${p(when.getMonth()+1)}-${p(when.getDate())}`;
           const time = `${p(when.getHours())}:${p(when.getMinutes())}`;
           const esPublico = u.privacyStatus==="public";
+          const tipo = u.live ? "directo" : ((u.durationSec>0 && u.durationSec<=183) ? "short" : "video");
           const base = makeVideo({ title:u.title, date, time }, formats);
           return {
             ...base,
-            format: detectFormatFromTitle(u.title, u.durationSec, formats), // "" si no se detecta
-            type: (u.durationSec>0 && u.durationSec<=183) ? "short" : "video",
+            format: clasificarFormato(u.title, tipo), // "" si no se detecta
+            type: tipo,
+            durationSec: u.durationSec||0,
             status: esPublico ? "publicado" : (u.publishAt ? "programado" : "edicion"),
             youtubeId: u.id,
             youtubeUrl: "https://youtu.be/"+u.id,
@@ -2956,41 +3427,69 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
         </div>
       </div>
 
+      {/* ——— Sub-pestañas del apartado ——— */}
+      <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}>
+        {[
+          {id:"objetivos", label:"Objetivos"},
+          {id:"short",   label:"Shorts",   n: ytVideos.filter(v=>vTipo(v)==="short").length},
+          {id:"directo", label:"Directos", n: ytVideos.filter(v=>vTipo(v)==="directo").length},
+          {id:"video",   label:"Vídeos",   n: ytVideos.filter(v=>vTipo(v)==="video").length},
+        ].map(t=>(
+          <button key={t.id} onClick={()=>setYtTab(t.id)} style={{
+            fontSize:12.5, fontWeight:700, padding:"8px 15px", borderRadius:20,
+            border:"1px solid "+(ytTab===t.id?"var(--border-gold)":"var(--border)"),
+            color: ytTab===t.id?"var(--gold)":"var(--text-2)",
+            background: ytTab===t.id?"rgba(212,175,55,0.08)":"transparent"
+          }}>{t.label}{t.n!=null?` · ${t.n}`:""}</button>
+        ))}
+      </div>
+
       {/* ——— COMENTARIO FIJADO al publicarse un vídeo programado ——— */}
-      {(()=>{
+      {ytTab!=="objetivos" && (()=>{
         const programados = ytVideos.filter(v=>v.youtubeStatus==="scheduled");
         if(programados.length===0) return null;
         return <PinnedCommentPanel programados={programados} onUpdateVideo={onUpdateVideo} toast={toast}/>;
       })()}
 
-      {ytVideos.length===0 ? (
-        <div style={{textAlign:"center",color:"var(--text-3)",fontSize:13.5,padding:"60px 20px",border:"1px dashed var(--border)",borderRadius:14}}>
-          <div style={{color:"#FF0000",display:"flex",justifyContent:"center",marginBottom:12,opacity:.6}}>{Icons.youtube}</div>
-          Todavía no has subido ni programado ningún vídeo en YouTube.<br/>
-          Abre un vídeo y pulsa «Subir a YouTube» para empezar.
-        </div>
-      ) : (
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {ytVideos.map(v=>{
-            const f = formats[v.format] || { color:"#6B6B6B", label:"" };
-            const si = statusInfo(v);
-            const gone = statusMap[v.youtubeId]?.exists===false;
-            return (
-              <div key={v.id} className="yt-row" style={{
-                display:"flex",alignItems:"center",gap:14,padding:"14px 16px",background:"var(--bg-2)",
-                border:`1px solid ${gone?"rgba(248,113,113,0.35)":"var(--border)"}`,borderLeft:`3px solid ${f.color}`,borderRadius:12,flexWrap:"wrap"
-              }}>
-                <div style={{flex:1,minWidth:180}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                    <span style={{color:f.color,display:"flex"}}>{v.type==="short"?Icons.short:Icons.largo}</span>
-                    <span style={{fontSize:14,fontWeight:600,color:"var(--text)",overflowWrap:"anywhere"}}>{v.title}</span>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:12,fontSize:11.5,color:"var(--text-3)",flexWrap:"wrap"}}>
-                    <span style={{display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{fmtDate(v)}</span>
-                    <span style={{color:si.color,fontWeight:600}}>● {si.label}</span>
-                  </div>
-                </div>
-                <div className="yt-row-actions" style={{display:"flex",alignItems:"center",gap:8}}>
+      {ytTab==="objetivos" && <ObjetivosPanel videos={videos} goals={goals} setGoals={setGoals} onConnect={onConnect} toast={toast}/>}
+
+      {ytTab!=="objetivos" && (()=>{
+        const delTipo = ytVideos.filter(v=>vTipo(v)===ytTab);
+        const propios = delTipo
+          .filter(v=>!busca || (v.title||"").toLowerCase().includes(busca.toLowerCase()))
+          .filter(v=>!fmtFiltro || v.format===fmtFiltro);
+        const fmtsUsados = [...new Set(delTipo.map(v=>v.format).filter(Boolean))];
+        const clave = v => (v.date||"9999-99-99")+"T"+(v.time||"00:00");
+        const programados = propios.filter(v=>v.youtubeStatus==="scheduled").sort((a,b)=>clave(a).localeCompare(clave(b)));
+        const publicados = propios.filter(v=>v.youtubeStatus==="published").sort((a,b)=>clave(b).localeCompare(clave(a)));
+        const otros = propios.filter(v=>v.youtubeStatus!=="scheduled" && v.youtubeStatus!=="published");
+
+        const iconoTipo = (v) => v.type==="directo" ? Icons.live : (v.type==="short" ? Icons.short : Icons.largo);
+        const Fila = (v) => {
+          const f = formats[v.format] || { color:"#6B6B6B", label:"Sin formato" };
+          const si = statusInfo(v);
+          const gone = statusMap[v.youtubeId]?.exists===false;
+          const abierto = !!abiertos[v.id];
+          return (
+            <div key={v.id} className="yt-row" onClick={()=>setAbiertos(a=>({...a,[v.id]:!abierto}))} style={{
+              padding: abierto?"13px 15px":"9px 14px", background:"var(--bg-2)", cursor:"pointer",
+              border:`1px solid ${gone?"rgba(248,113,113,0.35)":"var(--border)"}`, borderLeft:`3px solid ${f.color}`, borderRadius:12,
+              transition:"padding .15s"
+            }}>
+              {/* Fila contraída: icono + título + formato + fecha + estado + flecha */}
+              <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
+                <span style={{color:f.color,display:"flex",flexShrink:0}}>{iconoTipo(v)}</span>
+                <span style={{fontSize:13,fontWeight:600,color:"var(--text)",overflow:abierto?"visible":"hidden",textOverflow:"ellipsis",whiteSpace:abierto?"normal":"nowrap",flex:1,minWidth:0,overflowWrap:"anywhere"}}>{v.title}</span>
+                <span className="yt-fila-meta" style={{display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
+                  <FormatPill fmt={f} small/>
+                  <span style={{fontSize:11,color:"var(--text-3)",display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{fmtDate(v)}</span>
+                  <span style={{fontSize:11,color:si.color,fontWeight:600,whiteSpace:"nowrap"}}>● {si.label}</span>
+                </span>
+                <span style={{display:"flex",color:"var(--text-3)",transform:abierto?"rotate(180deg)":"none",transition:"transform .18s",flexShrink:0}}>{Icons.chevron}</span>
+              </div>
+              {/* Expandida: acciones */}
+              {abierto && (
+                <div className="fade-in" onClick={e=>e.stopPropagation()} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:12}}>
                   {!gone && (
                     <a href={v.youtubeUrl||("https://youtu.be/"+v.youtubeId)} target="_blank" rel="noopener" title="Ver en YouTube" style={{
                       display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"#FF0000",padding:"7px 11px",
@@ -3017,12 +3516,58 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
                       border:"1px solid rgba(248,113,113,0.3)",borderRadius:9,opacity:deleting===v.id?0.5:1
                     }}>{Icons.trash} {deleting===v.id?"Borrando…":"Borrar"}</button>
                   )}
+                  {v.pinnedComment && <span style={{fontSize:11,color:v.pinnedCommentPosted?"var(--green)":"var(--text-3)"}}>💬 {v.pinnedCommentPosted?"comentario publicado":"comentario pendiente"}</span>}
                 </div>
+              )}
+            </div>
+          );
+        };
+        const Seccion = ({titulo, items, color}) => items.length===0 ? null : (
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:11.5,fontWeight:700,color:color||"var(--text-3)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:9}}>{titulo} · {items.length}</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>{items.map(Fila)}</div>
+          </div>
+        );
+
+        return (
+          <div className="fade-in">
+            {delTipo.length>0 && (
+              <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+                <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por título…" style={{...inputStyle, maxWidth:260, padding:"8px 12px", fontSize:12.5}}/>
+                {fmtsUsados.length>1 && (
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {fmtsUsados.map(k=>{
+                      const f = formats[k]; if(!f) return null;
+                      const activo = fmtFiltro===k;
+                      return (
+                        <button key={k} onClick={()=>setFmtFiltro(activo?"":k)} style={{
+                          fontSize:11,fontWeight:600,padding:"5px 11px",borderRadius:20,
+                          border:"1px solid "+(activo?f.color:"var(--border)"),
+                          color: activo?f.color:"var(--text-3)", background: activo?f.color+"18":"transparent"
+                        }}>{f.label}</button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            );
-          })}
-        </div>
-      )}
+            )}
+            {propios.length===0 ? (
+              <div style={{textAlign:"center",color:"var(--text-3)",fontSize:13.5,padding:"50px 20px",border:"1px dashed var(--border)",borderRadius:14}}>
+                <div style={{color:"#FF0000",display:"flex",justifyContent:"center",marginBottom:12,opacity:.6}}>{Icons.youtube}</div>
+                {delTipo.length===0
+                  ? (ytTab==="directo" ? "Aún no hay directos detectados. Pulsa «Comprobar estado» para que la app identifique cuáles de tus vídeos fueron emisiones." : "No hay contenido de este tipo todavía.")
+                  : "Nada coincide con la búsqueda o el filtro."}
+              </div>
+            ) : (
+              <>
+                <Seccion titulo="Programados" items={programados} color="var(--gold)"/>
+                <Seccion titulo="Publicados" items={publicados} color="var(--green)"/>
+                <Seccion titulo="Subidos sin publicar" items={otros}/>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {downloadFor && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",backdropFilter:"blur(3px)",display:"flex",alignItems:"center",justifyContent:"center",padding:16,zIndex:300}}>
@@ -3419,7 +3964,7 @@ function TrashView({trash, onRestore, onDeleteForever, onEmpty, formats}) {
                 borderRadius:10, padding:"13px 14px", opacity:.92
               }}>
                 <div style={{display:"flex",alignItems:"center",gap:7,color:"var(--text-3)",marginBottom:7}}>
-                  <span style={{color:f.color,display:"flex"}}>{v.type==="short"?Icons.short:Icons.largo}</span>
+                  <span style={{color:f.color,display:"flex"}}>{v.type==="short"?Icons.short:(v.type==="directo"?Icons.live:Icons.largo)}</span>
                   <span style={{fontSize:10.5,textTransform:"uppercase",letterSpacing:".06em"}}>{v.type==="short"?"Short":"Vídeo largo"}</span>
                   <span style={{marginLeft:"auto",fontSize:10.5,color:"var(--text-3)"}}>Eliminado {fmtDate(v.deletedAt)}</span>
                 </div>
@@ -3492,9 +4037,9 @@ function loadStore() {
     return data;
   } catch(e) { return null; }
 }
-function saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates) {
+function saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates, goals) {
   try {
-    const txt = JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], tombstones: tombstones||[], dailyArchive: dailyArchive||{}, tagTemplates: tagTemplates||[], subHistory: subHistory||[], promptTemplates: promptTemplates||[], savedAt: Date.now() });
+    const txt = JSON.stringify({ videos, formats, trash: trash||[], taskLists: taskLists||[], tombstones: tombstones||[], dailyArchive: dailyArchive||{}, tagTemplates: tagTemplates||[], subHistory: subHistory||[], promptTemplates: promptTemplates||[], goals: goals||null, savedAt: Date.now() });
     if(window.studioFS) window.studioFS.save(txt); else localStorage.setItem(STORE_KEY, txt);
     return true;
   }
@@ -3596,7 +4141,10 @@ const YT_SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube",
   "https://www.googleapis.com/auth/youtube.force-ssl",
-  "https://www.googleapis.com/auth/drive.readonly"
+  "https://www.googleapis.com/auth/drive.readonly",
+  // Analíticas (visitas e ingresos) para el panel de Objetivos
+  "https://www.googleapis.com/auth/yt-analytics.readonly",
+  "https://www.googleapis.com/auth/yt-analytics-monetary.readonly"
 ].join(" ");
 
 /* ============================ GEMINI (IA gratuita, opcional) ============================ */
@@ -4000,7 +4548,7 @@ async function ytListUploadsFull(max){
   if(ids.length===0) return [];
   // 3. Detalles en lote (una sola llamada para hasta 50)
   const vRes = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
-    part: "snippet,contentDetails,status", id: ids.join(",")
+    part: "snippet,contentDetails,status,liveStreamingDetails", id: ids.join(",")
   }), { headers: ytAuthHeader() });
   if(!vRes.ok) throw new Error("Error al leer detalles ("+vRes.status+")");
   const vData = await vRes.json();
@@ -4010,8 +4558,23 @@ async function ytListUploadsFull(max){
     publishedAt: it.snippet?.publishedAt || null,
     publishAt: it.status?.publishAt || null,
     privacyStatus: it.status?.privacyStatus || "private",
-    durationSec: ytParseDuration(it.contentDetails?.duration)
+    durationSec: ytParseDuration(it.contentDetails?.duration),
+    live: !!(it.liveStreamingDetails && (it.liveStreamingDetails.actualStartTime || it.liveStreamingDetails.scheduledStartTime))
   }));
+}
+
+// Añade un vídeo a una lista de reproducción (para la subida directa desde el PC)
+async function ytAddToPlaylist(playlistId, videoId){
+  const res = await fetch("https://www.googleapis.com/youtube/v3/playlistItems?part=snippet", {
+    method: "POST",
+    headers: { ...ytAuthHeader(), "Content-Type": "application/json" },
+    body: JSON.stringify({ snippet: { playlistId, resourceId: { kind: "youtube#video", videoId } } })
+  });
+  if(!res.ok){
+    const data = await res.json().catch(()=>({}));
+    throw new Error(data?.error?.message || "Error al añadir a la lista ("+res.status+")");
+  }
+  return true;
 }
 
 // Publica un comentario del propietario en un vídeo (aparece destacado como comentario del canal)
@@ -4034,19 +4597,59 @@ async function ytPostComment(videoId, text){
 // lo usa. Si no hay coincidencia, devuelve "" (sin formato, para elegirlo a mano).
 function detectFormatFromTitle(title, durationSec, formats){
   const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-  const t = norm(title);
-  let best = "", bestLen = 0;
-  Object.entries(formats||{}).forEach(([key, f])=>{
-    const label = norm(f.label);
-    if(label && t.includes(label) && label.length > bestLen){ best = key; bestLen = label.length; }
-  });
-  if(best) return best;
-  // Shorts: duración ≤ 183s → buscar un formato cuyo nombre contenga "short"
-  if(durationSec > 0 && durationSec <= 183){
-    const shortKey = Object.entries(formats||{}).find(([k,f])=>/short/i.test(f.label));
-    if(shortKey) return shortKey[0];
-  }
-  return "";
+  // v2: delega en el clasificador por glosario (la detección antigua por etiqueta no acertaba)
+  const type = (durationSec>0 && durationSec<=183) ? "short" : "video";
+  return clasificarFormato(title, type);
+}
+
+/* ——— Clasificador de formatos v2: glosario de palabras clave con pesos ———
+   Afinado contra los 125 títulos reales del canal (23/8/2026). Cada regla suma
+   su peso si el título (normalizado, sin acentos) la contiene; gana el formato
+   con más puntos y los empates los resuelve el orden de PRIORIDAD_FORMATO. */
+const REGLAS_FORMATO = [
+  ["directos", 6, /\bdirecto\b|\ben vivo\b|regalando \d|si me ganas te|nadie me derrota|estoy en mi prime|ultima caja que regalo/],
+  ["combates", 4, /\b1\s*vs?\s*1\b|combates?|elimin|derrot|humill|spammer|hackers?|me enfrente|remont|invicto|aplast/],
+  ["combates", 3, /\b(cuartos|semifinal(es)?|octavos|gran final)\b|onyx|diamante|platino|esmeralda|rankeds?|\bracha\b|subir de rango|subiendo de rango|\brango\b/],
+  ["combates", 2, /\bmundial\b|\bsniper\b|punteria|goku|flash|\bvs\b|\bcontra\b|\bgan(e|o|a|amos|ador)\b|katana/],
+  ["cajas", 4, /\bcajas?\b|\bskins?\b|recompensas?|\bpase\b|\bruleta\b|\bsorteo\b|\blotes?\b|\bpacks?\b|outfits?/],
+  ["cajas", 2, /regal(o|e|ar|aron)|buscando (el|la|mi|una)|salio est|no me toca nada/],
+  ["ropa", 5, /equipacion|equipaciones|\bropa\b|camisetas?|uniformes?/],
+  ["comunidad", 4, /que preferis|que clan|necesito tu ayuda|vuestr|discord|encuesta|votad|ayudar a youtubers|os (leo|escucho)|comentarios|suscriptor|mando este mensaje|me encontre a/],
+  ["comunidad", 2, /@\w+|colaboracion|invitado especial|netoblox|kdiz|nexoee|soloryee|feex|tilinfactory|choppyblox|me entendeis|\?\?/],
+  ["retos", 4, /\bretos?\b|dinamicas?|desafio|armas (basicas|random)|sin usar|entren|clase de|muy pocos saben|trucos?|como (jugar|se juega)|aprended/],
+  ["novedades", 4, /super ?cup|torneos?|\beventos?\b|domingos de juegos|actualizacion|novedades|ya podeis|ya esta(n)? disponible|hoy estan disponible|reiniciaron|he creado|nuevo servidor|nueva temporada|\bhoy es\b|empieza el|ultima oportunidad/],
+  ["novedades", 2, /nuevo (modo|mapa|lote)|participantes?|proximamente|disponibles?/],
+];
+const PRIORIDAD_FORMATO = ["directos","ropa","cajas","combates","jugadas","retos","comunidad","novedades"];
+
+function clasificarFormato(title, type){
+  if(type==="directo") return "directos";
+  const t = (title||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const pts = {};
+  REGLAS_FORMATO.forEach(([fmt, peso, re])=>{ if(re.test(t)) pts[fmt]=(pts[fmt]||0)+peso; });
+  delete pts.directos; // solo el TYPE directo decide ese formato
+  const mejor = Object.entries(pts).sort((a,b)=> b[1]-a[1] || PRIORIDAD_FORMATO.indexOf(a[0])-PRIORIDAD_FORMATO.indexOf(b[0]))[0];
+  if(mejor) return mejor[0];
+  // Sin ninguna señal: un Short de gameplay sin más pistas es una jugada/momento
+  return type==="short" ? "jugadas" : "";
+}
+
+/* ——— Migración a formatos v2: sustituye la lista antigua y reclasifica todo ——— */
+function esFormatosV2(f){ return !!(f && f.jugadas && f.combates); }
+function migrarFormatosV2(d){
+  if(!d || esFormatosV2(d.formats)) return d;
+  const ahora = Date.now();
+  d.formats = clone(DEFAULT_FORMATS);
+  const arreglar = v => {
+    if(!v) return v;
+    const type = v.type==="largo" ? "video" : (v.type||"short");
+    const fmt = clasificarFormato(v.title, type);
+    if(type!==v.type || fmt!==v.format) return {...v, type, format:fmt, updatedAt:ahora};
+    return v;
+  };
+  d.videos = (d.videos||[]).map(arreglar);
+  d.trash = (d.trash||[]).map(arreglar);
+  return d;
 }
 
 // Trae los datos completos de un vídeo (para copiar descripción, tags, categoría)
@@ -4069,17 +4672,87 @@ async function ytCheckVideos(ids){
   for(let i=0;i<ids.length;i+=50){
     const chunk = ids.slice(i,i+50);
     const res = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
-      part: "status", id: chunk.join(",")
+      part: "status,contentDetails,liveStreamingDetails", id: chunk.join(",")
     }), { headers: ytAuthHeader() });
     if(!res.ok){ throw new Error("Error al comprobar vídeos ("+res.status+")"); }
     const data = await res.json();
     const found = new Set();
     (data.items||[]).forEach(it=>{
       found.add(it.id);
-      out[it.id] = { exists:true, privacyStatus: it.status?.privacyStatus, publishAt: it.status?.publishAt || null };
+      out[it.id] = {
+        exists:true, privacyStatus: it.status?.privacyStatus, publishAt: it.status?.publishAt || null,
+        durationSec: ytParseDuration(it.contentDetails?.duration),
+        live: !!(it.liveStreamingDetails && (it.liveStreamingDetails.actualStartTime || it.liveStreamingDetails.scheduledStartTime))
+      };
     });
     // Los que no vuelven, ya no existen
     chunk.forEach(id=>{ if(!found.has(id)) out[id] = { exists:false }; });
+  }
+  return out;
+}
+
+/* ——— YouTube Analytics: visitas e ingresos reales del canal ——— */
+async function ytAnalyticsQuery(params){
+  await ytEnsureToken();
+  const res = await fetch("https://youtubeanalytics.googleapis.com/v2/reports?" + new URLSearchParams({ ids:"channel==MINE", ...params }), { headers: ytAuthHeader() });
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok){
+    const msg = data?.error?.message || "";
+    if(res.status===403 && /has not been used|is disabled|accessNotConfigured/i.test(msg)) throw new Error("ANALYTICS_API_OFF");
+    if(res.status===403 || res.status===401) throw new Error("ANALYTICS_PERMISOS");
+    throw new Error("Error de analíticas ("+res.status+") "+msg);
+  }
+  return data;
+}
+const fechaISO = (d) => { const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+
+// RPM real por tipo de contenido, últimos 90 días cerrados (los ingresos llegan con ~2 días de retraso)
+async function ytFetchRpmReal(){
+  const fin = new Date(); fin.setDate(fin.getDate()-3);
+  const ini = new Date(fin); ini.setDate(ini.getDate()-90);
+  const data = await ytAnalyticsQuery({
+    startDate: fechaISO(ini), endDate: fechaISO(fin),
+    metrics: "views,estimatedRevenue",
+    dimensions: "creatorContentType"
+  });
+  const out = { shorts:null, directos:null, videos:null, total:{views:0,revenue:0,rpm:null}, at: Date.now() };
+  (data.rows||[]).forEach(fila=>{
+    const tipo = fila[0];
+    const views = Number(fila[1])||0, rev = Number(fila[2])||0;
+    out.total.views += views; out.total.revenue += rev;
+    const rpm = views>0 ? rev/views*1000 : null;
+    if(tipo==="SHORTS") out.shorts = {views, revenue:rev, rpm};
+    else if(tipo==="LIVE_STREAM") out.directos = {views, revenue:rev, rpm};
+    else if(tipo==="VIDEO_ON_DEMAND") out.videos = {views, revenue:rev, rpm};
+  });
+  out.total.rpm = out.total.views>0 ? out.total.revenue/out.total.views*1000 : null;
+  return out;
+}
+
+// Visitas e ingresos por día (alimenta la semana, el mes y el calendario de objetivos)
+async function ytFetchDiario(desde, hasta){
+  const data = await ytAnalyticsQuery({
+    startDate: desde, endDate: hasta,
+    metrics: "views,estimatedRevenue",
+    dimensions: "day",
+    sort: "day"
+  });
+  const out = {};
+  (data.rows||[]).forEach(fila=>{ out[fila[0]] = { views:Number(fila[1])||0, revenue:Number(fila[2])||0 }; });
+  return out;
+}
+
+// Visitas EN VIVO de vídeos concretos (Data API; se actualiza cada pocos minutos)
+async function ytViewCounts(ids){
+  const out = {};
+  if(!ids || !ids.length) return out;
+  for(let i=0;i<ids.length;i+=50){
+    const res = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
+      part:"statistics", id: ids.slice(i,i+50).join(",")
+    }), { headers: ytAuthHeader() });
+    if(!res.ok) throw new Error("Error al leer visitas ("+res.status+")");
+    const data = await res.json();
+    (data.items||[]).forEach(it=>{ out[it.id] = Number(it.statistics?.viewCount)||0; });
   }
   return out;
 }
@@ -4248,7 +4921,8 @@ async function cloudSave(code, payload) {
 }
 
 function App() {
-  const _initial = loadStore();
+  // Cargar UNA vez (antes se re-parseaba todo el JSON en cada render) y migrar a formatos v2
+  const _initial = useMemo(()=>migrarFormatosV2(loadStore()), []);
   const [videos, setVideos] = useState(()=>{
     const base = _initial ? _initial.videos : [];
     // Sellar updatedAt en datos anteriores a esta versión (para que la fusión funcione)
@@ -4282,7 +4956,12 @@ function App() {
   const [subHistory, setSubHistory] = useState(()=> (_initial && Array.isArray(_initial.subHistory)) ? _initial.subHistory : []);
   // Plantillas de prompt para el Agente de IA (se sincronizan)
   const [promptTemplates, setPromptTemplates] = useState(()=> (_initial && Array.isArray(_initial.promptTemplates)) ? _initial.promptTemplates : []);
+  // Objetivos (dinero → visitas), RPM real e historial diario de visitas/ingresos (se sincroniza)
+  const [goals, setGoals] = useState(()=> (_initial && _initial.goals && typeof _initial.goals==="object") ? _initial.goals : null);
   const [view, setView] = useState("calendar");
+  // Tarjetas contraídas (false) o expandidas (true) en todos los apartados
+  const [cardsExpanded, setCardsExpanded] = useState(()=>{ try { return localStorage.getItem("rds_cards_exp")==="1"; } catch(e){ return false; } });
+  useEffect(()=>{ try { localStorage.setItem("rds_cards_exp", cardsExpanded?"1":"0"); } catch(e){} },[cardsExpanded]);
   const [calView, setCalView] = useState("week"); // month | week | day
   const [editing, setEditing] = useState(null);
   const [showFormats, setShowFormats] = useState(false);
@@ -4364,17 +5043,17 @@ function App() {
   const [rtKey, setRtKey] = useState(0); // al aumentar, se recrea el canal de tiempo real
 
   // Espejo del estado actual (para leerlo dentro de callbacks asíncronos sin datos obsoletos)
-  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates}; },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates]);
+  useEffect(()=>{ stateRef.current = {videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates, goals}; },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates, goals]);
 
   // Huella del estado sincronizable. Con caché: si las referencias de los 8 campos no
   // han cambiado desde la última llamada, devuelve la huella anterior sin re-serializar
   // (JSON.stringify de todo el estado es costoso y fp se llama muy a menudo).
   const fpCacheRef = useRef({ parts:null, out:"" });
   const fp = (s) => {
-    const parts = [s.videos, s.formats, s.trash||null, s.taskLists||null, s.dailyArchive||null, s.tagTemplates||null, s.subHistory||null, s.promptTemplates||null];
+    const parts = [s.videos, s.formats, s.trash||null, s.taskLists||null, s.dailyArchive||null, s.tagTemplates||null, s.subHistory||null, s.promptTemplates||null, s.goals||null];
     const cache = fpCacheRef.current;
-    if(cache.parts && cache.parts.length===8 && cache.parts.every((p,i)=>p===parts[i])) return cache.out;
-    const out = JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[], dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[]});
+    if(cache.parts && cache.parts.length===9 && cache.parts.every((p,i)=>p===parts[i])) return cache.out;
+    const out = JSON.stringify({videos:s.videos, formats:s.formats, trash:s.trash||[], taskLists:s.taskLists||[], dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], goals:s.goals||null});
     fpCacheRef.current = { parts, out };
     return out;
   };
@@ -4391,9 +5070,21 @@ function App() {
     const mergedTombs  = pruneTombs([...(s.tombstones||[]), ...(r.tombstones||[])]);
     // Formatos: nos quedamos con el conjunto que tenga más entradas o el local si empatan
     // (los formatos casi no cambian; ante la duda, conservar lo local evita perder ediciones).
+    // Un dispositivo ya migrado a formatos v2 nunca retrocede a la lista antigua
+    const lv2 = esFormatosV2(s.formats), rv2 = esFormatosV2(r.formats);
     const localFmtN = Object.keys(s.formats||{}).length;
     const remoteFmtN = Object.keys(r.formats||{}).length;
-    const mergedFormats = remoteFmtN > localFmtN ? r.formats : s.formats;
+    const mergedFormats = (lv2!==rv2) ? (lv2 ? s.formats : r.formats)
+      : (remoteFmtN > localFmtN ? r.formats : s.formats);
+    // Vídeos que llegan de un dispositivo sin migrar (formato antiguo o tipo "largo"):
+    // se reclasifican aquí mismo para que todos converjan al mismo resultado
+    const arreglaV2 = (arr) => !esFormatosV2(mergedFormats) ? arr : arr.map(v=>{
+      if(!v) return v;
+      const type = v.type==="largo" ? "video" : (v.type||"short");
+      const fmtDesconocido = v.format && !mergedFormats[v.format];
+      if(type===v.type && !fmtDesconocido) return v;
+      return {...v, type, format: fmtDesconocido ? clasificarFormato(v.title, type) : v.format, updatedAt:Date.now()};
+    });
     // Archivo diario: unión por semana, sin duplicados (por título+día)
     const mergedArchive = mergeDailyArchive(s.dailyArchive, r.dailyArchive);
     // Plantillas de etiquetas: unión por nombre (la más reciente/mayor gana)
@@ -4420,7 +5111,21 @@ function App() {
       if(!prev || (p.updatedAt||0) >= (prev.updatedAt||0)) promptMap[p.name] = p;
     });
     const mergedPrompts = Object.values(promptMap);
-    const merged = { videos:mergedVideos, formats:mergedFormats, trash:mergedTrash, taskLists:mergedTasks, tombstones:mergedTombs, dailyArchive:mergedArchive, tagTemplates:mergedTpls, subHistory:mergedSubs, promptTemplates:mergedPrompts };
+    // Objetivos: config y RPM por fecha de actualización; historial diario por unión de días
+    const mergedGoals = (()=>{
+      const a = s.goals, b = r.goals;
+      if(!a) return b||null;
+      if(!b) return a;
+      const cfg = ((b.cfg?.updatedAt||0) > (a.cfg?.updatedAt||0)) ? b.cfg : a.cfg;
+      const rpm = ((b.rpm?.at||0) > (a.rpm?.at||0)) ? b.rpm : a.rpm;
+      const daily = {...(a.daily||{})};
+      Object.entries(b.daily||{}).forEach(([k,v])=>{
+        const p = daily[k];
+        if(!p || (v && (v.views||0) >= (p.views||0))) daily[k] = v;
+      });
+      return { cfg: cfg||null, rpm: rpm||null, daily, dailyAt: Math.max(a.dailyAt||0, b.dailyAt||0) };
+    })();
+    const merged = { videos:arreglaV2(mergedVideos), formats:mergedFormats, trash:arreglaV2(mergedTrash), taskLists:mergedTasks, tombstones:mergedTombs, dailyArchive:mergedArchive, tagTemplates:mergedTpls, subHistory:mergedSubs, promptTemplates:mergedPrompts, goals:mergedGoals };
     const changed = fp(merged) !== fp(s);
     return { merged, changed };
   };
@@ -4442,6 +5147,7 @@ function App() {
     if(merged.tagTemplates && j(merged.tagTemplates)!==j(s.tagTemplates)) setTagTemplates(merged.tagTemplates);
     if(merged.subHistory && j(merged.subHistory)!==j(s.subHistory)) setSubHistory(merged.subHistory);
     if(merged.promptTemplates && j(merged.promptTemplates)!==j(s.promptTemplates)) setPromptTemplates(merged.promptTemplates);
+    if(merged.goals && j(merged.goals)!==j(s.goals)) setGoals(merged.goals);
     lastSyncedRef.current = fp(merged);
     lastRemoteTsRef.current = Date.now();
   };
@@ -4451,7 +5157,7 @@ function App() {
     const s = stateRef.current;
     const huella = fp(s);
     setSyncStatus("saving");
-    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], savedAt: Date.now() });
+    await cloudSave(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], goals:s.goals||null, savedAt: Date.now() });
     lastSyncedRef.current = huella;
     lastRemoteTsRef.current = Date.now();
     setPendingChanges(false);
@@ -4461,7 +5167,7 @@ function App() {
   // Sube un estado ya fusionado
   const pushMerged = async (merged) => {
     setSyncStatus("saving");
-    await cloudSave(syncCode, { videos:merged.videos, formats:merged.formats, trash:merged.trash, taskLists:merged.taskLists, tombstones:pruneTombs(merged.tombstones), dailyArchive:merged.dailyArchive||{}, tagTemplates:merged.tagTemplates||[], subHistory:merged.subHistory||[], promptTemplates:merged.promptTemplates||[], savedAt: Date.now() });
+    await cloudSave(syncCode, { videos:merged.videos, formats:merged.formats, trash:merged.trash, taskLists:merged.taskLists, tombstones:pruneTombs(merged.tombstones), dailyArchive:merged.dailyArchive||{}, tagTemplates:merged.tagTemplates||[], subHistory:merged.subHistory||[], promptTemplates:merged.promptTemplates||[], goals:merged.goals||null, savedAt: Date.now() });
     lastSyncedRef.current = fp(merged);
     lastRemoteTsRef.current = Date.now();
     setSyncStatus("online");
@@ -4480,7 +5186,7 @@ function App() {
       const remoteHuella = fp({
         videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists,
         dailyArchive:r.dailyArchive, tagTemplates:r.tagTemplates,
-        subHistory:r.subHistory, promptTemplates:r.promptTemplates
+        subHistory:r.subHistory, promptTemplates:r.promptTemplates, goals:r.goals
       });
       if(localHuella !== remoteHuella){
         // Nosotros tenemos algo que el remoto no → subir lo nuestro (sin tocar la UI)
@@ -4570,7 +5276,7 @@ function App() {
           "Authorization": "Bearer " + SUPABASE_KEY,
           "Prefer": "resolution=merge-duplicates"
         },
-        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], savedAt: Date.now() }, updated_at: new Date().toISOString() }])
+        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], goals:s.goals||null, savedAt: Date.now() }, updated_at: new Date().toISOString() }])
       }).catch(()=>{}); // si falla (sin red), la reconciliación lo reintenta al volver
     } catch(e){}
   };
@@ -4779,7 +5485,7 @@ function App() {
   useEffect(()=>{
     if(firstRun.current){ firstRun.current=false; prevSnapRef.current = {videos, formats, trash, taskLists}; return; }
     // Guardado local (siempre; es barato e instantáneo)
-    const ok = saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates);
+    const ok = saveStore(videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates, goals);
     if(ok){ setSaved(true); setTimeout(()=>setSaved(false), 1600); }
 
     // Huella COMPLETA del estado actual
@@ -4812,7 +5518,7 @@ function App() {
       }
     }
     prevSnapRef.current = {videos, formats, trash, taskLists};
-  },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates]);
+  },[videos, formats, trash, taskLists, tombstones, dailyArchive, tagTemplates, subHistory, promptTemplates, goals]);
 
   const resetAll = () => {
     setConfirm({
@@ -5367,6 +6073,18 @@ function App() {
 
       {/* MAIN */}
       <main className="app-main" style={{maxWidth:1320,margin:"0 auto",padding:"26px 24px 60px"}}>
+        <ExpandCtx.Provider value={cardsExpanded}>
+        {(view==="calendar" || view==="kanban" || view==="scheduled") && (
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
+            <button onClick={()=>setCardsExpanded(x=>!x)} title={cardsExpanded?"Contraer todas las tarjetas":"Expandir todas las tarjetas"} style={{
+              display:"flex",alignItems:"center",gap:6,fontSize:11.5,fontWeight:600,color:"var(--text-3)",
+              border:"1px solid var(--border)",borderRadius:8,padding:"6px 11px"
+            }}>
+              <span style={{display:"flex",transform:cardsExpanded?"rotate(180deg)":"none",transition:"transform .18s"}}>{Icons.chevron}</span>
+              {cardsExpanded?"Contraer todo":"Expandir todo"}
+            </button>
+          </div>
+        )}
         {view!=="trash" && view!=="tasks" && view!=="stats" && <StatStrip videos={videos}/>}
         {view==="kanban" && (
           <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
@@ -5378,7 +6096,7 @@ function App() {
         {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
         {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} dailyArchive={dailyArchive} toast={toast} onTaskDeleted={(id)=>addTomb(id,"task")} onListDeleted={(id)=>addTomb(id,"list")} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
         {view==="stats" && <StatsView videos={videos} taskLists={taskLists} formats={formats}/>}
-        {view==="scheduled" && <ScheduledView videos={videos} trashYtIds={trash.map(t=>t.youtubeId).filter(Boolean)} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} onAddVideos={(nuevos)=>setVideos(vs=>[...vs, ...nuevos])} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast}/>}
+        {view==="scheduled" && <ScheduledView videos={videos} trashYtIds={trash.map(t=>t.youtubeId).filter(Boolean)} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} onAddVideos={(nuevos)=>setVideos(vs=>[...vs, ...nuevos])} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast} goals={goals} setGoals={setGoals}/>}
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
 
@@ -5403,6 +6121,7 @@ function App() {
             <span>© {new Date().getFullYear()} RDeRandom. Todos los derechos reservados.</span>
           </div>
         </footer>
+        </ExpandCtx.Provider>
       </main>
 
       {editing && <VideoModal v={editing} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
