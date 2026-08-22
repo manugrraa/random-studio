@@ -1,0 +1,50 @@
+{
+  "name": "rderandom-studio",
+  "productName": "RDeRandom Studio",
+  "version": "2.0.0",
+  "description": "RDeRandom Studio — Gestor de contenido (escritorio + web)",
+  "private": true,
+  "main": "electron/main.cjs",
+  "scripts": {
+    "extraer": "node tools/extraer.mjs",
+    "icono": "node tools/icono.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "publicar": "node tools/publicar.mjs",
+    "app": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "jimp": "^0.22.12",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.0.3"
+  },
+  "build": {
+    "appId": "com.rderandom.studio",
+    "productName": "RDeRandom Studio",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["portable"],
+      "icon": "build/icon.png"
+    },
+    "portable": {
+      "artifactName": "RDeRandom-Studio-${version}.exe"
+    }
+  }
+}
