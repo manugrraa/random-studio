@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.1.0";
+const APP_VERSION = "2.2.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -182,9 +182,11 @@ const FormatPill = ({fmt, small}) => {
     <span style={{
       display:"inline-flex", alignItems:"center", gap:6, fontSize: small?10.5:11.5, fontWeight:600,
       color:fmt.color, background:`${fmt.color}14`, border:`1px solid ${fmt.color}33`,
-      padding: small?"2px 7px":"3px 9px", borderRadius:7, whiteSpace:"nowrap"
+      padding: small?"2px 7px":"3px 9px", borderRadius:7, whiteSpace:"nowrap",
+      minWidth:0, maxWidth:"100%" // puede encogerse: el nombre se corta con … si no cabe
     }}>
-      <span style={{width:6, height:6, borderRadius:"50%", background:fmt.color}}/>{fmt.label}
+      <span style={{width:6, height:6, borderRadius:"50%", background:fmt.color, flexShrink:0}}/>
+      <span style={{overflow:"hidden", textOverflow:"ellipsis"}}>{fmt.label}</span>
     </span>
   );
 };
@@ -356,25 +358,25 @@ function VideoCardBase({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
       onMouseLeave={e=>{e.currentTarget.style.background=th.bg;e.currentTarget.style.borderColor=th.border;e.currentTarget.style.borderLeftColor=f.color;}}
     >
       {!expanded ? (
-        <>
+        <div className="fade-in" style={{minWidth:0}}>
           {/* ——— CONTRAÍDA: título en una línea + formato + hora ——— */}
           <div style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
             <span style={{color:f.color, display:"flex", flexShrink:0}}>{iconoTipo}</span>
             <span style={{fontSize: compact?12:12.5, fontWeight:600, color:th.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", flex:1, minWidth:0}}>{v.title}</span>
             {toggle}
           </div>
-          <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center", marginTop:5}}>
+          <div style={{display:"flex", flexWrap:"wrap", gap:6, alignItems:"center", marginTop:5, minWidth:0}}>
             <FormatPill fmt={f} small/>
-            {v.date && <span style={{fontSize:10.5,color:th.text3,display:"inline-flex",alignItems:"center",gap:4}}>{Icons.clock}{v.time}</span>}
+            {v.date && <span style={{fontSize:10.5,color:th.text3,display:"inline-flex",alignItems:"center",gap:4,flexShrink:0}}>{Icons.clock}{v.time}</span>}
             {v.youtubeId && (
-              <span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:9.5,fontWeight:700,color:"#FF0000",background:"rgba(255,0,0,0.1)",padding:"1px 6px",borderRadius:20}}>
+              <span style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:9.5,fontWeight:700,color:"#FF0000",background:"rgba(255,0,0,0.1)",padding:"1px 6px",borderRadius:20,flexShrink:0}}>
                 <span style={{display:"flex",width:11,height:11}}>{Icons.youtube}</span>{v.youtubeStatus==="scheduled"?"Prog.":"YT"}
               </span>
             )}
           </div>
-        </>
+        </div>
       ) : (
-        <>
+        <div className="fade-in" style={{minWidth:0}}>
           {/* ——— EXPANDIDA: todos los datos ——— */}
           <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8}}>
             <div style={{display:"flex",alignItems:"center",gap:7, color:th.text3}}>
@@ -404,7 +406,7 @@ function VideoCardBase({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
               <div style={{height:"100%", width:`${pct}%`, background: pct===100?"var(--green)":"linear-gradient(90deg,#D4AF37,#FFD700)", transition:"width .3s", borderRadius:4}}/>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
@@ -1412,7 +1414,8 @@ function FormatsModal({formats, setFormats, videos, onClose, toast, askConfirm})
 // si se define dentro, cada render crea un componente "nuevo" y React desmonta y
 // remonta todas las celdas (y sus tarjetas), reproduciendo la animación de entrada
 // en cada interacción (el "parpadeo"). Fuera y memoizada, el árbol es estable.
-const CalDayCell = React.memo(function CalDayCell({d, di, big, minH, items, isToday, otherMonth, dragOver, setDragDay, onDrop, onQuickAdd, onOpen, onDragStart, onDragEnd, formats}){
+const MAX_VIDEOS_MES = 3; // en la vista Mes cada día enseña hasta 3 y el resto va en «+N más»
+const CalDayCell = React.memo(function CalDayCell({d, di, big, minH, items, isToday, otherMonth, dragOver, setDragDay, onDrop, onQuickAdd, onOpen, onDragStart, onDragEnd, onShowDay, formats}){
   const dayKey = DAYS[(d.getDay()+6)%7];
   return (
     <div
@@ -1423,32 +1426,67 @@ const CalDayCell = React.memo(function CalDayCell({d, di, big, minH, items, isTo
       className={dragOver?"drag-over":""}
       style={{
         background: otherMonth?"var(--bg)":"var(--bg-2)", border:`1px solid ${isToday?"var(--border-gold)":"var(--border)"}`, borderRadius:11,
-        minHeight:minH, padding:7, display:"flex", flexDirection:"column", transition:"all .15s", opacity: otherMonth?0.55:1,
+        padding:7, display:"flex", flexDirection:"column", transition:"all .15s", opacity: otherMonth?0.55:1,
+        minWidth:0, overflow:"hidden",
+        ...(big ? {height:136} : {minHeight:minH}),
         ...(isToday?{boxShadow:"0 0 0 1px rgba(212,175,55,0.15)"}:{})
       }}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"2px 3px 6px"}}>
-        <div>
+        <div style={{display:"flex",alignItems:"center",gap:7,minWidth:0}}>
           {big
             ? <div style={{fontSize:13,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div>
-            : <><div style={{fontSize:10.5,color: isToday?"var(--gold)":"var(--text-3)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>{dayKey}</div>
-                <div style={{fontSize:16,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div></>}
+            : <div>
+                <div style={{fontSize:10.5,color: isToday?"var(--gold)":"var(--text-3)",fontWeight:600,textTransform:"uppercase",letterSpacing:".05em"}}>{dayKey}</div>
+                <div style={{fontSize:16,fontWeight:700,color: isToday?"var(--gold)":"var(--text)"}}>{d.getDate()}</div>
+              </div>}
+          {items.length>0 && (
+            <span style={{fontSize:9.5,fontWeight:700,color:"var(--text-3)",background:"var(--card)",border:"1px solid var(--border)",borderRadius:20,padding:"1px 6px",flexShrink:0}}>{items.length}</span>
+          )}
         </div>
         <button onClick={()=>onQuickAdd(di)} title="Añadir vídeo este día" style={{
-          width:20,height:20,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",
+          width:20,height:20,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
           color:"var(--text-3)", border:"1px solid var(--border)", transition:"all .15s"
         }} onMouseEnter={e=>{e.currentTarget.style.color="var(--gold)";e.currentTarget.style.borderColor="var(--border-gold)";}}
            onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
           {Icons.plus}
         </button>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:6,flex:1,overflow:"hidden"}}>
-        {items.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
-        {items.length===0 && !big && (
-          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--empty)",fontSize:11,minHeight:60,border:"1px dashed var(--border)",borderRadius:8}}>
-            Vacío
-          </div>
-        )}
-      </div>
+      {big ? (
+        /* Vista MES: entradas de una línea, celdas todas de la misma altura */
+        <div style={{display:"flex",flexDirection:"column",gap:3,flex:1,overflow:"hidden",minWidth:0}}>
+          {items.slice(0,MAX_VIDEOS_MES).map(v=>{
+            const f = formats[v.format]||{color:"#6B6B6B"};
+            return (
+              <div key={v.id} draggable onDragStart={e=>onDragStart(e,v)} onDragEnd={onDragEnd}
+                onClick={e=>{e.stopPropagation(); if(Date.now() < dnd.suppressClickUntil) return; onOpen(v);}} title={v.title}
+                style={{display:"flex",alignItems:"center",gap:5,fontSize:10.5,cursor:"pointer",minWidth:0,
+                  padding:"2px 5px",borderRadius:5,background:"var(--card)",border:"1px solid var(--border)",
+                  transition:"border-color .15s, background .15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--border-gold)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:f.color,flexShrink:0}}/>
+                {v.time && <span style={{color:"var(--text-3)",flexShrink:0}}>{v.time}</span>}
+                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:600,color:"var(--text)"}}>{v.title}</span>
+              </div>
+            );
+          })}
+          {items.length>MAX_VIDEOS_MES && (
+            <button onClick={()=>onShowDay && onShowDay(di)} title="Ver el día completo" style={{
+              fontSize:10,fontWeight:700,color:"var(--gold)",textAlign:"left",padding:"1px 5px",alignSelf:"flex-start"
+            }}>+{items.length-MAX_VIDEOS_MES} más</button>
+          )}
+        </div>
+      ) : (
+        /* Vista SEMANA: tarjetas completas (contraídas por defecto) */
+        <div style={{display:"flex",flexDirection:"column",gap:6,flex:1,overflow:"hidden",minWidth:0}}>
+          {items.map(v=><VideoCard key={v.id} v={v} compact onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>)}
+          {items.length===0 && (
+            <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--empty)",fontSize:11,minHeight:60,border:"1px dashed var(--border)",borderRadius:8}}>
+              Vacío
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });
@@ -1537,7 +1575,7 @@ function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffse
       </div>
 
       {calView==="week" && (
-        <div style={{display:"grid", gridTemplateColumns:"repeat(7, 1fr)", gap:10}} className="cal-grid">
+        <div style={{display:"grid", gridTemplateColumns:"repeat(7, minmax(0,1fr))", gap:10}} className="cal-grid">
           {weekDates.map(d=>{ const di=isoOf(d); return (
             <CalDayCell key={di} d={d} di={di} minH={200}
               items={byDate[di]||[]} isToday={di===todayIso} dragOver={dragDay===di}
@@ -1549,15 +1587,22 @@ function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffse
 
       {calView==="month" && (
         <div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}} className="cal-month-head">
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6,marginBottom:6}} className="cal-month-head">
             {DAYS.map(d=><div key={d} style={{textAlign:"center",fontSize:10.5,fontWeight:600,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".05em"}}>{d}</div>)}
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}} className="cal-month-grid">
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:6}} className="cal-month-grid">
             {monthGrid.map(d=>{ const di=isoOf(d); return (
               <CalDayCell key={d.getTime()} d={d} di={di} big minH={92} otherMonth={!!d._otherMonth}
                 items={byDate[di]||[]} isToday={di===todayIso} dragOver={dragDay===di}
                 setDragDay={setDragDay} onDrop={onDrop} onQuickAdd={onQuickAdd}
-                onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}/>
+                onOpen={onOpen} onDragStart={onDragStart} onDragEnd={onDragEnd} formats={formats}
+                onShowDay={(dia)=>{
+                  // Saltar a la vista Día de esa fecha (weekOffset son días en esa vista)
+                  const hoy0 = new Date(); hoy0.setHours(0,0,0,0);
+                  const destino = new Date(dia+"T00:00");
+                  setCalView("day");
+                  setWeekOffset(Math.round((destino-hoy0)/86400000));
+                }}/>
             );})}
           </div>
         </div>
@@ -4920,6 +4965,68 @@ async function cloudSave(code, payload) {
   if(error) throw error;
 }
 
+/* ============================ BUSCADOR GLOBAL (cabecera) ============================ */
+function GlobalSearch({videos, formats, onOpen}) {
+  const [q, setQ] = useState("");
+  const [focus, setFocus] = useState(false);
+  const boxRef = useRef(null);
+  useEffect(()=>{
+    const fn = (e)=>{ if(boxRef.current && !boxRef.current.contains(e.target)) setFocus(false); };
+    document.addEventListener("mousedown", fn);
+    return ()=>document.removeEventListener("mousedown", fn);
+  },[]);
+  const res = useMemo(()=>{
+    const t = q.trim().toLowerCase();
+    if(t.length<2) return [];
+    return videos.filter(v=>(v.title||"").toLowerCase().includes(t)).slice(0,8);
+  },[q, videos]);
+  const abrir = (v)=>{ onOpen(v); setQ(""); setFocus(false); };
+  return (
+    <div ref={boxRef} className="global-search" style={{position:"relative"}}>
+      <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"var(--text-3)",display:"flex",pointerEvents:"none"}}>{Icons.search}</span>
+      <input value={q} onChange={e=>setQ(e.target.value)} onFocus={()=>setFocus(true)}
+        onKeyDown={e=>{
+          if(e.key==="Enter" && res[0]) abrir(res[0]);
+          if(e.key==="Escape"){ setQ(""); setFocus(false); e.currentTarget.blur(); }
+        }}
+        placeholder="Buscar vídeo…"
+        style={{
+          width: focus?250:170, transition:"width .18s ease, border-color .15s",
+          background:"var(--bg-2)", border:"1px solid "+(focus?"var(--border-gold)":"var(--border)"),
+          borderRadius:11, padding:"9px 12px 9px 34px", color:"var(--text)", fontSize:12.5
+        }}/>
+      {focus && q.trim().length>=2 && (
+        <div className="fade-in" style={{position:"absolute",top:"calc(100% + 6px)",right:0,width:340,maxWidth:"90vw",background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:12,boxShadow:"0 14px 44px rgba(0,0,0,0.5)",overflow:"hidden",zIndex:300}}>
+          {res.length===0 ? (
+            <div style={{padding:"14px 16px",fontSize:12.5,color:"var(--text-3)"}}>Nada coincide con «{q.trim()}»</div>
+          ) : res.map((v,i)=>{
+            const f = formats[v.format];
+            const st = STATUSES[v.status];
+            return (
+              <button key={v.id} onClick={()=>abrir(v)} style={{
+                display:"flex",alignItems:"center",gap:9,width:"100%",textAlign:"left",padding:"9px 13px",
+                borderBottom: i<res.length-1?"1px solid var(--border)":"none", transition:"background .12s"
+              }}
+                onMouseEnter={e=>e.currentTarget.style.background="var(--card)"}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <span style={{color:f?f.color:"var(--text-3)",display:"flex",flexShrink:0}}>{v.type==="short"?Icons.short:(v.type==="directo"?Icons.live:Icons.largo)}</span>
+                <span style={{flex:1,minWidth:0}}>
+                  <span style={{display:"block",fontSize:12.5,fontWeight:600,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{v.title}</span>
+                  <span style={{display:"flex",gap:8,fontSize:10.5,color:"var(--text-3)"}}>
+                    {f && <span style={{color:f.color}}>{f.label}</span>}
+                    {v.date && <span>{new Date(v.date+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}{v.time?` · ${v.time}`:""}</span>}
+                    {st && <span style={{color:st.color}}>{st.label}</span>}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   // Cargar UNA vez (antes se re-parseaba todo el JSON en cada render) y migrar a formatos v2
   const _initial = useMemo(()=>migrarFormatosV2(loadStore()), []);
@@ -5681,7 +5788,7 @@ function App() {
       }
       return a + l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length;
     },0)},
-    {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true, badge: videos.filter(v=>v.youtubeId).length},
+    {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true},
     {id:"agent", label:"Agente", icon:Icons.sparkles},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
@@ -5907,7 +6014,7 @@ function App() {
     <div style={{minHeight:"100vh",background:"radial-gradient(1200px 600px at 80% -10%, rgba(212,175,55,0.06), transparent), var(--bg)"}}>
       {/* HEADER */}
       <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(12px)",background:"var(--header-bg)"}}>
-        <div className="app-header" style={{maxWidth:1320,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
+        <div className="app-header" style={{maxWidth:1500,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
           <div style={{display:"flex",alignItems:"center",gap:13}}>
             <button onClick={()=>setMenuOpen(true)} title="Abrir menú" style={{
               display:"flex",alignItems:"center",justifyContent:"center",width:40,height:40,borderRadius:11,
@@ -5940,6 +6047,9 @@ function App() {
 
 
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {/* Buscador global: encuentra cualquier vídeo y abre su ventana */}
+            <GlobalSearch videos={videos} formats={formats} onOpen={setEditing}/>
+
             {/* Grupo edición: deshacer / rehacer (oculto en móvil, va al menú lateral) */}
             <div className="undo-group" style={{display:"flex",gap:2,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:11,padding:3}}>
               <button onClick={undo} disabled={!historyRef.current.past.length} title="Deshacer (Ctrl+Z)" style={{
@@ -6072,7 +6182,7 @@ function App() {
       )}
 
       {/* MAIN */}
-      <main className="app-main" style={{maxWidth:1320,margin:"0 auto",padding:"26px 24px 60px"}}>
+      <main className="app-main" style={{maxWidth:1500,margin:"0 auto",padding:"26px 24px 60px"}}>
         <ExpandCtx.Provider value={cardsExpanded}>
         {(view==="calendar" || view==="kanban" || view==="scheduled") && (
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
@@ -6178,6 +6288,16 @@ function App() {
       <style>{`
         /* La pista táctil solo se ve en pantallas pequeñas */
         .hint-touch { display:none; }
+
+        /* ——— Animaciones leves ——— */
+        [data-drop="card"] { transition: transform .13s ease, box-shadow .18s ease, background .15s, border-color .15s !important; }
+        [data-drop="card"]:hover { transform: translateY(-1px); box-shadow: 0 5px 16px rgba(0,0,0,0.28); }
+        .modal-overlay > div, .yt-modal-panel { animation: modalIn .16s ease; }
+        @keyframes modalIn { from { opacity:0; transform: translateY(8px) scale(.985); } to { opacity:1; transform:none; } }
+
+        @media (max-width: 1100px) {
+          .global-search { display:none; }
+        }
 
         @media (max-width: 1100px) {
           .stat-grid { grid-template-columns: repeat(3,1fr) !important; }
