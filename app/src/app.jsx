@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.5.0";
+const APP_VERSION = "2.6.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -452,9 +452,42 @@ function CopyMini({ text, what }) {
   );
 }
 
-function VideoModal({v, allVideos, onClose, onSave, onDelete, onDuplicate, onUploadYouTube, promptTemplates, toast, formats}) {
+function VideoModal({v, allVideos, goals, onClose, onSave, onDelete, onDuplicate, onUploadYouTube, promptTemplates, toast, formats}) {
   const [draft, setDraft] = useState(clone(v));
   const [notesBig, setNotesBig] = useState(false);
+  // Estadísticas del vídeo (si ya está publicado en YouTube)
+  const [ytStats, setYtStats] = useState(null);
+  const [ytSerie, setYtSerie] = useState(null);
+  const [aplicando, setAplicando] = useState(false);
+  useEffect(()=>{
+    let vivo = true;
+    setYtStats(null); setYtSerie(null);
+    if(v.youtubeId && ytIsConnected() && v.youtubeStatus==="published"){
+      ytVideoStats(v.youtubeId).then(s=>{ if(vivo) setYtStats(s); }).catch(()=>{});
+      const hoyD = new Date(); const ini = new Date(); ini.setDate(ini.getDate()-28);
+      ytVideoDiario(v.youtubeId, fechaISO(ini), fechaISO(hoyD)).then(rows=>{ if(vivo) setYtSerie(rows); }).catch(()=>{});
+    }
+    return ()=>{ vivo=false; };
+  },[v]);
+  // Objetivo de visitas por Short (para comparar este vídeo contra tu meta)
+  const objetivoShortModal = (()=>{
+    const cfgG = goals && goals.cfg; if(!cfgG) return null;
+    const rpmG = cfgG.rpmManual!=null ? cfgG.rpmManual : ((goals.rpm && goals.rpm.shorts && goals.rpm.shorts.rpm) || (goals.rpm && goals.rpm.total && goals.rpm.total.rpm) || null);
+    if(!rpmG || rpmG<=0) return null;
+    const hoyD = new Date();
+    const diasM = new Date(hoyD.getFullYear(), hoyD.getMonth()+1, 0).getDate();
+    return Math.round(cfgG.targetEur / rpmG * 1000 / diasM / (cfgG.shortsPerDay||3));
+  })();
+  // Aplica título y descripción EN YouTube (conservando etiquetas/categoría) y guarda
+  const aplicarEnYT = async () => {
+    setAplicando(true);
+    try {
+      await ytUpdateVideoMeta(draft.youtubeId, { title: draft.title, description: draft.description||"" });
+      toast && toast("✅ Título y descripción aplicados en YouTube");
+      onSave(draft); onClose();
+    } catch(e){ toast && toast("❌ "+e.message); }
+    finally { setAplicando(false); }
+  };
   // Copiar la descripción de otro vídeo (local o, si está en YouTube, desde la API)
   const [copiandoDesc, setCopiandoDesc] = useState(false);
   const fuentesDesc = (allVideos||[])
@@ -561,6 +594,36 @@ function VideoModal({v, allVideos, onClose, onSave, onDelete, onDuplicate, onUpl
         </div>
 
         <div style={{padding:22, maxHeight:"74vh", overflowY:"auto"}}>
+          {/* ——— Rendimiento del vídeo en YouTube (mejor que Studio: comparado con TU objetivo) ——— */}
+          {ytStats && (()=>{
+            const nfm = new Intl.NumberFormat("es-ES");
+            const revTotal = ytSerie ? ytSerie.reduce((a,r)=>a+(r.rev||0),0) : null;
+            const pctObj = (draft.type==="short" && objetivoShortModal) ? ytStats.vistas/objetivoShortModal*100 : null;
+            const maxSerie = ytSerie && ytSerie.length ? Math.max(...ytSerie.map(r=>r.views),1) : 1;
+            return (
+              <div className="fade-in" style={{marginBottom:18,padding:"12px 14px",background:"var(--card)",border:"1px solid var(--border)",borderRadius:11}}>
+                <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap",fontSize:12.5}}>
+                  <span style={{fontWeight:700,color:"var(--text)"}}>👁 {nfm.format(ytStats.vistas)}</span>
+                  <span style={{color:"var(--text-2)"}}>👍 {nfm.format(ytStats.likes)}</span>
+                  <span style={{color:"var(--text-2)"}}>💬 {nfm.format(ytStats.comentarios)}</span>
+                  {revTotal!=null && <span style={{color:"var(--text-2)"}}>≈ {revTotal.toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2})} € (28 días)</span>}
+                  {pctObj!=null && (
+                    <span style={{fontWeight:700,color: pctObj>=100?"var(--green)":"var(--gold)"}}>
+                      {Math.round(pctObj)}% de tu objetivo por Short ({nfm.format(objetivoShortModal)})
+                    </span>
+                  )}
+                </div>
+                {pctObj!=null && <div style={{marginTop:8}}><BarraProgreso pct={pctObj} alto={6}/></div>}
+                {ytSerie && ytSerie.length>1 && (
+                  <div style={{display:"flex",gap:2,alignItems:"flex-end",height:34,marginTop:10}} title="Visitas por día · últimos 28 días">
+                    {ytSerie.map(r=>(
+                      <div key={r.dia} title={r.dia+" · "+nfm.format(r.views)+" visitas"} style={{flex:1,minWidth:2,height:Math.max(2,r.views/maxSerie*32),borderRadius:2,background:"linear-gradient(180deg,#FFD700,#D4AF37)",opacity:.85}}/>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div style={{marginBottom:18}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
               <span style={labelStyle}>Título del vídeo</span>
@@ -721,9 +784,20 @@ function VideoModal({v, allVideos, onClose, onSave, onDelete, onDuplicate, onUpl
               display:"flex",alignItems:"center",gap:7, color:"var(--red)", fontSize:13, fontWeight:600, padding:"10px 14px",
               border:"1px solid rgba(248,113,113,0.25)", borderRadius:10
             }}>{Icons.trash} Mover a papelera <span style={{fontSize:10.5,opacity:.7,marginLeft:2}} className="modal-hint"><kbd style={{borderColor:"rgba(248,113,113,0.3)"}}>Supr</kbd></span></button>
-            <button onClick={closeWithSave} className="grad-gold gold-glow" style={{
-              color:"#000", fontWeight:700, fontSize:13.5, padding:"10px 26px", borderRadius:10, display:"flex", alignItems:"center", gap:8
-            }}>{Icons.check} Guardar cambios</button>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+              {draft.youtubeId && ytIsConnected() && (
+                <button onClick={aplicarEnYT} disabled={aplicando} title="Guarda aquí Y actualiza el título y la descripción del vídeo en YouTube" style={{
+                  display:"flex",alignItems:"center",gap:7, color:"#FF0000", fontWeight:700, fontSize:13, padding:"10px 16px",
+                  border:"1px solid rgba(255,0,0,0.4)", borderRadius:10, background:"rgba(255,0,0,0.06)", opacity:aplicando?0.6:1
+                }}>
+                  <span className={aplicando?"spinning":""} style={{display:"flex"}}>{aplicando?Icons.refresh:Icons.youtube}</span>
+                  {aplicando?"Aplicando…":"Guardar y aplicar en YouTube"}
+                </button>
+              )}
+              <button onClick={closeWithSave} className="grad-gold gold-glow" style={{
+                color:"#000", fontWeight:700, fontSize:13.5, padding:"10px 26px", borderRadius:10, display:"flex", alignItems:"center", gap:8
+              }}>{Icons.check} Guardar cambios</button>
+            </div>
           </div>
           {/* Fila 2: subir a YouTube (solo, abajo, en rojo) o estado si ya está subido */}
           {draft.youtubeId ? (
@@ -3495,6 +3569,145 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   );
 }
 
+/* ============================ COMENTARIOS: gestor con filtros y respuesta con IA ============================ */
+function ComentariosPanel({ videos, onConnect, toast }) {
+  const [hilos, setHilos] = useState([]);
+  const [nextPage, setNextPage] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
+  const [filtro, setFiltro] = useState("todos"); // todos | sinresponder | preguntas
+  const [busca, setBusca] = useState("");
+  const [abierto, setAbierto] = useState(null); // hilo con la caja de respuesta abierta
+  const [respuesta, setRespuesta] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+
+  const tituloDe = (videoId) => (videos.find(v=>v.youtubeId===videoId)?.title) || "";
+
+  const cargar = async (token) => {
+    if(!ytIsConnected()){ setError("conectar"); return; }
+    setCargando(true); setError(null);
+    try {
+      const r = await ytListChannelComments(token||undefined);
+      setHilos(h=> token ? [...h, ...r.items] : r.items);
+      setNextPage(r.nextPageToken);
+    } catch(e){ setError(e.message); }
+    finally { setCargando(false); }
+  };
+  useEffect(()=>{ if(ytTokenValid()) cargar(); else if(!ytIsConnected()) setError("conectar"); // eslint-disable-next-line
+  },[]);
+
+  const visibles = hilos
+    .filter(h=> filtro==="sinresponder" ? !h.yaRespondido : (filtro==="preguntas" ? h.texto.includes("?") : true))
+    .filter(h=> !busca || h.texto.toLowerCase().includes(busca.toLowerCase()) || h.autor.toLowerCase().includes(busca.toLowerCase()));
+  const sinResponder = hilos.filter(h=>!h.yaRespondido).length;
+
+  const generarIA = async (h) => {
+    if(!geminiHasKey()){ toast("Configura la IA (Gemini) en el apartado Agente"); return; }
+    setAiBusy(true);
+    try {
+      const prompt = `Eres RDeRandom, youtuber español de RIVALS (Roblox), cercano y con humor. Responde BREVE (1-2 frases, puedes usar 1 emoji) a este comentario de ${h.autor} en tu vídeo «${tituloDe(h.videoId)||"un vídeo"}»: "${h.texto}". Devuelve solo la respuesta, sin comillas.`;
+      const out = await geminiGenerate(prompt);
+      setRespuesta((out||"").trim());
+    } catch(e){ toast("❌ "+e.message); }
+    finally { setAiBusy(false); }
+  };
+
+  const enviar = async (h) => {
+    const txt = respuesta.trim();
+    if(!txt){ toast("Escribe la respuesta"); return; }
+    setEnviando(true);
+    try {
+      await ytReplyComment(h.id, txt);
+      setHilos(hs=>hs.map(x=>x.id===h.id?{...x, yaRespondido:true, totalRespuestas:x.totalRespuestas+1}:x));
+      setAbierto(null); setRespuesta("");
+      toast("💬 Respuesta publicada en YouTube");
+    } catch(e){ toast("❌ "+e.message); }
+    finally { setEnviando(false); }
+  };
+
+  const chip = (id, etiqueta, n) => (
+    <button key={id} onClick={()=>setFiltro(id)} style={{
+      fontSize:11.5, fontWeight:700, padding:"6px 13px", borderRadius:20,
+      border:"1px solid "+(filtro===id?"var(--border-gold)":"var(--border)"),
+      color: filtro===id?"var(--gold)":"var(--text-2)", background: filtro===id?"rgba(212,175,55,0.08)":"transparent"
+    }}>{etiqueta}{n!=null?` · ${n}`:""}</button>
+  );
+
+  return (
+    <div className="fade-in">
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+        {chip("todos","Todos", hilos.length)}
+        {chip("sinresponder","Sin responder", sinResponder)}
+        {chip("preguntas","Preguntas")}
+        <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar comentario o autor…" style={{...inputStyle, maxWidth:230, padding:"7px 11px", fontSize:12}}/>
+        <button onClick={()=>cargar()} disabled={cargando} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:9,padding:"7px 11px",background:"rgba(212,175,55,0.05)",opacity:cargando?0.6:1,marginLeft:"auto"}}>
+          <span className={cargando?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>{cargando?"Leyendo…":"Refrescar"}
+        </button>
+      </div>
+
+      {error==="conectar" ? (
+        <div style={{textAlign:"center",padding:"40px 16px",border:"1px dashed var(--border)",borderRadius:14,fontSize:13,color:"var(--text-2)"}}>
+          <button onClick={onConnect} style={{color:"var(--gold)",fontWeight:700}}>Conecta con Google</button> para leer y responder los comentarios de tu canal.
+        </div>
+      ) : error ? (
+        <div style={{padding:"12px 14px",background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:11,fontSize:12.5,color:"var(--red)"}}>⚠ {error}</div>
+      ) : hilos.length===0 && !cargando ? (
+        <div style={{textAlign:"center",padding:"40px 16px",border:"1px dashed var(--border)",borderRadius:14,fontSize:13,color:"var(--text-3)"}}>Sin comentarios todavía.</div>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          {visibles.map(h=>{
+            const titulo = tituloDe(h.videoId);
+            return (
+              <div key={h.id} style={{padding:"12px 14px",background:"var(--bg-2)",border:"1px solid "+(h.yaRespondido?"var(--border)":"rgba(212,175,55,0.35)"),borderRadius:12}}>
+                <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                  {h.autorImg ? <img src={h.autorImg} alt="" style={{width:32,height:32,borderRadius:"50%",flexShrink:0}}/> : <div style={{width:32,height:32,borderRadius:"50%",background:"var(--card)",flexShrink:0}}/>}
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",gap:9,alignItems:"baseline",flexWrap:"wrap"}}>
+                      <span style={{fontSize:12.5,fontWeight:700,color:"var(--text)"}}>{h.autor}</span>
+                      {h.fecha && <span style={{fontSize:10.5,color:"var(--text-3)"}}>{new Date(h.fecha).toLocaleDateString("es-ES",{day:"numeric",month:"short"})} · {new Date(h.fecha).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"})}</span>}
+                      {h.likes>0 && <span style={{fontSize:10.5,color:"var(--text-3)"}}>👍 {h.likes}</span>}
+                      {h.yaRespondido
+                        ? <span style={{fontSize:10.5,fontWeight:700,color:"var(--green)"}}>✓ respondido</span>
+                        : <span style={{fontSize:10.5,fontWeight:700,color:"var(--gold)"}}>● sin responder</span>}
+                    </div>
+                    {titulo && <div style={{fontSize:10.5,color:"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:1}}>en: {titulo}</div>}
+                    <div style={{fontSize:13,color:"var(--text-2)",marginTop:5,lineHeight:1.5,overflowWrap:"anywhere"}}>{h.texto}</div>
+                    <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                      <button onClick={()=>{ setAbierto(abierto===h.id?null:h.id); setRespuesta(""); }} style={{fontSize:11.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:8,padding:"5px 11px",background:"rgba(212,175,55,0.05)"}}>
+                        {abierto===h.id?"Cerrar":"Responder"}
+                      </button>
+                      <a href={"https://www.youtube.com/watch?v="+h.videoId+"&lc="+h.id} target="_blank" rel="noopener" style={{fontSize:11.5,fontWeight:600,color:"var(--text-3)",border:"1px solid var(--border)",borderRadius:8,padding:"5px 11px"}}>Ver en YouTube</a>
+                    </div>
+                    {abierto===h.id && (
+                      <div className="fade-in" style={{marginTop:10}}>
+                        <textarea value={respuesta} onChange={e=>setRespuesta(e.target.value)} rows={2} placeholder="Tu respuesta…" style={{...inputStyle,fontSize:12.5,lineHeight:1.5}}/>
+                        <div style={{display:"flex",gap:8,marginTop:7,justifyContent:"flex-end"}}>
+                          <button onClick={()=>generarIA(h)} disabled={aiBusy} style={{display:"flex",alignItems:"center",gap:6,fontSize:11.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:8,padding:"6px 12px",background:"rgba(212,175,55,0.05)",opacity:aiBusy?0.6:1}}>
+                            <span className={aiBusy?"spinning":""} style={{display:"flex"}}>{Icons.sparkles}</span>{aiBusy?"Pensando…":"Borrador con IA"}
+                          </button>
+                          <button onClick={()=>enviar(h)} disabled={enviando || !respuesta.trim()} className="grad-gold" style={{fontSize:12,fontWeight:700,color:"#000",borderRadius:8,padding:"6px 16px",opacity:(enviando||!respuesta.trim())?0.6:1}}>
+                            {enviando?"Enviando…":"Responder"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {nextPage && (
+            <button onClick={()=>cargar(nextPage)} disabled={cargando} style={{fontSize:12.5,fontWeight:600,color:"var(--text-2)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 16px",opacity:cargando?0.6:1}}>
+              {cargando?"Cargando…":"Cargar más comentarios"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos, subHistory, onRecordSubs, onConnect, formats, toast, goals, setGoals }) {
   const [checking, setChecking] = useState(false);
   const [statusMap, setStatusMap] = useState({}); // videoId -> {exists, privacyStatus, publishAt}
@@ -3687,6 +3900,7 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
           {id:"short",   label:"Shorts",   n: ytVideos.filter(v=>vTipo(v)==="short").length},
           {id:"directo", label:"Directos", n: ytVideos.filter(v=>vTipo(v)==="directo").length},
           {id:"video",   label:"Vídeos",   n: ytVideos.filter(v=>vTipo(v)==="video").length},
+          {id:"comentarios", label:"Comentarios"},
         ].map(t=>(
           <button key={t.id} onClick={()=>setYtTab(t.id)} style={{
             fontSize:12.5, fontWeight:700, padding:"8px 15px", borderRadius:20,
@@ -3698,15 +3912,16 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
       </div>
 
       {/* ——— COMENTARIO FIJADO al publicarse un vídeo programado ——— */}
-      {ytTab!=="objetivos" && (()=>{
+      {ytTab!=="objetivos" && ytTab!=="comentarios" && (()=>{
         const programados = ytVideos.filter(v=>v.youtubeStatus==="scheduled");
         if(programados.length===0) return null;
         return <PinnedCommentPanel programados={programados} onUpdateVideo={onUpdateVideo} toast={toast}/>;
       })()}
 
       {ytTab==="objetivos" && <ObjetivosPanel videos={videos} goals={goals} setGoals={setGoals} onConnect={onConnect} toast={toast}/>}
+      {ytTab==="comentarios" && <ComentariosPanel videos={videos} onConnect={onConnect} toast={toast}/>}
 
-      {ytTab!=="objetivos" && (()=>{
+      {ytTab!=="objetivos" && ytTab!=="comentarios" && (()=>{
         const delTipo = ytVideos.filter(v=>vTipo(v)===ytTab);
         const propios = delTipo
           .filter(v=>!busca || (v.title||"").toLowerCase().includes(busca.toLowerCase()))
@@ -4841,6 +5056,105 @@ async function ytAddToPlaylist(playlistId, videoId){
   return true;
 }
 
+/* ——— ID del canal propio (cacheado en el dispositivo) ——— */
+async function ytMyChannelId(){
+  try { const c = localStorage.getItem("rds_channel_id"); if(c) return c; } catch(e){}
+  const res = await fetch("https://www.googleapis.com/youtube/v3/channels?part=id&mine=true", { headers: ytAuthHeader() });
+  if(!res.ok) throw new Error("Error al leer el canal ("+res.status+")");
+  const data = await res.json();
+  const id = data.items?.[0]?.id;
+  if(id){ try { localStorage.setItem("rds_channel_id", id); } catch(e){} }
+  return id;
+}
+
+/* ——— Aplicar título/descripción EN YouTube (conservando etiquetas y categoría) ——— */
+async function ytUpdateVideoMeta(videoId, cambios){
+  await ytEnsureToken();
+  const actual = await ytGetVideoDetails(videoId);
+  if(!actual) throw new Error("No se pudo leer el vídeo en YouTube");
+  const snippet = {
+    title: cambios.title!=null ? cambios.title : actual.title,
+    description: cambios.description!=null ? cambios.description : actual.description,
+    tags: actual.tags||[],
+    categoryId: actual.categoryId||"20"
+  };
+  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?part=snippet", {
+    method:"PUT", headers:{ ...ytAuthHeader(), "Content-Type":"application/json" },
+    body: JSON.stringify({ id: videoId, snippet })
+  });
+  if(!res.ok){ const d = await res.json().catch(()=>({})); throw new Error(d?.error?.message||("Error al actualizar en YouTube ("+res.status+")")); }
+  return true;
+}
+
+/* ——— Reprogramar EN YouTube (nueva fecha/hora de publicación) ——— */
+async function ytUpdateSchedule(videoId, isoFecha){
+  await ytEnsureToken();
+  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?part=status", {
+    method:"PUT", headers:{ ...ytAuthHeader(), "Content-Type":"application/json" },
+    body: JSON.stringify({ id: videoId, status: { privacyStatus:"private", publishAt: isoFecha, selfDeclaredMadeForKids:false } })
+  });
+  if(!res.ok){ const d = await res.json().catch(()=>({})); throw new Error(d?.error?.message||("Error al reprogramar ("+res.status+")")); }
+  return true;
+}
+
+/* ——— Comentarios del canal (hilos recientes de todos los vídeos) ——— */
+async function ytListChannelComments(pageToken){
+  await ytEnsureToken();
+  const chId = await ytMyChannelId();
+  const params = { part:"snippet,replies", allThreadsRelatedToChannelId: chId, order:"time", maxResults:"50", textFormat:"plainText" };
+  if(pageToken) params.pageToken = pageToken;
+  const res = await fetch("https://www.googleapis.com/youtube/v3/commentThreads?" + new URLSearchParams(params), { headers: ytAuthHeader() });
+  if(!res.ok){ const d = await res.json().catch(()=>({})); throw new Error(d?.error?.message||("Error al leer comentarios ("+res.status+")")); }
+  const data = await res.json();
+  return {
+    nextPageToken: data.nextPageToken||null,
+    canal: chId,
+    items: (data.items||[]).map(t=>{
+      const c = t.snippet?.topLevelComment?.snippet || {};
+      return {
+        id: t.snippet?.topLevelComment?.id || t.id,
+        videoId: t.snippet?.videoId || c.videoId || "",
+        autor: c.authorDisplayName||"",
+        autorImg: c.authorProfileImageUrl||"",
+        autorCanal: c.authorChannelId?.value||"",
+        texto: c.textDisplay||"",
+        likes: c.likeCount||0,
+        fecha: c.publishedAt||null,
+        totalRespuestas: t.snippet?.totalReplyCount||0,
+        yaRespondido: (t.replies?.comments||[]).some(r=>r.snippet?.authorChannelId?.value===chId)
+      };
+    })
+  };
+}
+async function ytReplyComment(parentId, texto){
+  await ytEnsureToken();
+  const res = await fetch("https://www.googleapis.com/youtube/v3/comments?part=snippet", {
+    method:"POST", headers:{ ...ytAuthHeader(), "Content-Type":"application/json" },
+    body: JSON.stringify({ snippet: { parentId, textOriginal: texto } })
+  });
+  if(!res.ok){ const d = await res.json().catch(()=>({})); throw new Error(d?.error?.message||("Error al responder ("+res.status+")")); }
+  return true;
+}
+
+/* ——— Estadísticas de UN vídeo: totales (Data API) y por día (Analytics) ——— */
+async function ytVideoStats(videoId){
+  await ytEnsureToken();
+  const res = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({ part:"statistics,snippet", id: videoId }), { headers: ytAuthHeader() });
+  if(!res.ok) throw new Error("Error al leer estadísticas ("+res.status+")");
+  const it = (await res.json()).items?.[0];
+  if(!it) return null;
+  return {
+    vistas: Number(it.statistics?.viewCount)||0,
+    likes: Number(it.statistics?.likeCount)||0,
+    comentarios: Number(it.statistics?.commentCount)||0,
+    publicadoEl: it.snippet?.publishedAt||null
+  };
+}
+async function ytVideoDiario(videoId, desde, hasta){
+  const data = await ytAnalyticsQuery({ startDate: desde, endDate: hasta, metrics:"views,estimatedRevenue", dimensions:"day", filters:"video=="+videoId, sort:"day" });
+  return (data.rows||[]).map(f=>({ dia:f[0], views:Number(f[1])||0, rev:Number(f[2])||0 }));
+}
+
 // Publica un comentario del propietario en un vídeo (aparece destacado como comentario del canal)
 async function ytPostComment(videoId, text){
   await ytEnsureToken();
@@ -5924,10 +6238,24 @@ function App() {
   };
 
   // Movimientos con id explícito (los usan tanto el ratón como el dedo)
+  // Si el vídeo está PROGRAMADO en YouTube y aquí cambia su fecha/hora, se reprograma también allí
+  const reprogramarEnYT = async (v, fecha, hora) => {
+    if(!v || !v.youtubeId || v.youtubeStatus!=="scheduled" || !ytIsConnected()) return;
+    if(!fecha){ toast("⚠ Sigue programado en YouTube con su fecha anterior"); return; }
+    const cuando = new Date(fecha+"T"+(hora||v.time||"22:00"));
+    if(cuando.getTime() < Date.now()+60000){ toast("⚠ No se reprogramó en YouTube: esa fecha ya pasó"); return; }
+    try {
+      await ytUpdateSchedule(v.youtubeId, cuando.toISOString());
+      toast("📅 Reprogramado también en YouTube: "+cuando.toLocaleString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}));
+    } catch(e){ toast("⚠ Cambiado aquí, pero YouTube respondió: "+e.message); }
+  };
+
   const moveToDate = (id, date) => {
     if(!id) return;
+    const previo = (stateRef.current.videos||[]).find(x=>x.id===id);
     setVideos(vs=>vs.map(v=>v.id===id?{...v,date,status: v.status==="idea"?"programado":v.status, updatedAt:Date.now()}:v));
     toast(`Reprogramado para el ${new Date(date+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}`);
+    if(previo && previo.date!==date) reprogramarEnYT(previo, date, previo.time);
   };
   const moveToStatus = (id, status) => {
     if(!id) return;
@@ -5957,7 +6285,14 @@ function App() {
   const dropOnStatus = (status) => moveToStatus(dragId, status);
   const unassignVideo = () => moveToUnassign(dragId);
 
-  const saveVideo = (draft) => setVideos(vs=>vs.map(v=>v.id===draft.id?{...draft, updatedAt: Date.now()}:v));
+  const saveVideo = (draft) => {
+    const previo = (stateRef.current.videos||[]).find(x=>x.id===draft.id);
+    setVideos(vs=>vs.map(v=>v.id===draft.id?{...draft, updatedAt: Date.now()}:v));
+    // Fecha u hora cambiadas en la ficha de un vídeo programado → reprogramar en YouTube
+    if(previo && draft.youtubeId && draft.youtubeStatus==="scheduled" && (previo.date!==draft.date || previo.time!==draft.time)){
+      reprogramarEnYT(draft, draft.date, draft.time);
+    }
+  };
 
   // Mover a la papelera (no borra del todo)
   const deleteVideo = (id) => {
@@ -6482,7 +6817,7 @@ function App() {
         </ExpandCtx.Provider>
       </main>
 
-      {editing && <VideoModal v={editing} allVideos={videos} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
+      {editing && <VideoModal v={editing} allVideos={videos} goals={goals} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
       {ytUpload && <YouTubeUploadModal video={ytUpload} allVideos={videos} tagTemplates={tagTemplates} setTagTemplates={setTagTemplates} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?completarChecklist({...v, ...yt, updatedAt:Date.now()}):v)); }} toast={toast}/>}
       {showFormats && <FormatsModal formats={formats} setFormats={setFormats} videos={videos} onClose={()=>setShowFormats(false)} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
       {showSync && <SyncModal syncCode={syncCode} status={syncStatus} syncMode={syncMode} setSyncMode={setSyncMode} pendingChanges={pendingChanges} onClose={()=>setShowSync(false)} onLink={linkToCode} onExport={exportData} onImport={importData} onSyncNow={syncNow} syncing={manualSyncing} toast={toast}/>}
