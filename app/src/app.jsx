@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "2.7.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -119,6 +119,7 @@ const Icons = {
   short: <Icon d={<><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M10.5 8.5l4 2.5-4 2.5z"/></>}/>,
   largo: <Icon d={<><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></>}/>,
   live: <Icon d={<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></>}/>,
+  gear: <Icon d={<><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></>}/>,
   trash: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>} size={16}/>,
   edit: <Icon d={<><path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></>} size={14}/>,
   drag: <Icon d={<path d="M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01"/>} size={16}/>,
@@ -469,14 +470,17 @@ function VideoModal({v, allVideos, goals, onClose, onSave, onDelete, onDuplicate
     }
     return ()=>{ vivo=false; };
   },[v]);
-  // Objetivo de visitas por Short (para comparar este vídeo contra tu meta)
-  const objetivoShortModal = (()=>{
+  // RPM efectivo y objetivo de visitas por Short (para comparar este vídeo contra tu meta)
+  const rpmModal = (()=>{
     const cfgG = goals && goals.cfg; if(!cfgG) return null;
-    const rpmG = cfgG.rpmManual!=null ? cfgG.rpmManual : ((goals.rpm && goals.rpm.shorts && goals.rpm.shorts.rpm) || (goals.rpm && goals.rpm.total && goals.rpm.total.rpm) || null);
-    if(!rpmG || rpmG<=0) return null;
+    const r = cfgG.rpmManual!=null ? cfgG.rpmManual : ((goals.rpm && goals.rpm.shorts && goals.rpm.shorts.rpm) || (goals.rpm && goals.rpm.total && goals.rpm.total.rpm) || null);
+    return (r && r>0) ? r : null;
+  })();
+  const objetivoShortModal = (()=>{
+    const cfgG = goals && goals.cfg; if(!cfgG || !rpmModal) return null;
     const hoyD = new Date();
     const diasM = new Date(hoyD.getFullYear(), hoyD.getMonth()+1, 0).getDate();
-    return Math.round(cfgG.targetEur / rpmG * 1000 / diasM / (cfgG.shortsPerDay||3));
+    return Math.round(cfgG.targetEur / rpmModal * 1000 / diasM / (cfgG.shortsPerDay||3));
   })();
   // Aplica título y descripción EN YouTube (conservando etiquetas/categoría) y guarda
   const aplicarEnYT = async () => {
@@ -597,7 +601,10 @@ function VideoModal({v, allVideos, goals, onClose, onSave, onDelete, onDuplicate
           {/* ——— Rendimiento del vídeo en YouTube (mejor que Studio: comparado con TU objetivo) ——— */}
           {ytStats && (()=>{
             const nfm = new Intl.NumberFormat("es-ES");
-            const revTotal = ytSerie ? ytSerie.reduce((a,r)=>a+(r.rev||0),0) : null;
+            const estimando = ingresosEstimadosActivos() && rpmModal;
+            const revTotal = estimando
+              ? ytStats.vistas * rpmModal / 1000  // estimación de TODO el vídeo, al momento
+              : (ytSerie ? ytSerie.reduce((a,r)=>a+(r.rev||0),0) : null);
             const pctObj = (draft.type==="short" && objetivoShortModal) ? ytStats.vistas/objetivoShortModal*100 : null;
             const maxSerie = ytSerie && ytSerie.length ? Math.max(...ytSerie.map(r=>r.views),1) : 1;
             return (
@@ -606,7 +613,7 @@ function VideoModal({v, allVideos, goals, onClose, onSave, onDelete, onDuplicate
                   <span style={{fontWeight:700,color:"var(--text)"}}>👁 {nfm.format(ytStats.vistas)}</span>
                   <span style={{color:"var(--text-2)"}}>👍 {nfm.format(ytStats.likes)}</span>
                   <span style={{color:"var(--text-2)"}}>💬 {nfm.format(ytStats.comentarios)}</span>
-                  {revTotal!=null && <span style={{color:"var(--text-2)"}}>≈ {revTotal.toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2})} € (28 días)</span>}
+                  {revTotal!=null && <span style={{color:"var(--text-2)"}}>≈ {revTotal.toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2})} € {(ingresosEstimadosActivos() && rpmModal)?"(estimado)":"(real · 28 días)"}</span>}
                   {pctObj!=null && (
                     <span style={{fontWeight:700,color: pctObj>=100?"var(--green)":"var(--gold)"}}>
                       {Math.round(pctObj)}% de tu objetivo por Short ({nfm.format(objetivoShortModal)})
@@ -3159,6 +3166,9 @@ function rgbDePct(pct){
 }
 const rgbaDePct=(pct,alpha)=>{ const c=rgbDePct(pct); return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`; };
 
+// Modo de ingresos: estimados (visitas × RPM, al instante) o reales (API, ~2 días de retraso)
+function ingresosEstimadosActivos(){ try { return localStorage.getItem("rds_ingresos_reales")!=="1"; } catch(e){ return true; } }
+
 function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   const cfg = (goals && goals.cfg) || { targetEur: 100, shortsPerDay: 3, rpmManual: null };
   const rpmInfo = (goals && goals.rpm) || null;
@@ -3179,6 +3189,9 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   const [colorMes, setColorMes] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_mes")!=="0"; } catch(e){ return true; } });
   useEffect(()=>{ try { localStorage.setItem("rds_obj_color_dia", colorDia?"1":"0"); } catch(e){} },[colorDia]);
   useEffect(()=>{ try { localStorage.setItem("rds_obj_color_mes", colorMes?"1":"0"); } catch(e){} },[colorMes]);
+  // Ingresos: estimados (visitas × RPM, disponibles al momento) o reales (API)
+  const [estimado, setEstimado] = useState(ingresosEstimadosActivos());
+  useEffect(()=>{ try { localStorage.setItem("rds_ingresos_reales", estimado?"0":"1"); } catch(e){} },[estimado]);
 
   const hoy = new Date();
   const hoyKey = fechaISO(hoy);
@@ -3314,12 +3327,21 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   });
   const maxSemana = Math.max(objetivoDiaVistas||0, ...semana.map(s=>s.views||0), 1);
 
-  // Mes seleccionado: totales y porcentajes
+  // Mes seleccionado: totales y porcentajes (en modo estimado, € = visitas × RPM)
   const entradasMes = Object.entries(daily).filter(([k])=>k.startsWith(mesPrefix));
   const vistasMes = entradasMes.reduce((a,[,v])=>a+(v.views||0),0);
-  const ingresosMes = entradasMes.reduce((a,[,v])=>a+(v.revenue||0),0);
+  const ingresosMesReal = entradasMes.reduce((a,[,v])=>a+(v.revenue||0),0);
+  const ingresosMes = (estimado && rpm) ? vistasMes*rpm/1000 : ingresosMesReal;
   const pctEurMes = cfg.targetEur ? ingresosMes/cfg.targetEur*100 : null;
   const pctVistasMes = objetivoMesVistas ? vistasMes/objetivoMesVistas*100 : null;
+  // Dinero de un día concreto según el modo activo
+  const euroDia = (k) => {
+    const d = daily[k];
+    if(!d) return null;
+    if(estimado && rpm && d.views!=null) return d.views*rpm/1000;
+    return d.revenue!=null ? d.revenue : null;
+  };
+  const pref = estimado ? "≈ " : "";
 
   // Calendario del mes seleccionado
   const offsetLunes = (mesD.getDay()+6)%7;
@@ -3365,7 +3387,12 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
               </> : "Refresca las analíticas para calcular tu RPM real, o fija un RPM manual."}
             </div>
           </div>
-          <div style={{display:"flex",gap:8}}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setEstimado(x=>!x)} title={estimado?"Mostrando ingresos ESTIMADOS (visitas × tu RPM, al momento). Pulsa para ver los reales de la API":"Mostrando ingresos REALES de la API (~2 días de retraso). Pulsa para ver estimaciones al momento"} style={{
+              fontSize:12,fontWeight:700,color: estimado?"var(--gold)":"var(--green)",
+              border:"1px solid "+(estimado?"var(--border-gold)":"rgba(74,222,128,0.4)"),borderRadius:9,padding:"8px 12px",
+              background: estimado?"rgba(212,175,55,0.05)":"rgba(74,222,128,0.06)", transition:"all .15s"
+            }}>{estimado?"≈ Estimado":"Real"}</button>
             <button onClick={()=>{ setFTarget(String(cfg.targetEur)); setFShorts(String(cfg.shortsPerDay)); setFRpm(cfg.rpmManual!=null?String(cfg.rpmManual):""); setEditCfg(e=>!e); }} style={{
               fontSize:12,fontWeight:600,color:"var(--text-2)",border:"1px solid var(--border)",borderRadius:9,padding:"8px 12px"
             }}>{editCfg?"Cerrar":"Editar"}</button>
@@ -3429,7 +3456,7 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
                     <span style={{color:"var(--text)",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{v.title}</span>
                     <span style={{color: pct>=100?"var(--green)":"var(--text-2)",flexShrink:0,fontWeight:600}}>
                       {publicado
-                        ? (vistas!=null ? `${nf.format(vistas)}${objetivoShortSel?` / ${nf.format(objetivoShortSel)} (${Math.round(pct)}%)`:""}` : "…")
+                        ? (vistas!=null ? `${nf.format(vistas)}${objetivoShortSel?` / ${nf.format(objetivoShortSel)} (${Math.round(pct)}%)`:""}${(estimado && rpm) ? ` · ≈ ${(vistas*rpm/1000).toLocaleString("es-ES",{minimumFractionDigits:2,maximumFractionDigits:2})} €` : ""}` : "…")
                         : `programado · ${v.time||""}`}
                     </span>
                   </div>
@@ -3459,14 +3486,15 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
             const h = s.views!=null ? Math.max(3, s.views/maxSemana*80) : 3;
             const pctDia = (objetivoDiaVistas && s.views!=null) ? s.views/objetivoDiaVistas*100 : null;
             const cumple = pctDia!=null && pctDia>=100;
+            const dinero = euroDia(s.k);
             return (
-              <div key={s.k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}} title={(s.views!=null?nf.format(s.views)+" visitas":"sin datos aún")+(pctDia!=null?` · ${Math.round(pctDia)}%`:"")+(s.rev!=null?" · "+eur(s.rev):"")}>
+              <div key={s.k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}} title={(s.views!=null?nf.format(s.views)+" visitas":"sin datos aún")+(pctDia!=null?` · ${Math.round(pctDia)}%`:"")+(dinero!=null?" · "+pref+eur(dinero):"")}>
                 <span style={{fontSize:10,color: cumple?"var(--green)":"var(--text-3)",fontWeight:600}}>{s.views!=null?nfc.format(s.views):"—"}</span>
                 <div style={{width:"100%",maxWidth:34,height:h,borderRadius:5,transition:"background .4s",
                   background: pctDia!=null ? rgbaDePct(pctDia, .9) : "var(--card-2)",
                   border:"1px solid "+(s.esHoy?"var(--border-gold)":(pctDia!=null?"transparent":"var(--border)"))}}/>
                 <span style={{fontSize:10,color:s.esHoy?"var(--gold)":"var(--text-3)",fontWeight:s.esHoy?700:400}}>{s.dia} {s.num}</span>
-                <span style={{fontSize:9,color:"var(--text-3)"}}>{s.rev!=null ? eur(s.rev) : "—"}</span>
+                <span style={{fontSize:9,color:"var(--text-3)"}}>{dinero!=null ? pref+eur(dinero) : "—"}</span>
               </div>
             );
           })}
@@ -3489,11 +3517,15 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
-                  <span style={{fontWeight:600,color:"var(--text-2)"}}>Ingresos reales</span>
-                  <span style={{fontWeight:700,color: ingresosMes>=cfg.targetEur?"var(--green)":"var(--text)"}}>{eur(ingresosMes)} / {eur(cfg.targetEur)}{pctEurMes!=null?` (${Math.round(pctEurMes)}%)`:""}</span>
+                  <span style={{fontWeight:600,color:"var(--text-2)"}}>{estimado?"Ingresos estimados":"Ingresos reales"}</span>
+                  <span style={{fontWeight:700,color: ingresosMes>=cfg.targetEur?"var(--green)":"var(--text)"}}>{pref}{eur(ingresosMes)} / {eur(cfg.targetEur)}{pctEurMes!=null?` (${Math.round(pctEurMes)}%)`:""}</span>
                 </div>
                 <BarraProgreso pct={pctEurMes||0} alto={10}/>
-                {mesOff===0 && <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:5}}>Los ingresos del mes en curso llegan con ~2 días de retraso y son estimados.</div>}
+                <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:5}}>
+                  {estimado
+                    ? "Estimación al vuelo: visitas × tu RPM. Pulsa «Real» arriba para ver lo que reporta YouTube."
+                    : (mesOff===0 ? "Lo que reporta YouTube: llega con ~2 días de retraso y se ajusta a final de mes." : "Lo que reportó YouTube ese mes.")}
+                </div>
               </div>
               {objetivoMesVistas && (
                 <div>
@@ -3529,7 +3561,7 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
               {["L","M","X","J","V","S","D"].map(dl=><div key={dl} style={{fontSize:9.5,color:"var(--text-3)",textAlign:"center",fontWeight:700}}>{dl}</div>)}
               {celdas.map((c,i)=>{
                 const p = c && c.pct!=null ? Math.min(100, Math.max(0, c.pct)) : null;
-                const rev = c ? daily[c.k]?.revenue : null;
+                const rev = c ? euroDia(c.k) : null;
                 return (
                   <div key={i} style={{
                     minHeight:48, borderRadius:7, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
@@ -3540,7 +3572,7 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
                       : "none",
                     transition:"background .4s",
                     border: c&&c.esHoy ? "1.5px solid var(--gold)" : "1px solid "+(c&&!c.futuro?"var(--border)":(c?"rgba(255,255,255,0.05)":"transparent"))
-                  }} title={c&&c.views!=null?nf.format(c.views)+" visitas"+(c.pct!=null?` · ${Math.round(c.pct)}%`:"")+(rev!=null?` · ${eur(rev)}`:""):""}>
+                  }} title={c&&c.views!=null?nf.format(c.views)+" visitas"+(c.pct!=null?` · ${Math.round(c.pct)}%`:"")+(rev!=null?` · ${pref}${eur(rev)}`:""):""}>
                     <span style={{fontSize:10.5, fontWeight: c&&c.esHoy?800:600, color: c ? (c.futuro?"var(--text-3)":"var(--text)") : "transparent", lineHeight:1}}>{c?c.d:""}</span>
                     {c && !c.futuro && (
                       <span style={{fontSize:8.5, fontWeight:700, lineHeight:1, color: c.pct==null?"var(--text-3)":(c.pct>=100?"var(--green)":"var(--text-2)")}}>
@@ -3549,7 +3581,7 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
                     )}
                     {c && !c.futuro && (
                       <span style={{fontSize:8, fontWeight:600, lineHeight:1, color:"var(--text-3)"}}>
-                        {rev!=null ? rev.toLocaleString("es-ES",{minimumFractionDigits:2, maximumFractionDigits:2})+"€" : ""}
+                        {rev!=null ? pref+rev.toLocaleString("es-ES",{minimumFractionDigits:2, maximumFractionDigits:2})+"€" : ""}
                       </span>
                     )}
                   </div>
@@ -5020,6 +5052,21 @@ async function ytListUploadsFull(max){
     pageToken = plData.nextPageToken || "";
     if(!pageToken) break;
   }
+  // 2b. Unión con la búsqueda directa de MIS vídeos: los programados recientes a veces
+  // no aparecen en la lista de subidas (peculiaridad conocida de la API). La búsqueda
+  // es cara en cuota, así que solo pedimos la primera página (los 50 más nuevos).
+  try {
+    const sRes = await fetch("https://www.googleapis.com/youtube/v3/search?" + new URLSearchParams({
+      part:"id", forMine:"true", type:"video", order:"date", maxResults:"50"
+    }), { headers: ytAuthHeader() });
+    if(sRes.ok){
+      const sData = await sRes.json();
+      (sData.items||[]).forEach(it=>{
+        const id = it.id?.videoId;
+        if(id && !ids.includes(id)) ids.unshift(id);
+      });
+    }
+  } catch(e){ /* si falla la búsqueda, seguimos con el playlist */ }
   if(ids.length===0) return [];
   // 3. Detalles por lotes de 50
   const items = [];
@@ -5514,6 +5561,130 @@ async function cloudSave(code, payload) {
     { onConflict: "user_id" }
   );
   if(error) throw error;
+}
+
+/* ============================ CONFIGURACIÓN ============================ */
+function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, setCardsExpanded, onConnect, onExport, onImport, onReset, toast }) {
+  const cfg = (goals && goals.cfg) || { targetEur:100, shortsPerDay:3, rpmManual:null };
+  const [fTarget, setFTarget] = useState(String(cfg.targetEur));
+  const [fShorts, setFShorts] = useState(String(cfg.shortsPerDay));
+  const [fRpm, setFRpm] = useState(cfg.rpmManual!=null?String(cfg.rpmManual):"");
+  const [, setTick] = useState(0); // re-render tras conectar/desconectar Google
+  const [estimado, setEstimadoCfg] = useState(ingresosEstimadosActivos());
+  const [colorDia, setColorDiaCfg] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_dia")!=="0"; } catch(e){ return true; } });
+  const [colorMes, setColorMesCfg] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_mes")!=="0"; } catch(e){ return true; } });
+  const [carpeta, setCarpeta] = useState(()=>{ try { return localStorage.getItem("rds_video_folder")||""; } catch(e){ return ""; } });
+  const [gemKey, setGemKey] = useState(geminiGetKey());
+  const esEscritorio = !!(typeof window!=="undefined" && window.studioFS);
+  const fileRef = useRef(null);
+  const conectado = ytIsConnected();
+
+  const guardarObjetivo = () => {
+    const t = parseFloat(String(fTarget).replace(",","."));
+    const s = parseInt(fShorts,10);
+    const rm = String(fRpm).trim()==="" ? null : parseFloat(String(fRpm).replace(",","."));
+    if(!(t>0) || !(s>0)){ toast("Revisa el objetivo y los Shorts diarios"); return; }
+    setGoals(g=>({ ...(g||{}), daily:(g&&g.daily)||{}, rpm:(g&&g.rpm)||null, cfg:{ targetEur:t, shortsPerDay:s, rpmManual:(rm&&rm>0)?rm:null, updatedAt:Date.now() } }));
+    toast("Objetivo guardado · todas las cuentas se recalculan solas");
+  };
+
+  const Toggle = ({activo, onToggle, children}) => (
+    <button onClick={onToggle} style={{
+      display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"10px 13px",borderRadius:10,
+      border:"1px solid "+(activo?"var(--border-gold)":"var(--border)"),
+      background: activo?"rgba(212,175,55,0.05)":"var(--card)", transition:"all .15s"
+    }}>
+      <span style={{width:34,height:19,borderRadius:19,flexShrink:0,background:activo?"var(--gold)":"var(--card-2)",border:"1px solid "+(activo?"var(--gold)":"var(--border)"),position:"relative",transition:"background .18s"}}>
+        <span style={{position:"absolute",top:1.5,left:activo?16:2,width:14,height:14,borderRadius:"50%",background:activo?"#000":"var(--text-3)",transition:"left .18s"}}/>
+      </span>
+      <span style={{fontSize:12.5,color:"var(--text)",lineHeight:1.45}}>{children}</span>
+    </button>
+  );
+
+  const caja = { background:"var(--bg-2)", border:"1px solid var(--border)", borderRadius:14, padding:18 };
+  const tituloZona = { fontSize:11.5, fontWeight:700, color:"var(--gold)", textTransform:"uppercase", letterSpacing:".07em", marginBottom:13 };
+
+  return (
+    <div className="fade-in">
+      <h2 style={{fontSize:20,fontWeight:700,marginBottom:4}}>Configuración</h2>
+      <p style={{fontSize:12.5,color:"var(--text-2)",marginBottom:18}}>Todo lo ajustable del Studio, en un solo sitio.</p>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:14,alignItems:"start"}}>
+
+        <div style={caja}>
+          <div style={tituloZona}>Objetivos e ingresos</div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <Field label="Objetivo € / mes"><input value={fTarget} onChange={e=>setFTarget(e.target.value)} inputMode="decimal" style={inputStyle}/></Field>
+              <Field label="Shorts al día"><input value={fShorts} onChange={e=>setFShorts(e.target.value)} inputMode="numeric" style={inputStyle}/></Field>
+            </div>
+            <Field label="RPM manual (vacío = usar el real de la API)"><input value={fRpm} onChange={e=>setFRpm(e.target.value)} placeholder="p. ej. 0,06" inputMode="decimal" style={inputStyle}/></Field>
+            <button onClick={guardarObjetivo} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 16px",borderRadius:9,alignSelf:"flex-start"}}>Guardar objetivo</button>
+            <Toggle activo={estimado} onToggle={()=>{ const n=!estimado; setEstimadoCfg(n); try{localStorage.setItem("rds_ingresos_reales", n?"0":"1");}catch(e){} }}>
+              <b>Ingresos estimados</b> (visitas × RPM, al momento). Apagado = solo los reales que reporta YouTube (~2 días de retraso).
+            </Toggle>
+          </div>
+        </div>
+
+        <div style={caja}>
+          <div style={tituloZona}>Apariencia</div>
+          <div style={{display:"flex",flexDirection:"column",gap:9}}>
+            <Toggle activo={theme==="dark"} onToggle={()=>setTheme(t=>t==="dark"?"light":"dark")}>Tema oscuro</Toggle>
+            <Toggle activo={cardsExpanded} onToggle={()=>setCardsExpanded(x=>!x)}>Tarjetas expandidas por defecto</Toggle>
+            <Toggle activo={colorDia} onToggle={()=>{ const n=!colorDia; setColorDiaCfg(n); try{localStorage.setItem("rds_obj_color_dia", n?"1":"0");}catch(e){} }}>Progreso visual diario (calendario de Objetivos)</Toggle>
+            <Toggle activo={colorMes} onToggle={()=>{ const n=!colorMes; setColorMesCfg(n); try{localStorage.setItem("rds_obj_color_mes", n?"1":"0");}catch(e){} }}>Progreso visual mensual (fondo del calendario)</Toggle>
+          </div>
+        </div>
+
+        <div style={caja}>
+          <div style={tituloZona}>Google · YouTube</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:13,color:conectado?"var(--green)":"var(--text-2)",fontWeight:600}}>
+              {conectado ? "● Conectado — subidas, analíticas, comentarios y edición activos" : "○ Sin conectar"}
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button onClick={onConnect} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:12.5,padding:"9px 14px",borderRadius:9}}>{conectado?"Reconectar":"Conectar con Google"}</button>
+              {conectado && <button onClick={()=>{ ytClearTokens(); setTick(t=>t+1); toast("Sesión de Google cerrada en este dispositivo"); }} style={{fontSize:12.5,fontWeight:600,color:"var(--red)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:9,padding:"9px 14px"}}>Desconectar</button>}
+            </div>
+            <div style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5}}>Reconecta si la app pide permisos nuevos (analíticas, comentarios).</div>
+          </div>
+        </div>
+
+        <div style={caja}>
+          <div style={tituloZona}>IA (Gemini)</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{display:"flex",gap:8}}>
+              <input type="password" value={gemKey} onChange={e=>setGemKey(e.target.value)} placeholder="AIza…" style={{...inputStyle,flex:1}}/>
+              <button onClick={()=>{ geminiSaveKey(gemKey.trim()); toast(gemKey.trim()?"Clave de Gemini guardada":"Clave borrada"); }} className="grad-gold" style={{flexShrink:0,color:"#000",fontWeight:700,fontSize:12.5,padding:"9px 14px",borderRadius:9}}>Guardar</button>
+            </div>
+            <div style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5}}>Gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style={{color:"var(--gold)"}}>aistudio.google.com/apikey</a>. Se usa para descripciones, comentarios fijados y respuestas a comentarios.</div>
+          </div>
+        </div>
+
+        {esEscritorio && (
+          <div style={caja}>
+            <div style={tituloZona}>Escritorio</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{fontSize:12,color:"var(--text-2)"}}>Carpeta de vídeos para la subida directa desde el PC:</div>
+              <div style={{fontSize:11.5,color:"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={carpeta}>📁 {carpeta||"(sin elegir)"}</div>
+              <button onClick={async ()=>{ const dir = await window.studioFS.pickFolder(); if(dir){ setCarpeta(dir); try{localStorage.setItem("rds_video_folder",dir);}catch(e){} toast("Carpeta guardada"); } }} style={{alignSelf:"flex-start",fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:9,padding:"9px 14px",background:"rgba(212,175,55,0.05)"}}>Cambiar carpeta</button>
+              <div style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5}}>Tus datos viven en este PC con copia automática diaria (se guardan los últimos 30 días) y se sincronizan con la nube.</div>
+            </div>
+          </div>
+        )}
+
+        <div style={caja}>
+          <div style={tituloZona}>Datos</div>
+          <div style={{display:"flex",flexDirection:"column",gap:9}}>
+            <button onClick={onExport} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--text)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 14px"}}>{Icons.download} Exportar copia de seguridad (JSON)</button>
+            <button onClick={()=>fileRef.current && fileRef.current.click()} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--text)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 14px"}}>{Icons.copy} Importar desde un archivo</button>
+            <input ref={fileRef} type="file" accept="application/json" style={{display:"none"}} onChange={e=>{ onImport(e.target.files && e.target.files[0]); e.target.value=""; }}/>
+            <button onClick={onReset} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--red)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,padding:"10px 14px"}}>{Icons.trash} Restablecer datos</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
 }
 
 /* ============================ BUSCADOR GLOBAL (cabecera) ============================ */
@@ -6364,6 +6535,7 @@ function App() {
     {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true},
     {id:"agent", label:"Agente", icon:Icons.sparkles},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},
+    {id:"config", label:"Configuración", icon:Icons.gear},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
   ];
   const primaryTabs = tabs.filter(t=>t.primary);
@@ -6778,7 +6950,7 @@ function App() {
             </button>
           </div>
         )}
-        {view!=="trash" && view!=="tasks" && view!=="stats" && <StatStrip videos={videos}/>}
+        {view!=="trash" && view!=="tasks" && view!=="stats" && view!=="config" && <StatStrip videos={videos}/>}
         {view==="kanban" && (
           <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
             <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:"var(--text-3)",display:"flex"}}>{Icons.search}</span>
@@ -6792,6 +6964,7 @@ function App() {
         {view==="scheduled" && <ScheduledView videos={videos} trashYtIds={trash.map(t=>t.youtubeId).filter(Boolean)} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} onAddVideos={(nuevos)=>setVideos(vs=>[...vs, ...nuevos])} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast} goals={goals} setGoals={setGoals}/>}
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
+        {view==="config" && <ConfigView goals={goals} setGoals={setGoals} theme={theme} setTheme={setTheme} cardsExpanded={cardsExpanded} setCardsExpanded={setCardsExpanded} onConnect={connectGoogle} onExport={exportData} onImport={importData} onReset={resetAll} toast={toast}/>}
 
         <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
