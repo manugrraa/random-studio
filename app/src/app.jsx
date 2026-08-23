@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.4.0";
+const APP_VERSION = "2.4.1";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -3106,7 +3106,7 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
     setCargando(true); setErrorApi(null);
     try {
       let rpmNuevo = rpmInfo;
-      if(fuerza || !rpmInfo || (Date.now()-(rpmInfo.at||0)) > 24*3600*1000){
+      if(fuerza || !rpmInfo || rpmInfo.ventana!==30 || (Date.now()-(rpmInfo.at||0)) > 24*3600*1000){
         rpmNuevo = await ytFetchRpmReal();
       }
       const ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
@@ -4933,16 +4933,18 @@ async function ytAnalyticsQuery(params){
 }
 const fechaISO = (d) => { const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 
-// RPM real por tipo de contenido, últimos 90 días cerrados (los ingresos llegan con ~2 días de retraso)
+// RPM real por tipo de contenido, últimos 30 días cerrados (los ingresos llegan con ~2 días
+// de retraso). 30 y no más: antes de junio de 2026 el canal no estaba monetizado y una
+// ventana larga pillaría visitas sin ingresos, hundiendo el RPM artificialmente.
 async function ytFetchRpmReal(){
   const fin = new Date(); fin.setDate(fin.getDate()-3);
-  const ini = new Date(fin); ini.setDate(ini.getDate()-90);
+  const ini = new Date(fin); ini.setDate(ini.getDate()-30);
   const data = await ytAnalyticsQuery({
     startDate: fechaISO(ini), endDate: fechaISO(fin),
     metrics: "views,estimatedRevenue",
     dimensions: "creatorContentType"
   });
-  const out = { shorts:null, directos:null, videos:null, total:{views:0,revenue:0,rpm:null}, at: Date.now() };
+  const out = { shorts:null, directos:null, videos:null, total:{views:0,revenue:0,rpm:null}, at: Date.now(), ventana: 30 };
   (data.rows||[]).forEach(fila=>{
     // El nombre del tipo puede venir en distintas formas según la versión de la API
     const tipo = String(fila[0]||"").toUpperCase();
