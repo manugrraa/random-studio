@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.4.1";
+const APP_VERSION = "2.5.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -452,9 +452,34 @@ function CopyMini({ text, what }) {
   );
 }
 
-function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube, promptTemplates, toast, formats}) {
+function VideoModal({v, allVideos, onClose, onSave, onDelete, onDuplicate, onUploadYouTube, promptTemplates, toast, formats}) {
   const [draft, setDraft] = useState(clone(v));
   const [notesBig, setNotesBig] = useState(false);
+  // Copiar la descripción de otro vídeo (local o, si está en YouTube, desde la API)
+  const [copiandoDesc, setCopiandoDesc] = useState(false);
+  const fuentesDesc = (allVideos||[])
+    .filter(x=>x.id!==v.id && ((x.description||"").trim() || x.youtubeId))
+    .sort((a,b)=> (b.date||"").localeCompare(a.date||""));
+  const copiarDescDe = async (id) => {
+    const src = (allVideos||[]).find(x=>x.id===id);
+    if(!src) return;
+    if((src.description||"").trim()){
+      setDraft(d=>({...d, description: src.description}));
+      toast && toast("Descripción copiada de «"+(src.title||"").slice(0,40)+"»");
+      return;
+    }
+    if(src.youtubeId && ytIsConnected()){
+      setCopiandoDesc(true);
+      try {
+        const det = await ytGetVideoDetails(src.youtubeId);
+        if(det && det.description){ setDraft(d=>({...d, description: det.description})); toast && toast("Descripción copiada desde YouTube"); }
+        else toast && toast("Ese vídeo no tiene descripción en YouTube");
+      } catch(e){ toast && toast("❌ "+e.message); }
+      finally { setCopiandoDesc(false); }
+    } else {
+      toast && toast(src.youtubeId ? "Conecta con Google para leerla de YouTube" : "Ese vídeo no tiene descripción guardada");
+    }
+  };
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [promptDraft, setPromptDraft] = useState(""); // prompt adaptado a este vídeo
   const [showPromptEditor, setShowPromptEditor] = useState(false);
@@ -518,7 +543,7 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
 
   return (
     <div className="modal-overlay" style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.78)",zIndex:1000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"5vh 16px",overflowY:"auto",backdropFilter:"blur(3px)"}}>
-      <div className="pop" style={{
+      <div className="pop vm-panel" style={{
         background:"var(--bg-2)", border:`1px solid var(--border-gold)`, borderRadius:18, width:"100%", maxWidth: notesBig?720:560,
         boxShadow:"0 20px 70px rgba(0,0,0,0.7)", transition:"max-width .25s"
       }}>
@@ -535,8 +560,8 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
           </div>
         </div>
 
-        <div style={{padding:22, display:"flex", flexDirection:"column", gap:18, maxHeight:"72vh", overflowY:"auto"}}>
-          <div>
+        <div style={{padding:22, maxHeight:"74vh", overflowY:"auto"}}>
+          <div style={{marginBottom:18}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
               <span style={labelStyle}>Título del vídeo</span>
               <CopyMini text={draft.title} what="el título"/>
@@ -545,6 +570,9 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
               onFocus={e=>{ if(draft.title==="Nueva idea") e.target.select(); }}/>
           </div>
 
+          {/* Dos columnas en pantallas anchas: datos+checklist+notas | descripción+comentario */}
+          <div className="vm-cols" style={{display:"flex", flexDirection:"column", gap:18}}>
+          <div style={{display:"flex", flexDirection:"column", gap:18, minWidth:0}}>
           <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
             <Field label="Formato">
               <select value={draft.format} onChange={e=>set("format",e.target.value)} style={inputStyle}>
@@ -552,9 +580,10 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
               </select>
             </Field>
             <Field label="Tipo">
-              <select value={draft.type} onChange={e=>set("type",e.target.value)} style={inputStyle}>
+              <select value={draft.type==="largo"?"video":draft.type} onChange={e=>set("type",e.target.value)} style={inputStyle}>
                 <option value="short">Short</option>
-                <option value="largo">Vídeo largo</option>
+                <option value="video">Vídeo largo</option>
+                <option value="directo">Directo</option>
               </select>
             </Field>
           </div>
@@ -598,6 +627,18 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
 
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+              <span style={labelStyle}>Notas internas</span>
+              <CopyMini text={draft.notes||""} what="las notas"/>
+            </div>
+            <textarea value={draft.notes||""} onChange={e=>set("notes",e.target.value)}
+              placeholder="Notas privadas (guion, ideas de miniatura, recordatorios). No se suben a YouTube."
+              style={{...inputStyle, minHeight:70, lineHeight:1.6}}/>
+          </div>
+          </div>
+
+          <div style={{display:"flex", flexDirection:"column", gap:18, minWidth:0}}>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
               <span style={labelStyle}>Descripción</span>
               <div style={{display:"flex",gap:7}}>
                 <CopyMini text={draft.description||""} what="la descripción"/>
@@ -610,6 +651,17 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
               </button>
               </div>
             </div>
+            {fuentesDesc.length>0 && (
+              <div style={{display:"flex",gap:7,marginBottom:9,alignItems:"center"}}>
+                <select value="" onChange={e=>{ if(e.target.value) copiarDescDe(e.target.value); }} disabled={copiandoDesc}
+                  style={{...inputStyle,flex:1,padding:"8px 10px",fontSize:12.5,opacity:copiandoDesc?0.6:1}}>
+                  <option value="">{copiandoDesc?"Leyendo descripción…":"📋 Copiar descripción de otro vídeo…"}</option>
+                  {fuentesDesc.map(x=>(
+                    <option key={x.id} value={x.id}>{(x.title||"").slice(0,60)}{(x.description||"").trim()?"":" · (desde YouTube)"}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div style={{display:"flex",gap:7,marginBottom:9,flexWrap:"wrap",alignItems:"center"}}>
               <select value={selectedPrompt} onChange={e=>pickPrompt(e.target.value)} style={{...inputStyle,flex:1,minWidth:160,padding:"8px 10px",fontSize:12.5}}>
                 <option value="">{(promptTemplates||[]).length?"Elige una plantilla de prompt…":"Sin plantillas (créalas en Agente)"}</option>
@@ -658,14 +710,7 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
             <div style={{textAlign:"right",fontSize:10.5,color:"var(--text-3)",marginTop:5}}>{(draft.pinnedComment||"").length} caracteres</div>
           </div>
 
-          <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
-              <span style={labelStyle}>Notas internas</span>
-              <CopyMini text={draft.notes||""} what="las notas"/>
-            </div>
-            <textarea value={draft.notes||""} onChange={e=>set("notes",e.target.value)}
-              placeholder="Notas privadas (guion, ideas de miniatura, recordatorios). No se suben a YouTube."
-              style={{...inputStyle, minHeight:70, lineHeight:1.6}}/>
+          </div>
           </div>
         </div>
 
@@ -682,10 +727,17 @@ function VideoModal({v, onClose, onSave, onDelete, onDuplicate, onUploadYouTube,
           </div>
           {/* Fila 2: subir a YouTube (solo, abajo, en rojo) o estado si ya está subido */}
           {draft.youtubeId ? (
-            <a href={draft.youtubeUrl || ("https://youtu.be/"+draft.youtubeId)} target="_blank" rel="noopener" style={{
-              display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13.5,fontWeight:700,color:"var(--green)",padding:"12px 16px",
-              border:"1px solid rgba(74,222,128,0.35)",borderRadius:11,width:"100%"
-            }}>{Icons.youtube} {draft.youtubeStatus==="scheduled"?"Programado en YouTube · ver":"Ver en YouTube"}</a>
+            <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              <a href={draft.youtubeUrl || ("https://youtu.be/"+draft.youtubeId)} target="_blank" rel="noopener" style={{
+                flex:1,minWidth:180,display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13.5,fontWeight:700,color:"var(--green)",padding:"12px 16px",
+                border:"1px solid rgba(74,222,128,0.35)",borderRadius:11
+              }}>{Icons.youtube} {draft.youtubeStatus==="scheduled"?"Programado · ver":"Ver en YouTube"}</a>
+              <a href={"https://studio.youtube.com/video/"+draft.youtubeId+"/edit"} target="_blank" rel="noopener"
+                title="Abre este vídeo en YouTube Studio: un clic para fijar el juego o el comentario" style={{
+                flex:1,minWidth:180,display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:13.5,fontWeight:700,color:"var(--gold)",padding:"12px 16px",
+                border:"1px solid var(--border-gold)",borderRadius:11
+              }}>{Icons.edit} Fijar juego · YT Studio</a>
+            </div>
           ) : (
             <button onClick={()=>{ onSave(draft); onUploadYouTube && onUploadYouTube(draft); }} title="Subir este vídeo a YouTube" style={{
               display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:14,fontWeight:700,color:"#fff",padding:"13px 16px",
@@ -6430,7 +6482,7 @@ function App() {
         </ExpandCtx.Provider>
       </main>
 
-      {editing && <VideoModal v={editing} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
+      {editing && <VideoModal v={editing} allVideos={videos} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
       {ytUpload && <YouTubeUploadModal video={ytUpload} allVideos={videos} tagTemplates={tagTemplates} setTagTemplates={setTagTemplates} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?completarChecklist({...v, ...yt, updatedAt:Date.now()}):v)); }} toast={toast}/>}
       {showFormats && <FormatsModal formats={formats} setFormats={setFormats} videos={videos} onClose={()=>setShowFormats(false)} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
       {showSync && <SyncModal syncCode={syncCode} status={syncStatus} syncMode={syncMode} setSyncMode={setSyncMode} pendingChanges={pendingChanges} onClose={()=>setShowSync(false)} onLink={linkToCode} onExport={exportData} onImport={importData} onSyncNow={syncNow} syncing={manualSyncing} toast={toast}/>}
@@ -6493,6 +6545,12 @@ function App() {
 
         @media (max-width: 1100px) {
           .global-search { display:none; }
+        }
+
+        /* Editor de vídeo: ancho y a dos columnas en escritorio */
+        @media (min-width: 900px) {
+          .vm-panel { max-width: 980px !important; }
+          .vm-cols { display: grid !important; grid-template-columns: 1fr 1.15fr; gap: 22px; align-items: start; }
         }
 
         @media (max-width: 1100px) {
