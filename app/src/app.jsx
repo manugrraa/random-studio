@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.3.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -320,10 +320,9 @@ function VideoCardBase({v, onOpen, onDragStart, onDragEnd, compact, formats}) {
   useEffect(()=>{ setAjuste(null); }, [globalExp]); // el botón global resetea los ajustes
   const expanded = ajuste===null ? globalExp : ajuste;
   const esDirecto = v.type==="directo";
-  const isLargo = v.type === "largo" || v.type === "video";
+  const isLargo = v.type !== "short"; // vídeos largos Y directos van en blanco; solo los Shorts en oscuro
   const iconoTipo = esDirecto ? Icons.live : (v.type==="short" ? Icons.short : Icons.largo);
   const tipoLabel = esDirecto ? "Directo" : (v.type==="short" ? "Short" : "Vídeo largo");
-  // Los vídeos largos van con fondo blanco; Shorts y directos, con fondo oscuro
   const th = isLargo
     ? { bg:"#F4F4F2", bgHover:"#FFFFFF", text:"#141414", text2:"#555", text3:"#8a8a8a", track:"#e2e2e0", border:"#d8d8d4" }
     : { bg:"#141414", bgHover:"#1F1F1F", text:"#F5F5F5", text2:"#A3A3A3", text3:"#8a8a8a", track:"#0a0a0a", border:"#2e2e2e" };
@@ -3025,6 +3024,15 @@ const BarraProgreso = ({pct, alto=8, color}) => (
   </div>
 );
 
+/* Colores de referencia del progreso: rojo → ámbar → verde, interpolados según el % */
+const REF_ROJO=[248,113,113], REF_AMBAR=[212,175,55], REF_VERDE=[74,222,128];
+function rgbDePct(pct){
+  const p = Math.max(0, Math.min(100, pct==null?0:pct));
+  const mix=(a,b,t)=>[0,1,2].map(i=>Math.round(a[i]+(b[i]-a[i])*t));
+  return p>=50 ? mix(REF_AMBAR, REF_VERDE, (p-50)/50) : mix(REF_ROJO, REF_AMBAR, p/50);
+}
+const rgbaDePct=(pct,alpha)=>{ const c=rgbDePct(pct); return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`; };
+
 function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   const cfg = (goals && goals.cfg) || { targetEur: 100, shortsPerDay: 3, rpmManual: null };
   const rpmInfo = (goals && goals.rpm) || null;
@@ -3037,6 +3045,14 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   const [fTarget, setFTarget] = useState(String(cfg.targetEur));
   const [fShorts, setFShorts] = useState(String(cfg.shortsPerDay));
   const [fRpm, setFRpm] = useState(cfg.rpmManual!=null ? String(cfg.rpmManual) : "");
+  // Día y mes seleccionados (0 = hoy / mes actual)
+  const [diaOff, setDiaOff] = useState(0);
+  const [mesOff, setMesOff] = useState(0);
+  // Interruptores del progreso visual (preferencia de este dispositivo)
+  const [colorDia, setColorDia] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_dia")!=="0"; } catch(e){ return true; } });
+  const [colorMes, setColorMes] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_mes")!=="0"; } catch(e){ return true; } });
+  useEffect(()=>{ try { localStorage.setItem("rds_obj_color_dia", colorDia?"1":"0"); } catch(e){} },[colorDia]);
+  useEffect(()=>{ try { localStorage.setItem("rds_obj_color_mes", colorMes?"1":"0"); } catch(e){} },[colorMes]);
 
   const hoy = new Date();
   const hoyKey = fechaISO(hoy);
@@ -3046,10 +3062,28 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
 
   // RPM efectivo: manual (si lo fijaste) > RPM real de tus Shorts (API)
   const rpm = cfg.rpmManual!=null ? cfg.rpmManual : (rpmInfo && rpmInfo.shorts ? rpmInfo.shorts.rpm : null);
-  const diasMes = new Date(hoy.getFullYear(), hoy.getMonth()+1, 0).getDate();
+
+  // ——— Día seleccionado (flechas en la zona HOY) ———
+  const diaSelD = new Date(hoy); diaSelD.setDate(hoy.getDate()+diaOff);
+  const diaKey = fechaISO(diaSelD);
+  const esHoySel = diaOff===0;
+
+  // ——— Mes seleccionado (flechas en la zona MES) ———
+  const mesD = new Date(hoy.getFullYear(), hoy.getMonth()+mesOff, 1);
+  const mesPrefix = fechaISO(mesD).slice(0,7);
+  const diasMesSel = new Date(mesD.getFullYear(), mesD.getMonth()+1, 0).getDate();
+  const mesFuturo = mesPrefix > hoyKey.slice(0,7);
+
+  // ——— Objetivos derivados del € mensual y el RPM ———
   const objetivoMesVistas = (rpm && rpm>0) ? Math.round(cfg.targetEur / rpm * 1000) : null;
-  const objetivoDiaVistas = objetivoMesVistas ? Math.round(objetivoMesVistas / diasMes) : null;
+  const diasMesActual = new Date(hoy.getFullYear(), hoy.getMonth()+1, 0).getDate();
+  const objetivoDiaVistas = objetivoMesVistas ? Math.round(objetivoMesVistas / diasMesActual) : null;
   const objetivoShort = objetivoDiaVistas ? Math.round(objetivoDiaVistas / (cfg.shortsPerDay||3)) : null;
+  // Para el día/mes seleccionados (por si el mes tiene otros días)
+  const diasMesDelDia = new Date(diaSelD.getFullYear(), diaSelD.getMonth()+1, 0).getDate();
+  const objetivoDiaSel = objetivoMesVistas ? Math.round(objetivoMesVistas / diasMesDelDia) : null;
+  const objetivoShortSel = objetivoDiaSel ? Math.round(objetivoDiaSel / (cfg.shortsPerDay||3)) : null;
+  const objetivoDiaMesSel = objetivoMesVistas ? Math.round(objetivoMesVistas / diasMesSel) : null;
 
   const guardarCfg = () => {
     const t = parseFloat(String(fTarget).replace(",","."));
@@ -3063,7 +3097,7 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
     toast("Objetivo guardado");
   };
 
-  // Refrescar analíticas: RPM real (1 vez al día) + visitas/ingresos por día
+  // Refrescar analíticas: RPM real (1 vez al día) + visitas/ingresos por día del mes actual
   const refrescar = async (fuerza) => {
     if(!ytIsConnected()){ setErrorApi("conectar"); return; }
     setCargando(true); setErrorApi(null);
@@ -3091,53 +3125,97 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
     } finally { setCargando(false); }
   };
 
-  // Shorts de HOY con sus visitas en vivo
-  const shortsHoy = videos.filter(v=> v.type==="short" && v.date===hoyKey && v.youtubeId);
-  const refrescarLive = async () => {
-    const ids = shortsHoy.filter(v=>v.youtubeStatus==="published").map(v=>v.youtubeId);
-    if(!ids.length) return;
-    try { setLiveViews(await ytViewCounts(ids)); setLiveAt(Date.now()); } catch(e){}
+  // Al navegar a otro mes, bajar sus días de la API (una vez por mes)
+  const mesesCargadosRef = useRef(new Set());
+  const cargarMes = async (prefix) => {
+    if(!ytIsConnected() || mesesCargadosRef.current.has(prefix)) return;
+    if(prefix+"-01" > hoyKey) return; // mes futuro: nada que leer
+    mesesCargadosRef.current.add(prefix);
+    try {
+      const [y,m] = prefix.split("-").map(Number);
+      const finD = fechaISO(new Date(y, m, 0));
+      const dias = await ytFetchDiario(prefix+"-01", finD > hoyKey ? hoyKey : finD);
+      setGoals(g=>{
+        const base = g||{};
+        const nuevoDaily = { ...(base.daily||{}) };
+        Object.entries(dias).forEach(([k,v])=>{
+          const p = nuevoDaily[k];
+          if(!p || (v.views||0) >= (p.views||0)) nuevoDaily[k]=v;
+        });
+        return { ...base, daily: nuevoDaily, dailyAt: Date.now() };
+      });
+    } catch(e){ mesesCargadosRef.current.delete(prefix); }
   };
+  useEffect(()=>{ if(mesOff!==0 && ytTokenValid()) cargarMes(mesPrefix); // eslint-disable-next-line
+  },[mesOff]);
+
+  // Shorts del día seleccionado, con sus visitas en vivo (acumuladas)
+  const shortsDia = videos.filter(v=> v.type==="short" && v.date===diaKey && v.youtubeId);
+  const refrescarLive = async () => {
+    const ids = shortsDia.filter(v=>v.youtubeStatus==="published").map(v=>v.youtubeId);
+    if(!ids.length) return;
+    try { const m = await ytViewCounts(ids); setLiveViews(prev=>({...prev, ...m})); setLiveAt(Date.now()); } catch(e){}
+  };
+  const refrescarLiveRef = useRef(refrescarLive); useEffect(()=>{ refrescarLiveRef.current = refrescarLive; });
+  const refrescarRef = useRef(refrescar); useEffect(()=>{ refrescarRef.current = refrescar; });
+
   useEffect(()=>{
     if(ytTokenValid()){ refrescar(false); refrescarLive(); }
     else if(!ytIsConnected()) setErrorApi("conectar");
   // eslint-disable-next-line
   },[]);
+  useEffect(()=>{ if(ytTokenValid()) refrescarLiveRef.current(); // eslint-disable-next-line
+  },[diaOff]);
+  // Actualización automática mientras el panel está abierto:
+  // visitas en vivo cada 2 min · analíticas (ingresos/días) cada 10 min
+  useEffect(()=>{
+    const a = setInterval(()=>{ if(document.visibilityState==="visible" && ytTokenValid()) refrescarLiveRef.current(); }, 2*60*1000);
+    const b = setInterval(()=>{ if(document.visibilityState==="visible" && ytTokenValid()) refrescarRef.current(false); }, 10*60*1000);
+    return ()=>{ clearInterval(a); clearInterval(b); };
+  },[]);
 
-  const vistasHoyShorts = shortsHoy.reduce((a,v)=>a+(liveViews[v.youtubeId]||0),0);
+  const vistasDia = shortsDia.reduce((a,v)=>a+(liveViews[v.youtubeId]||0),0);
 
-  // Semana: últimos 7 días (hoy incluido)
+  // Semana: últimos 7 días (hoy incluido), con dinero por día
   const semana = Array.from({length:7},(_,i)=>{
     const d = new Date(hoy); d.setDate(d.getDate()-(6-i));
     const k = fechaISO(d);
-    return { k, dia: d.toLocaleDateString("es-ES",{weekday:"short"}), num: d.getDate(), views: daily[k]?.views ?? null, esHoy: k===hoyKey };
+    return { k, dia: d.toLocaleDateString("es-ES",{weekday:"short"}), num: d.getDate(),
+      views: daily[k]?.views ?? null, rev: daily[k]?.revenue ?? null, esHoy: k===hoyKey };
   });
   const maxSemana = Math.max(objetivoDiaVistas||0, ...semana.map(s=>s.views||0), 1);
 
-  // Mes en curso
-  const mesPrefix = hoyKey.slice(0,7);
-  const vistasMes = Object.entries(daily).filter(([k])=>k.startsWith(mesPrefix)).reduce((a,[,v])=>a+(v.views||0),0);
-  const ingresosMes = Object.entries(daily).filter(([k])=>k.startsWith(mesPrefix)).reduce((a,[,v])=>a+(v.revenue||0),0);
+  // Mes seleccionado: totales y porcentajes
+  const entradasMes = Object.entries(daily).filter(([k])=>k.startsWith(mesPrefix));
+  const vistasMes = entradasMes.reduce((a,[,v])=>a+(v.views||0),0);
+  const ingresosMes = entradasMes.reduce((a,[,v])=>a+(v.revenue||0),0);
+  const pctEurMes = cfg.targetEur ? ingresosMes/cfg.targetEur*100 : null;
+  const pctVistasMes = objetivoMesVistas ? vistasMes/objetivoMesVistas*100 : null;
 
-  // Calendario del mes: celdas con el % del objetivo diario
-  const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-  const offsetLunes = (primerDia.getDay()+6)%7;
+  // Calendario del mes seleccionado
+  const offsetLunes = (mesD.getDay()+6)%7;
   const celdas = [];
   for(let i=0;i<offsetLunes;i++) celdas.push(null);
-  for(let d=1; d<=diasMes; d++){
+  for(let d=1; d<=diasMesSel; d++){
     const k = `${mesPrefix}-${String(d).padStart(2,"0")}`;
-    celdas.push({ d, k, views: daily[k]?.views ?? null, futuro: k>hoyKey, esHoy: k===hoyKey });
+    const views = daily[k]?.views ?? null;
+    const pct = (views!=null && objetivoDiaMesSel) ? views/objetivoDiaMesSel*100 : null;
+    celdas.push({ d, k, views, pct, futuro: k>hoyKey, esHoy: k===hoyKey });
   }
-  const colorCelda = (c) => {
-    if(!c || c.futuro || c.views==null || !objetivoDiaVistas) return "transparent";
-    const pct = c.views/objetivoDiaVistas*100;
-    if(pct>=100) return "rgba(74,222,128,0.35)";
-    if(pct>=50) return "rgba(212,175,55,0.3)";
-    return "rgba(248,113,113,0.22)";
-  };
 
   const caja = { background:"var(--bg-2)", border:"1px solid var(--border)", borderRadius:14, padding:16 };
   const tituloZona = { fontSize:11.5, fontWeight:700, color:"var(--text-3)", textTransform:"uppercase", letterSpacing:".07em", marginBottom:11 };
+  const btnNav = { width:26, height:26, borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", color:"var(--text-2)", border:"1px solid var(--border)", fontSize:13, flexShrink:0 };
+  const Interruptor = ({activo, onToggle, etiqueta}) => (
+    <button onClick={onToggle} title={(activo?"Desactivar":"Activar")+" "+etiqueta} style={{
+      display:"inline-flex", alignItems:"center", gap:5, fontSize:10, fontWeight:600,
+      color: activo?"var(--gold)":"var(--text-3)", border:"1px solid "+(activo?"var(--border-gold)":"var(--border)"),
+      borderRadius:20, padding:"3px 9px", background: activo?"rgba(212,175,55,0.07)":"transparent", transition:"all .15s"
+    }}>
+      <span style={{width:6,height:6,borderRadius:"50%",background:activo?"var(--gold)":"var(--text-3)",transition:"background .15s"}}/>
+      {etiqueta}
+    </button>
+  );
 
   return (
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -3193,27 +3271,36 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
         )}
       </div>
 
-      {/* ——— HOY: los Shorts del día ——— */}
+      {/* ——— DÍA: los Shorts del día seleccionado ——— */}
       <div style={caja}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11}}>
-          <div style={{...tituloZona, marginBottom:0}}>Hoy · {hoy.toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11,gap:10,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <button style={btnNav} onClick={()=>setDiaOff(d=>d-1)} title="Día anterior">←</button>
+            <div style={{...tituloZona, marginBottom:0}}>
+              {esHoySel ? "Hoy · " : ""}{diaSelD.toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}
+            </div>
+            <button style={btnNav} onClick={()=>setDiaOff(d=>d+1)} title="Día siguiente">→</button>
+            {!esHoySel && <button onClick={()=>setDiaOff(0)} style={{fontSize:11,fontWeight:700,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:8,padding:"4px 10px"}}>Hoy</button>}
+          </div>
           {liveAt>0 && <span style={{fontSize:10.5,color:"var(--text-3)"}}>visitas en vivo · {new Date(liveAt).toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"})}</span>}
         </div>
-        {shortsHoy.length===0 ? (
-          <div style={{fontSize:12.5,color:"var(--text-3)",padding:"8px 0"}}>Hoy todavía no hay Shorts subidos ni programados. {cfg.shortsPerDay} al día es tu plan.</div>
+        {shortsDia.length===0 ? (
+          <div style={{fontSize:12.5,color:"var(--text-3)",padding:"8px 0"}}>
+            {esHoySel ? `Hoy todavía no hay Shorts subidos ni programados. ${cfg.shortsPerDay} al día es tu plan.` : "Ese día no tiene Shorts en el calendario."}
+          </div>
         ) : (
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {shortsHoy.map(v=>{
+            {shortsDia.map(v=>{
               const vistas = liveViews[v.youtubeId];
               const publicado = v.youtubeStatus==="published";
-              const pct = (publicado && objetivoShort && vistas!=null) ? vistas/objetivoShort*100 : 0;
+              const pct = (publicado && objetivoShortSel && vistas!=null) ? vistas/objetivoShortSel*100 : 0;
               return (
                 <div key={v.id}>
                   <div style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,marginBottom:5}}>
                     <span style={{color:"var(--text)",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{v.title}</span>
                     <span style={{color: pct>=100?"var(--green)":"var(--text-2)",flexShrink:0,fontWeight:600}}>
                       {publicado
-                        ? (vistas!=null ? `${nf.format(vistas)}${objetivoShort?` / ${nf.format(objetivoShort)} (${Math.round(pct)}%)`:""}` : "…")
+                        ? (vistas!=null ? `${nf.format(vistas)}${objetivoShortSel?` / ${nf.format(objetivoShortSel)} (${Math.round(pct)}%)`:""}` : "…")
                         : `programado · ${v.time||""}`}
                     </span>
                   </div>
@@ -3221,81 +3308,120 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
                 </div>
               );
             })}
-            {objetivoDiaVistas && (
+            {objetivoDiaSel && (
               <div style={{marginTop:2,paddingTop:12,borderTop:"1px solid var(--border)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
                   <span style={{fontWeight:700,color:"var(--text-2)"}}>Total del día</span>
-                  <span style={{fontWeight:700,color: vistasHoyShorts>=objetivoDiaVistas?"var(--green)":"var(--text-2)"}}>{nf.format(vistasHoyShorts)} / {nf.format(objetivoDiaVistas)}</span>
+                  <span style={{fontWeight:700,color: vistasDia>=objetivoDiaSel?"var(--green)":"var(--text-2)"}}>{nf.format(vistasDia)} / {nf.format(objetivoDiaSel)} ({Math.round(vistasDia/objetivoDiaSel*100)}%)</span>
                 </div>
-                <BarraProgreso pct={objetivoDiaVistas?vistasHoyShorts/objetivoDiaVistas*100:0} alto={10}/>
+                <BarraProgreso pct={vistasDia/objetivoDiaSel*100} alto={10}/>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* ——— SEMANA ——— */}
+      {/* ——— SEMANA: visitas y dinero por día ——— */}
       <div style={caja}>
-        <div style={tituloZona}>Última semana · visitas del canal por día{objetivoDiaVistas?` (línea = objetivo ${nfc.format(objetivoDiaVistas)})`:""}</div>
-        <div style={{display:"flex",gap:8,alignItems:"flex-end",height:110,position:"relative"}}>
-          {objetivoDiaVistas && <div style={{position:"absolute",left:0,right:0,bottom:(Math.min(1,objetivoDiaVistas/maxSemana)*86)+"px",borderTop:"1.5px dashed var(--border-gold)",opacity:.7}}/>}
+        <div style={tituloZona}>Última semana · visitas y € del canal por día{objetivoDiaVistas?` (línea = objetivo ${nfc.format(objetivoDiaVistas)})`:""}</div>
+        <div style={{display:"flex",gap:8,alignItems:"flex-end",height:118,position:"relative"}}>
+          {objetivoDiaVistas && <div style={{position:"absolute",left:0,right:0,bottom:(Math.min(1,objetivoDiaVistas/maxSemana)*80)+"px",borderTop:"1.5px dashed var(--border-gold)",opacity:.7}}/>}
           {semana.map(s=>{
-            const h = s.views!=null ? Math.max(3, s.views/maxSemana*86) : 3;
+            const h = s.views!=null ? Math.max(3, s.views/maxSemana*80) : 3;
             const cumple = objetivoDiaVistas && s.views!=null && s.views>=objetivoDiaVistas;
             return (
-              <div key={s.k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}} title={s.views!=null?nf.format(s.views)+" visitas":"sin datos aún"}>
+              <div key={s.k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}} title={(s.views!=null?nf.format(s.views)+" visitas":"sin datos aún")+(s.rev!=null?" · "+eur(s.rev):"")}>
                 <span style={{fontSize:10,color: cumple?"var(--green)":"var(--text-3)",fontWeight:600}}>{s.views!=null?nfc.format(s.views):"—"}</span>
                 <div style={{width:"100%",maxWidth:34,height:h,borderRadius:5,background: cumple?"var(--green)":(s.esHoy?"linear-gradient(180deg,#FFD700,#D4AF37)":"var(--card-2)"),border:"1px solid "+(cumple?"transparent":"var(--border)")}}/>
                 <span style={{fontSize:10,color:s.esHoy?"var(--gold)":"var(--text-3)",fontWeight:s.esHoy?700:400}}>{s.dia} {s.num}</span>
+                <span style={{fontSize:9,color:"var(--text-3)"}}>{s.rev!=null ? eur(s.rev) : "—"}</span>
               </div>
             );
           })}
         </div>
-        <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:8}}>Los datos de visitas de la API cierran con ~2 días de retraso: los últimos días pueden crecer todavía.</div>
+        <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:8}}>Las visitas y los ingresos de la API cierran con ~2 días de retraso: los últimos días pueden crecer todavía.</div>
       </div>
 
-      {/* ——— MES + calendario ——— */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:14}}>
+      {/* ——— MES seleccionado + calendario con progreso visual ——— */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:14}}>
         <div style={caja}>
-          <div style={tituloZona}>{hoy.toLocaleDateString("es-ES",{month:"long",year:"numeric"})}</div>
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            <div>
-              <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
-                <span style={{fontWeight:600,color:"var(--text-2)"}}>Ingresos reales</span>
-                <span style={{fontWeight:700,color: ingresosMes>=cfg.targetEur?"var(--green)":"var(--text)"}}>{eur(ingresosMes)} / {eur(cfg.targetEur)}</span>
-              </div>
-              <BarraProgreso pct={cfg.targetEur?ingresosMes/cfg.targetEur*100:0} alto={10}/>
-              <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:5}}>Los ingresos del mes en curso llegan con ~2 días de retraso y son estimados.</div>
-            </div>
-            {objetivoMesVistas && (
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:11}}>
+            <button style={btnNav} onClick={()=>setMesOff(m=>m-1)} title="Mes anterior">←</button>
+            <div style={{...tituloZona, marginBottom:0, flex:1, textAlign:"center"}}>{mesD.toLocaleDateString("es-ES",{month:"long",year:"numeric"})}</div>
+            <button style={btnNav} onClick={()=>setMesOff(m=>m+1)} title="Mes siguiente">→</button>
+            {mesOff!==0 && <button onClick={()=>setMesOff(0)} style={{fontSize:11,fontWeight:700,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:8,padding:"4px 10px"}}>Actual</button>}
+          </div>
+          {mesFuturo ? (
+            <div style={{fontSize:12.5,color:"var(--text-3)",padding:"14px 0"}}>Este mes aún no ha empezado.</div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
-                  <span style={{fontWeight:600,color:"var(--text-2)"}}>Visitas del mes</span>
-                  <span style={{fontWeight:700,color: vistasMes>=objetivoMesVistas?"var(--green)":"var(--text)"}}>{nfc.format(vistasMes)} / {nfc.format(objetivoMesVistas)}</span>
+                  <span style={{fontWeight:600,color:"var(--text-2)"}}>Ingresos reales</span>
+                  <span style={{fontWeight:700,color: ingresosMes>=cfg.targetEur?"var(--green)":"var(--text)"}}>{eur(ingresosMes)} / {eur(cfg.targetEur)}{pctEurMes!=null?` (${Math.round(pctEurMes)}%)`:""}</span>
                 </div>
-                <BarraProgreso pct={vistasMes/objetivoMesVistas*100} alto={10}/>
+                <BarraProgreso pct={pctEurMes||0} alto={10}/>
+                {mesOff===0 && <div style={{fontSize:10.5,color:"var(--text-3)",marginTop:5}}>Los ingresos del mes en curso llegan con ~2 días de retraso y son estimados.</div>}
               </div>
-            )}
-          </div>
+              {objetivoMesVistas && (
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
+                    <span style={{fontWeight:600,color:"var(--text-2)"}}>Visitas del mes</span>
+                    <span style={{fontWeight:700,color: vistasMes>=objetivoMesVistas?"var(--green)":"var(--text)"}}>{nfc.format(vistasMes)} / {nfc.format(objetivoMesVistas)}{pctVistasMes!=null?` (${Math.round(pctVistasMes)}%)`:""}</span>
+                  </div>
+                  <BarraProgreso pct={pctVistasMes||0} alto={10}/>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        <div style={caja}>
-          <div style={tituloZona}>Días que cumplen el objetivo</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
-            {["L","M","X","J","V","S","D"].map(d=><div key={d} style={{fontSize:9.5,color:"var(--text-3)",textAlign:"center",fontWeight:700}}>{d}</div>)}
-            {celdas.map((c,i)=>(
-              <div key={i} style={{
-                aspectRatio:"1", borderRadius:7, display:"flex",alignItems:"center",justifyContent:"center",
-                fontSize:10.5, fontWeight: c&&c.esHoy?800:500,
-                color: c ? (c.futuro?"var(--text-3)":"var(--text)") : "transparent",
-                background: colorCelda(c),
-                border: c&&c.esHoy ? "1.5px solid var(--gold)" : "1px solid "+(c&&!c.futuro?"var(--border)":"transparent")
-              }} title={c&&c.views!=null?nf.format(c.views)+" visitas":""}>{c?c.d:""}</div>
-            ))}
-          </div>
-          <div style={{display:"flex",gap:12,marginTop:10,fontSize:10,color:"var(--text-3)",flexWrap:"wrap"}}>
-            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(74,222,128,0.35)",marginRight:4}}/>≥100%</span>
-            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(212,175,55,0.3)",marginRight:4}}/>≥50%</span>
-            <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(248,113,113,0.22)",marginRight:4}}/>&lt;50%</span>
+
+        <div style={{...caja, position:"relative", overflow:"hidden"}}>
+          {/* Progreso del MES por detrás de los días: relleno de izquierda a derecha según el % del objetivo económico */}
+          {colorMes && !mesFuturo && pctEurMes!=null && (
+            <div style={{
+              position:"absolute", inset:0, pointerEvents:"none",
+              background:`linear-gradient(90deg, ${rgbaDePct(pctEurMes, .13)} 0%, ${rgbaDePct(pctEurMes, .13)} ${Math.min(100,pctEurMes)}%, transparent ${Math.min(100,Math.max(0,pctEurMes)+7)}%)`,
+              transition:"background 1s ease"
+            }}/>
+          )}
+          <div style={{position:"relative"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:11,flexWrap:"wrap"}}>
+              <div style={{...tituloZona, marginBottom:0}}>Calendario del mes{colorMes && !mesFuturo && pctEurMes!=null ? ` · ${Math.round(pctEurMes)}% del objetivo €` : ""}</div>
+              <div style={{display:"flex",gap:5}}>
+                <Interruptor activo={colorDia} onToggle={()=>setColorDia(x=>!x)} etiqueta="color diario"/>
+                <Interruptor activo={colorMes} onToggle={()=>setColorMes(x=>!x)} etiqueta="color mensual"/>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:4}}>
+              {["L","M","X","J","V","S","D"].map(dl=><div key={dl} style={{fontSize:9.5,color:"var(--text-3)",textAlign:"center",fontWeight:700}}>{dl}</div>)}
+              {celdas.map((c,i)=>{
+                const p = c && c.pct!=null ? Math.min(100, Math.max(0, c.pct)) : null;
+                const fondo = (colorDia && c && !c.futuro && p!=null)
+                  ? `linear-gradient(to top, ${rgbaDePct(c.pct, .34)} ${p}%, transparent ${p}%)`
+                  : "transparent";
+                return (
+                  <div key={i} style={{
+                    minHeight:40, borderRadius:7, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1,
+                    background: fondo, transition:"background .4s",
+                    border: c&&c.esHoy ? "1.5px solid var(--gold)" : "1px solid "+(c&&!c.futuro?"var(--border)":(c?"rgba(255,255,255,0.04)":"transparent"))
+                  }} title={c&&c.views!=null?nf.format(c.views)+" visitas"+(c.pct!=null?` · ${Math.round(c.pct)}%`:""):""}>
+                    <span style={{fontSize:10.5, fontWeight: c&&c.esHoy?800:600, color: c ? (c.futuro?"var(--text-3)":"var(--text)") : "transparent", lineHeight:1}}>{c?c.d:""}</span>
+                    {c && !c.futuro && (
+                      <span style={{fontSize:8.5, fontWeight:700, lineHeight:1, color: c.pct==null?"var(--text-3)":(c.pct>=100?"var(--green)":"var(--text-2)")}}>
+                        {c.pct==null ? "—" : Math.round(c.pct)+"%"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",gap:12,marginTop:10,fontSize:10,color:"var(--text-3)",flexWrap:"wrap"}}>
+              <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(248,113,113,0.5)",marginRight:4}}/>0–50%</span>
+              <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(212,175,55,0.5)",marginRight:4}}/>50–100%</span>
+              <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"rgba(74,222,128,0.5)",marginRight:4}}/>≥100%</span>
+              <span style={{opacity:.8}}>el relleno de cada día sube con su %; el fondo del bloque avanza con el mes</span>
+            </div>
           </div>
         </div>
       </div>
@@ -3350,6 +3476,16 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
               patch.durationSec = st.durationSec||0;
               if(tipoReal==="directo") patch.format = "directos";
             }
+            // Fecha y hora REALES de YouTube (programación o publicación):
+            // si las cambias en YouTube, el calendario se actualiza solo
+            const cuando = st.publishAt || st.publishedAt;
+            if(cuando){
+              const wd = new Date(cuando);
+              const p2 = n=>String(n).padStart(2,"0");
+              const nd = `${wd.getFullYear()}-${p2(wd.getMonth()+1)}-${p2(wd.getDate())}`;
+              const nt = `${p2(wd.getHours())}:${p2(wd.getMinutes())}`;
+              if(nd!==v.date || nt!==v.time){ patch.date = nd; patch.time = nt; }
+            }
             // ¿Se acaba de publicar un vídeo que estaba programado? → avisar
             if(ns==="published" && v.youtubeStatus==="scheduled"){
               justPublished.push({...v, ...patch});
@@ -3374,7 +3510,7 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
       // ——— B) IMPORTAR vídeos subidos directamente en YouTube (no desde la app) ———
       let imported = 0;
       try {
-        const uploads = await ytListUploadsFull(50);
+        const uploads = await ytListUploadsFull(150);
         const known = new Set([
           ...videos.map(v=>v.youtubeId).filter(Boolean),
           ...(trashYtIds||[])
@@ -4583,29 +4719,40 @@ async function ytListUploadsFull(max){
   const chData = await chRes.json();
   const uploads = chData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if(!uploads) return [];
-  // 2. Últimos N ids del playlist
-  const plRes = await fetch("https://www.googleapis.com/youtube/v3/playlistItems?" + new URLSearchParams({
-    part: "contentDetails", playlistId: uploads, maxResults: String(Math.min(max||50,50))
-  }), { headers: ytAuthHeader() });
-  if(!plRes.ok) throw new Error("Error al leer subidas ("+plRes.status+")");
-  const plData = await plRes.json();
-  const ids = (plData.items||[]).map(it=>it.contentDetails?.videoId).filter(Boolean);
+  // 2. Últimos N ids del playlist (paginado: con muchos programados, 50 se quedaba corto)
+  const limite = Math.min(max||150, 200);
+  const ids = [];
+  let pageToken = "";
+  while(ids.length < limite){
+    const params = { part: "contentDetails", playlistId: uploads, maxResults: "50" };
+    if(pageToken) params.pageToken = pageToken;
+    const plRes = await fetch("https://www.googleapis.com/youtube/v3/playlistItems?" + new URLSearchParams(params), { headers: ytAuthHeader() });
+    if(!plRes.ok) throw new Error("Error al leer subidas ("+plRes.status+")");
+    const plData = await plRes.json();
+    (plData.items||[]).forEach(it=>{ const id = it.contentDetails?.videoId; if(id) ids.push(id); });
+    pageToken = plData.nextPageToken || "";
+    if(!pageToken) break;
+  }
   if(ids.length===0) return [];
-  // 3. Detalles en lote (una sola llamada para hasta 50)
-  const vRes = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
-    part: "snippet,contentDetails,status,liveStreamingDetails", id: ids.join(",")
-  }), { headers: ytAuthHeader() });
-  if(!vRes.ok) throw new Error("Error al leer detalles ("+vRes.status+")");
-  const vData = await vRes.json();
-  return (vData.items||[]).map(it=>({
-    id: it.id,
-    title: it.snippet?.title || "(sin título)",
-    publishedAt: it.snippet?.publishedAt || null,
-    publishAt: it.status?.publishAt || null,
-    privacyStatus: it.status?.privacyStatus || "private",
-    durationSec: ytParseDuration(it.contentDetails?.duration),
-    live: !!(it.liveStreamingDetails && (it.liveStreamingDetails.actualStartTime || it.liveStreamingDetails.scheduledStartTime))
-  }));
+  // 3. Detalles por lotes de 50
+  const items = [];
+  for(let i=0; i<Math.min(ids.length, limite); i+=50){
+    const vRes = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
+      part: "snippet,contentDetails,status,liveStreamingDetails", id: ids.slice(i,i+50).join(",")
+    }), { headers: ytAuthHeader() });
+    if(!vRes.ok) throw new Error("Error al leer detalles ("+vRes.status+")");
+    const vData = await vRes.json();
+    (vData.items||[]).forEach(it=>items.push({
+      id: it.id,
+      title: it.snippet?.title || "(sin título)",
+      publishedAt: it.snippet?.publishedAt || null,
+      publishAt: it.status?.publishAt || null,
+      privacyStatus: it.status?.privacyStatus || "private",
+      durationSec: ytParseDuration(it.contentDetails?.duration),
+      live: !!(it.liveStreamingDetails && (it.liveStreamingDetails.actualStartTime || it.liveStreamingDetails.scheduledStartTime))
+    }));
+  }
+  return items;
 }
 
 // Añade un vídeo a una lista de reproducción (para la subida directa desde el PC)
@@ -4717,7 +4864,7 @@ async function ytCheckVideos(ids){
   for(let i=0;i<ids.length;i+=50){
     const chunk = ids.slice(i,i+50);
     const res = await fetch("https://www.googleapis.com/youtube/v3/videos?" + new URLSearchParams({
-      part: "status,contentDetails,liveStreamingDetails", id: chunk.join(",")
+      part: "snippet,status,contentDetails,liveStreamingDetails", id: chunk.join(",")
     }), { headers: ytAuthHeader() });
     if(!res.ok){ throw new Error("Error al comprobar vídeos ("+res.status+")"); }
     const data = await res.json();
@@ -4726,6 +4873,7 @@ async function ytCheckVideos(ids){
       found.add(it.id);
       out[it.id] = {
         exists:true, privacyStatus: it.status?.privacyStatus, publishAt: it.status?.publishAt || null,
+        publishedAt: it.snippet?.publishedAt || null,
         durationSec: ytParseDuration(it.contentDetails?.duration),
         live: !!(it.liveStreamingDetails && (it.liveStreamingDetails.actualStartTime || it.liveStreamingDetails.scheduledStartTime))
       };
@@ -5839,9 +5987,19 @@ function App() {
         const nowPublished = [];
         scheduled.forEach(v=>{
           const st = map[v.youtubeId];
-          if(st && st.exists && st.privacyStatus==="public"){
+          if(!st || !st.exists) return;
+          if(st.privacyStatus==="public"){
             nowPublished.push(v);
             setVideos(vs=>vs.map(x=>x.id===v.id?{...x, youtubeStatus:"published", status:"publicado", updatedAt:Date.now()}:x));
+          } else if(st.publishAt){
+            // Reprogramado en YouTube → mover también aquí (fecha y hora locales)
+            const wd = new Date(st.publishAt);
+            const p2 = n=>String(n).padStart(2,"0");
+            const nd = `${wd.getFullYear()}-${p2(wd.getMonth()+1)}-${p2(wd.getDate())}`;
+            const nt = `${p2(wd.getHours())}:${p2(wd.getMinutes())}`;
+            if(nd!==v.date || nt!==v.time){
+              setVideos(vs=>vs.map(x=>x.id===v.id?{...x, date:nd, time:nt, updatedAt:Date.now()}:x));
+            }
           }
         });
         for(const v of nowPublished){
