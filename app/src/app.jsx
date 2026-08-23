@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.3.0";
+const APP_VERSION = "2.4.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -3019,8 +3019,8 @@ function PinnedCommentPanel({ programados, onUpdateVideo, toast }){
 /* ============================ OBJETIVOS (dinero → visitas, con RPM real) ============================ */
 const BarraProgreso = ({pct, alto=8, color}) => (
   <div style={{height:alto, background:"var(--card)", borderRadius:alto, overflow:"hidden"}}>
-    <div style={{height:"100%", width:Math.min(100,Math.max(0,pct||0))+"%", borderRadius:alto, transition:"width .4s",
-      background: color || (pct>=100 ? "var(--green)" : "linear-gradient(90deg,#D4AF37,#FFD700)")}}/>
+    <div style={{height:"100%", width:Math.min(100,Math.max(0,pct||0))+"%", borderRadius:alto, transition:"width .4s, background .4s",
+      background: color || rgbaDePct(pct, 1)}}/>
   </div>
 );
 
@@ -3060,8 +3060,11 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   const nfc = new Intl.NumberFormat("es-ES", {notation:"compact", maximumFractionDigits:1});
   const eur = (x) => x==null ? "—" : x.toLocaleString("es-ES",{minimumFractionDigits:2, maximumFractionDigits:2})+" €";
 
-  // RPM efectivo: manual (si lo fijaste) > RPM real de tus Shorts (API)
-  const rpm = cfg.rpmManual!=null ? cfg.rpmManual : (rpmInfo && rpmInfo.shorts ? rpmInfo.shorts.rpm : null);
+  // RPM efectivo: manual > RPM real de Shorts > RPM global del canal (respaldo)
+  const rpmShortsApi = (rpmInfo && rpmInfo.shorts && rpmInfo.shorts.rpm>0) ? rpmInfo.shorts.rpm : null;
+  const rpmTotalApi = (rpmInfo && rpmInfo.total && rpmInfo.total.rpm>0) ? rpmInfo.total.rpm : null;
+  const rpm = cfg.rpmManual!=null ? cfg.rpmManual : (rpmShortsApi ?? rpmTotalApi);
+  const rpmOrigen = cfg.rpmManual!=null ? "manual" : (rpmShortsApi ? "real de Shorts" : (rpmTotalApi ? "global del canal" : null));
 
   // ——— Día seleccionado (flechas en la zona HOY) ———
   const diaSelD = new Date(hoy); diaSelD.setDate(hoy.getDate()+diaOff);
@@ -3230,7 +3233,7 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
             </div>
             <div style={{fontSize:12,color:"var(--text-3)",marginTop:6,lineHeight:1.6}}>
               {rpm ? <>
-                Con tu RPM {cfg.rpmManual!=null ? "manual" : "real de Shorts"} de <b style={{color:"var(--text-2)"}}>{rpm.toLocaleString("es-ES",{maximumFractionDigits:3})} €/1.000</b> necesitas{" "}
+                Con tu RPM {rpmOrigen} de <b style={{color:"var(--text-2)"}}>{rpm.toLocaleString("es-ES",{maximumFractionDigits:3})} €/1.000</b> necesitas{" "}
                 <b style={{color:"var(--text-2)"}}>{nfc.format(objetivoMesVistas)}</b> visitas/mes · <b style={{color:"var(--text-2)"}}>{nf.format(objetivoDiaVistas)}</b>/día · <b style={{color:"var(--text-2)"}}>{nf.format(objetivoShort)}</b> por Short
                 {cfg.rpmManual==null && rpmInfo && rpmInfo.at ? <span> · RPM calculado con la API ({new Date(rpmInfo.at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})})</span> : null}
               </> : "Refresca las analíticas para calcular tu RPM real, o fija un RPM manual."}
@@ -3328,11 +3331,14 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
           {objetivoDiaVistas && <div style={{position:"absolute",left:0,right:0,bottom:(Math.min(1,objetivoDiaVistas/maxSemana)*80)+"px",borderTop:"1.5px dashed var(--border-gold)",opacity:.7}}/>}
           {semana.map(s=>{
             const h = s.views!=null ? Math.max(3, s.views/maxSemana*80) : 3;
-            const cumple = objetivoDiaVistas && s.views!=null && s.views>=objetivoDiaVistas;
+            const pctDia = (objetivoDiaVistas && s.views!=null) ? s.views/objetivoDiaVistas*100 : null;
+            const cumple = pctDia!=null && pctDia>=100;
             return (
-              <div key={s.k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}} title={(s.views!=null?nf.format(s.views)+" visitas":"sin datos aún")+(s.rev!=null?" · "+eur(s.rev):"")}>
+              <div key={s.k} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}} title={(s.views!=null?nf.format(s.views)+" visitas":"sin datos aún")+(pctDia!=null?` · ${Math.round(pctDia)}%`:"")+(s.rev!=null?" · "+eur(s.rev):"")}>
                 <span style={{fontSize:10,color: cumple?"var(--green)":"var(--text-3)",fontWeight:600}}>{s.views!=null?nfc.format(s.views):"—"}</span>
-                <div style={{width:"100%",maxWidth:34,height:h,borderRadius:5,background: cumple?"var(--green)":(s.esHoy?"linear-gradient(180deg,#FFD700,#D4AF37)":"var(--card-2)"),border:"1px solid "+(cumple?"transparent":"var(--border)")}}/>
+                <div style={{width:"100%",maxWidth:34,height:h,borderRadius:5,transition:"background .4s",
+                  background: pctDia!=null ? rgbaDePct(pctDia, .9) : "var(--card-2)",
+                  border:"1px solid "+(s.esHoy?"var(--border-gold)":(pctDia!=null?"transparent":"var(--border)"))}}/>
                 <span style={{fontSize:10,color:s.esHoy?"var(--gold)":"var(--text-3)",fontWeight:s.esHoy?700:400}}>{s.dia} {s.num}</span>
                 <span style={{fontSize:9,color:"var(--text-3)"}}>{s.rev!=null ? eur(s.rev) : "—"}</span>
               </div>
@@ -3377,11 +3383,11 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
         </div>
 
         <div style={{...caja, position:"relative", overflow:"hidden"}}>
-          {/* Progreso del MES por detrás de los días: relleno de izquierda a derecha según el % del objetivo económico */}
+          {/* Progreso del MES por detrás de los días: sube de abajo hacia arriba según el % del objetivo económico */}
           {colorMes && !mesFuturo && pctEurMes!=null && (
             <div style={{
               position:"absolute", inset:0, pointerEvents:"none",
-              background:`linear-gradient(90deg, ${rgbaDePct(pctEurMes, .13)} 0%, ${rgbaDePct(pctEurMes, .13)} ${Math.min(100,pctEurMes)}%, transparent ${Math.min(100,Math.max(0,pctEurMes)+7)}%)`,
+              background:`linear-gradient(to top, ${rgbaDePct(pctEurMes, .2)} 0%, ${rgbaDePct(pctEurMes, .2)} ${Math.min(100,pctEurMes)}%, transparent ${Math.min(100,Math.max(0,pctEurMes)+7)}%)`,
               transition:"background 1s ease"
             }}/>
           )}
@@ -3397,19 +3403,27 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
               {["L","M","X","J","V","S","D"].map(dl=><div key={dl} style={{fontSize:9.5,color:"var(--text-3)",textAlign:"center",fontWeight:700}}>{dl}</div>)}
               {celdas.map((c,i)=>{
                 const p = c && c.pct!=null ? Math.min(100, Math.max(0, c.pct)) : null;
-                const fondo = (colorDia && c && !c.futuro && p!=null)
-                  ? `linear-gradient(to top, ${rgbaDePct(c.pct, .34)} ${p}%, transparent ${p}%)`
-                  : "transparent";
+                const rev = c ? daily[c.k]?.revenue : null;
                 return (
                   <div key={i} style={{
-                    minHeight:40, borderRadius:7, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1,
-                    background: fondo, transition:"background .4s",
-                    border: c&&c.esHoy ? "1.5px solid var(--gold)" : "1px solid "+(c&&!c.futuro?"var(--border)":(c?"rgba(255,255,255,0.04)":"transparent"))
-                  }} title={c&&c.views!=null?nf.format(c.views)+" visitas"+(c.pct!=null?` · ${Math.round(c.pct)}%`:""):""}>
+                    minHeight:48, borderRadius:7, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
+                    // Fondo OPACO (el degradado del mes no se ve a través de los días) + relleno del día encima
+                    backgroundColor: c ? "var(--card)" : "transparent",
+                    backgroundImage: (colorDia && c && !c.futuro && p!=null)
+                      ? `linear-gradient(to top, ${rgbaDePct(c.pct, .45)} ${p}%, transparent ${p}%)`
+                      : "none",
+                    transition:"background .4s",
+                    border: c&&c.esHoy ? "1.5px solid var(--gold)" : "1px solid "+(c&&!c.futuro?"var(--border)":(c?"rgba(255,255,255,0.05)":"transparent"))
+                  }} title={c&&c.views!=null?nf.format(c.views)+" visitas"+(c.pct!=null?` · ${Math.round(c.pct)}%`:"")+(rev!=null?` · ${eur(rev)}`:""):""}>
                     <span style={{fontSize:10.5, fontWeight: c&&c.esHoy?800:600, color: c ? (c.futuro?"var(--text-3)":"var(--text)") : "transparent", lineHeight:1}}>{c?c.d:""}</span>
                     {c && !c.futuro && (
                       <span style={{fontSize:8.5, fontWeight:700, lineHeight:1, color: c.pct==null?"var(--text-3)":(c.pct>=100?"var(--green)":"var(--text-2)")}}>
                         {c.pct==null ? "—" : Math.round(c.pct)+"%"}
+                      </span>
+                    )}
+                    {c && !c.futuro && (
+                      <span style={{fontSize:8, fontWeight:600, lineHeight:1, color:"var(--text-3)"}}>
+                        {rev!=null ? rev.toLocaleString("es-ES",{minimumFractionDigits:2, maximumFractionDigits:2})+"€" : ""}
                       </span>
                     )}
                   </div>
@@ -3486,6 +3500,10 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
               const nt = `${p2(wd.getHours())}:${p2(wd.getMinutes())}`;
               if(nd!==v.date || nt!==v.time){ patch.date = nd; patch.time = nt; }
             }
+            // Está en YouTube → checklist completa
+            if(Array.isArray(v.checklist) && v.checklist.some(c=>!c.done)){
+              patch.checklist = v.checklist.map(c=>({...c, done:true}));
+            }
             // ¿Se acaba de publicar un vídeo que estaba programado? → avisar
             if(ns==="published" && v.youtubeStatus==="scheduled"){
               justPublished.push({...v, ...patch});
@@ -3529,6 +3547,8 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
             format: clasificarFormato(u.title, tipo), // "" si no se detecta
             type: tipo,
             durationSec: u.durationSec||0,
+            // Ya está en YouTube → el trabajo de producción está hecho
+            checklist: base.checklist.map(c=>({...c, done:true})),
             status: esPublico ? "publicado" : (u.publishAt ? "programado" : "edicion"),
             youtubeId: u.id,
             youtubeUrl: "https://youtu.be/"+u.id,
@@ -4826,6 +4846,20 @@ function clasificarFormato(title, type){
   return type==="short" ? "jugadas" : "";
 }
 
+/* Un vídeo que ya está en YouTube (programado allí o subido/publicado) tiene el
+   trabajo hecho: su checklist se marca completa automáticamente */
+function completarChecklist(v){
+  if(!v || !Array.isArray(v.checklist)) return v;
+  if(!(v.youtubeId || v.status==="publicado")) return v;
+  if(v.checklist.every(c=>c.done)) return v;
+  return {...v, checklist: v.checklist.map(c=>c.done?c:{...c, done:true}), updatedAt:Date.now()};
+}
+function normalizarDatos(d){
+  if(!d) return d;
+  d.videos = (d.videos||[]).map(completarChecklist);
+  return d;
+}
+
 /* ——— Migración a formatos v2: sustituye la lista antigua y reclasifica todo ——— */
 function esFormatosV2(f){ return !!(f && f.jugadas && f.combates); }
 function migrarFormatosV2(d){
@@ -4910,13 +4944,14 @@ async function ytFetchRpmReal(){
   });
   const out = { shorts:null, directos:null, videos:null, total:{views:0,revenue:0,rpm:null}, at: Date.now() };
   (data.rows||[]).forEach(fila=>{
-    const tipo = fila[0];
+    // El nombre del tipo puede venir en distintas formas según la versión de la API
+    const tipo = String(fila[0]||"").toUpperCase();
     const views = Number(fila[1])||0, rev = Number(fila[2])||0;
     out.total.views += views; out.total.revenue += rev;
     const rpm = views>0 ? rev/views*1000 : null;
-    if(tipo==="SHORTS") out.shorts = {views, revenue:rev, rpm};
-    else if(tipo==="LIVE_STREAM") out.directos = {views, revenue:rev, rpm};
-    else if(tipo==="VIDEO_ON_DEMAND") out.videos = {views, revenue:rev, rpm};
+    if(tipo.includes("SHORT")) out.shorts = {views, revenue:rev, rpm};
+    else if(tipo.includes("LIVE")) out.directos = {views, revenue:rev, rpm};
+    else if(tipo.includes("DEMAND") || tipo.includes("VIDEO")) out.videos = {views, revenue:rev, rpm};
   });
   out.total.rpm = out.total.views>0 ? out.total.revenue/out.total.views*1000 : null;
   return out;
@@ -5176,8 +5211,9 @@ function GlobalSearch({videos, formats, onOpen}) {
 }
 
 function App() {
-  // Cargar UNA vez (antes se re-parseaba todo el JSON en cada render) y migrar a formatos v2
-  const _initial = useMemo(()=>migrarFormatosV2(loadStore()), []);
+  // Cargar UNA vez (antes se re-parseaba todo el JSON en cada render), migrar a formatos v2
+  // y normalizar (checklist completa en lo que ya está en YouTube)
+  const _initial = useMemo(()=>normalizarDatos(migrarFormatosV2(loadStore())), []);
   const [videos, setVideos] = useState(()=>{
     const base = _initial ? _initial.videos : [];
     // Sellar updatedAt en datos anteriores a esta versión (para que la fusión funcione)
@@ -5333,12 +5369,12 @@ function App() {
       : (remoteFmtN > localFmtN ? r.formats : s.formats);
     // Vídeos que llegan de un dispositivo sin migrar (formato antiguo o tipo "largo"):
     // se reclasifican aquí mismo para que todos converjan al mismo resultado
-    const arreglaV2 = (arr) => !esFormatosV2(mergedFormats) ? arr : arr.map(v=>{
+    const arreglaV2 = (arr) => !esFormatosV2(mergedFormats) ? arr.map(completarChecklist) : arr.map(v=>{
       if(!v) return v;
       const type = v.type==="largo" ? "video" : (v.type||"short");
       const fmtDesconocido = v.format && !mergedFormats[v.format];
-      if(type===v.type && !fmtDesconocido) return v;
-      return {...v, type, format: fmtDesconocido ? clasificarFormato(v.title, type) : v.format, updatedAt:Date.now()};
+      if(type===v.type && !fmtDesconocido) return completarChecklist(v);
+      return completarChecklist({...v, type, format: fmtDesconocido ? clasificarFormato(v.title, type) : v.format, updatedAt:Date.now()});
     });
     // Archivo diario: unión por semana, sin duplicados (por título+día)
     const mergedArchive = mergeDailyArchive(s.dailyArchive, r.dailyArchive);
@@ -6393,7 +6429,7 @@ function App() {
       </main>
 
       {editing && <VideoModal v={editing} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
-      {ytUpload && <YouTubeUploadModal video={ytUpload} allVideos={videos} tagTemplates={tagTemplates} setTagTemplates={setTagTemplates} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?{...v, ...yt, updatedAt:Date.now()}:v)); }} toast={toast}/>}
+      {ytUpload && <YouTubeUploadModal video={ytUpload} allVideos={videos} tagTemplates={tagTemplates} setTagTemplates={setTagTemplates} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?completarChecklist({...v, ...yt, updatedAt:Date.now()}):v)); }} toast={toast}/>}
       {showFormats && <FormatsModal formats={formats} setFormats={setFormats} videos={videos} onClose={()=>setShowFormats(false)} toast={toast} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
       {showSync && <SyncModal syncCode={syncCode} status={syncStatus} syncMode={syncMode} setSyncMode={setSyncMode} pendingChanges={pendingChanges} onClose={()=>setShowSync(false)} onLink={linkToCode} onExport={exportData} onImport={importData} onSyncNow={syncNow} syncing={manualSyncing} toast={toast}/>}
       <ConfirmDialog
