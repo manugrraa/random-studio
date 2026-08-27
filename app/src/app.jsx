@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.7.0";
+const APP_VERSION = "2.8.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -470,10 +470,10 @@ function VideoModal({v, allVideos, goals, onClose, onSave, onDelete, onDuplicate
     }
     return ()=>{ vivo=false; };
   },[v]);
-  // RPM efectivo y objetivo de visitas por Short (para comparar este vídeo contra tu meta)
+  // RPM efectivo (manual o el real de SHORTS) y objetivo de visitas por Short
   const rpmModal = (()=>{
     const cfgG = goals && goals.cfg; if(!cfgG) return null;
-    const r = cfgG.rpmManual!=null ? cfgG.rpmManual : ((goals.rpm && goals.rpm.shorts && goals.rpm.shorts.rpm) || (goals.rpm && goals.rpm.total && goals.rpm.total.rpm) || null);
+    const r = cfgG.rpmManual!=null ? cfgG.rpmManual : ((goals.rpm && goals.rpm.shorts && goals.rpm.shorts.rpm) || null);
     return (r && r>0) ? r : null;
   })();
   const objetivoShortModal = (()=>{
@@ -3199,11 +3199,11 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   const nfc = new Intl.NumberFormat("es-ES", {notation:"compact", maximumFractionDigits:1});
   const eur = (x) => x==null ? "—" : x.toLocaleString("es-ES",{minimumFractionDigits:2, maximumFractionDigits:2})+" €";
 
-  // RPM efectivo: manual > RPM real de Shorts > RPM global del canal (respaldo)
+  // RPM efectivo: manual > RPM real de SHORTS (solo Shorts: los directos y vídeos
+  // rinden distinto y meterlos en la media falsearía el objetivo)
   const rpmShortsApi = (rpmInfo && rpmInfo.shorts && rpmInfo.shorts.rpm>0) ? rpmInfo.shorts.rpm : null;
-  const rpmTotalApi = (rpmInfo && rpmInfo.total && rpmInfo.total.rpm>0) ? rpmInfo.total.rpm : null;
-  const rpm = cfg.rpmManual!=null ? cfg.rpmManual : (rpmShortsApi ?? rpmTotalApi);
-  const rpmOrigen = cfg.rpmManual!=null ? "manual" : (rpmShortsApi ? "real de Shorts" : (rpmTotalApi ? "global del canal" : null));
+  const rpm = cfg.rpmManual!=null ? cfg.rpmManual : rpmShortsApi;
+  const rpmOrigen = cfg.rpmManual!=null ? "manual" : (rpmShortsApi ? "real de Shorts" : null);
 
   // ——— Día seleccionado (flechas en la zona HOY) ———
   const diaSelD = new Date(hoy); diaSelD.setDate(hoy.getDate()+diaOff);
@@ -3291,13 +3291,36 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
   useEffect(()=>{ if(mesOff!==0 && ytTokenValid()) cargarMes(mesPrefix); // eslint-disable-next-line
   },[mesOff]);
 
-  // Shorts del día seleccionado, con sus visitas en vivo (acumuladas)
+  // Shorts del día seleccionado (cuentan para el objetivo) y vídeos/directos del día (informativos)
   const shortsDia = videos.filter(v=> v.type==="short" && v.date===diaKey && v.youtubeId);
+  const otrosDia = videos.filter(v=> v.type!=="short" && v.date===diaKey && v.youtubeId);
   const refrescarLive = async () => {
-    const ids = shortsDia.filter(v=>v.youtubeStatus==="published").map(v=>v.youtubeId);
+    const ids = [...shortsDia, ...otrosDia].filter(v=>v.youtubeStatus==="published").map(v=>v.youtubeId);
     if(!ids.length) return;
     try { const m = await ytViewCounts(ids); setLiveViews(prev=>({...prev, ...m})); setLiveAt(Date.now()); } catch(e){}
   };
+  // Desglose real de € del día por tipo de contenido (Shorts / Directos / Vídeos)
+  const [tipoDia, setTipoDia] = useState({});
+  useEffect(()=>{
+    let vivo = true;
+    if(!ytTokenValid() || diaKey > hoyKey || tipoDia[diaKey]) return;
+    (async ()=>{
+      try {
+        const data = await ytAnalyticsQuery({ startDate:diaKey, endDate:diaKey, metrics:"views,estimatedRevenue", dimensions:"creatorContentType" });
+        const out = {};
+        (data.rows||[]).forEach(f=>{
+          const t = String(f[0]||"").toUpperCase();
+          const val = { views:Number(f[1])||0, rev:Number(f[2])||0 };
+          if(t.includes("SHORT")) out.shorts = val;
+          else if(t.includes("LIVE")) out.directos = val;
+          else if(t.includes("DEMAND") || t.includes("VIDEO")) out.videos = val;
+        });
+        if(vivo) setTipoDia(m=>({...m, [diaKey]: out}));
+      } catch(e){ if(vivo) setTipoDia(m=>({...m, [diaKey]: {}})); }
+    })();
+    return ()=>{ vivo = false; };
+  // eslint-disable-next-line
+  },[diaKey]);
   const refrescarLiveRef = useRef(refrescarLive); useEffect(()=>{ refrescarLiveRef.current = refrescarLive; });
   const refrescarRef = useRef(refrescar); useEffect(()=>{ refrescarRef.current = refrescar; });
 
@@ -3467,7 +3490,7 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
             {objetivoDiaSel && (
               <div style={{marginTop:2,paddingTop:12,borderTop:"1px solid var(--border)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:5}}>
-                  <span style={{fontWeight:700,color:"var(--text-2)"}}>Total del día</span>
+                  <span style={{fontWeight:700,color:"var(--text-2)"}}>Total del día (solo Shorts)</span>
                   <span style={{fontWeight:700,color: vistasDia>=objetivoDiaSel?"var(--green)":"var(--text-2)"}}>{nf.format(vistasDia)} / {nf.format(objetivoDiaSel)} ({Math.round(vistasDia/objetivoDiaSel*100)}%)</span>
                 </div>
                 <BarraProgreso pct={vistasDia/objetivoDiaSel*100} alto={10}/>
@@ -3475,6 +3498,50 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
             )}
           </div>
         )}
+
+        {/* Vídeos y directos del día: se ven, pero no cuentan en el objetivo de Shorts */}
+        {otrosDia.length>0 && (
+          <div style={{marginTop:14,paddingTop:12,borderTop:"1px dashed var(--border)"}}>
+            <div style={{fontSize:10.5,fontWeight:700,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Vídeos y directos del día (fuera del objetivo)</div>
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {otrosDia.map(v=>{
+                const vistas = liveViews[v.youtubeId];
+                const esDir = v.type==="directo";
+                return (
+                  <div key={v.id} style={{display:"flex",alignItems:"center",gap:9,fontSize:12.5}}>
+                    <span style={{display:"flex",color: esDir?"var(--gold)":"var(--text-3)",flexShrink:0}}>{esDir?Icons.live:Icons.largo}</span>
+                    <span style={{fontSize:9.5,fontWeight:700,color:esDir?"var(--gold)":"var(--text-3)",border:"1px solid "+(esDir?"var(--border-gold)":"var(--border)"),borderRadius:20,padding:"1px 7px",flexShrink:0}}>{esDir?"DIRECTO":"VÍDEO"}</span>
+                    <span style={{color:"var(--text)",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}}>{v.title}</span>
+                    <span style={{color:"var(--text-2)",flexShrink:0,fontWeight:600}}>
+                      {v.youtubeStatus==="published" ? (vistas!=null ? nf.format(vistas)+" visitas" : "…") : ("programado · "+(v.time||""))}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Dinero del día por tipo de contenido */}
+        {diaKey<=hoyKey && (()=>{
+          const td = tipoDia[diaKey];
+          const fmE = (x)=> x==null ? "—" : x.toLocaleString("es-ES",{minimumFractionDigits:2, maximumFractionDigits:2})+" €";
+          // Shorts: real del día si la API ya lo tiene; si no, estimación con las vistas en vivo
+          const eShortsReal = td && td.shorts ? td.shorts.rev : null;
+          const eShorts = eShortsReal!=null ? eShortsReal : ((estimado && rpm && vistasDia>0) ? vistasDia*rpm/1000 : null);
+          const marcaShorts = eShortsReal!=null ? "" : "≈ ";
+          const eDirectos = td && td.directos ? td.directos.rev : null;
+          const eVideos = td && td.videos ? td.videos.rev : null;
+          return (
+            <div style={{display:"flex",gap:16,flexWrap:"wrap",alignItems:"center",fontSize:11.5,color:"var(--text-3)",marginTop:14,paddingTop:11,borderTop:"1px solid var(--border)"}}>
+              <span style={{fontWeight:700,color:"var(--text-2)"}}>💰 Dinero del día:</span>
+              <span>Shorts <b style={{color:"var(--gold)"}}>{eShorts!=null ? marcaShorts+fmE(eShorts) : "—"}</b></span>
+              <span>Directos <b style={{color:"var(--text-2)"}}>{fmE(eDirectos)}</b></span>
+              <span>Vídeos <b style={{color:"var(--text-2)"}}>{fmE(eVideos)}</b></span>
+              {(!td || (!td.shorts && !td.directos && !td.videos)) && <span style={{fontSize:10}}>(la API reparte el € por tipo con ~2 días de retraso)</span>}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ——— SEMANA: visitas y dinero por día ——— */}
@@ -3563,16 +3630,28 @@ function ObjetivosPanel({ videos, goals, setGoals, onConnect, toast }) {
                 const p = c && c.pct!=null ? Math.min(100, Math.max(0, c.pct)) : null;
                 const rev = c ? euroDia(c.k) : null;
                 return (
-                  <div key={i} style={{
+                  <div key={i}
+                    onClick={()=>{
+                      if(!c) return;
+                      // Ir a ese día en la vista diaria de arriba
+                      const hoy0 = new Date(); hoy0.setHours(0,0,0,0);
+                      const destino = new Date(c.k+"T00:00");
+                      setDiaOff(Math.round((destino-hoy0)/86400000));
+                    }}
+                    style={{
                     minHeight:48, borderRadius:7, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
+                    cursor: c ? "pointer" : "default",
                     // Fondo OPACO (el degradado del mes no se ve a través de los días) + relleno del día encima
                     backgroundColor: c ? "var(--card)" : "transparent",
                     backgroundImage: (colorDia && c && !c.futuro && p!=null)
                       ? `linear-gradient(to top, ${rgbaDePct(c.pct, .45)} ${p}%, transparent ${p}%)`
                       : "none",
-                    transition:"background .4s",
+                    transition:"background .4s, border-color .15s",
                     border: c&&c.esHoy ? "1.5px solid var(--gold)" : "1px solid "+(c&&!c.futuro?"var(--border)":(c?"rgba(255,255,255,0.05)":"transparent"))
-                  }} title={c&&c.views!=null?nf.format(c.views)+" visitas"+(c.pct!=null?` · ${Math.round(c.pct)}%`:"")+(rev!=null?` · ${pref}${eur(rev)}`:""):""}>
+                  }}
+                    onMouseEnter={e=>{ if(c) e.currentTarget.style.borderColor="var(--border-gold)"; }}
+                    onMouseLeave={e=>{ if(c) e.currentTarget.style.borderColor = c.esHoy?"var(--gold)":(!c.futuro?"var(--border)":"rgba(255,255,255,0.05)"); }}
+                    title={(c&&c.views!=null?nf.format(c.views)+" visitas"+(c.pct!=null?` · ${Math.round(c.pct)}%`:"")+(rev!=null?` · ${pref}${eur(rev)}`:"")+" · ":"")+(c?"clic para ver el día":"")}>
                     <span style={{fontSize:10.5, fontWeight: c&&c.esHoy?800:600, color: c ? (c.futuro?"var(--text-3)":"var(--text)") : "transparent", lineHeight:1}}>{c?c.d:""}</span>
                     {c && !c.futuro && (
                       <span style={{fontSize:8.5, fontWeight:700, lineHeight:1, color: c.pct==null?"var(--text-3)":(c.pct>=100?"var(--green)":"var(--text-2)")}}>
@@ -4118,11 +4197,81 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
   );
 }
 
-function StatsView({ videos, taskLists, formats }) {
-  const now = Date.now();
-  const DAY = 24*60*60*1000, WEEK = 7*DAY;
+function StatsView({ videos, goals, onConnect }) {
+  const [datos, setDatos] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
 
-  // ——— Vídeos publicados por semana (últimas 8 semanas) ———
+  const nf = new Intl.NumberFormat("es-ES");
+  const nfc = new Intl.NumberFormat("es-ES", {notation:"compact", maximumFractionDigits:1});
+  const eur = (x) => x==null ? "—" : x.toLocaleString("es-ES",{minimumFractionDigits:2, maximumFractionDigits:2})+" €";
+
+  const cargar = async () => {
+    if(!ytIsConnected()){ setError("conectar"); return; }
+    setCargando(true); setError(null);
+    try {
+      const fin = new Date(); fin.setDate(fin.getDate()-2); // últimos datos cerrados
+      const ini28 = new Date(fin); ini28.setDate(ini28.getDate()-27);
+      const finPrev = new Date(ini28); finPrev.setDate(finPrev.getDate()-1);
+      const iniPrev = new Date(finPrev); iniPrev.setDate(iniPrev.getDate()-27);
+      const ini84 = new Date(fin); ini84.setDate(ini84.getDate()-83);
+      const METRICAS = "views,estimatedMinutesWatched,subscribersGained,subscribersLost,likes,comments,estimatedRevenue,averageViewDuration,averageViewPercentage";
+      const [act, prev, topRes, porDia, tipos] = await Promise.all([
+        ytAnalyticsQuery({ startDate:fechaISO(ini28), endDate:fechaISO(fin), metrics:METRICAS }),
+        ytAnalyticsQuery({ startDate:fechaISO(iniPrev), endDate:fechaISO(finPrev), metrics:METRICAS }),
+        ytAnalyticsQuery({ startDate:fechaISO(ini28), endDate:fechaISO(fin), metrics:"views,estimatedRevenue,likes", dimensions:"video", sort:"-views", maxResults:"8" }),
+        ytAnalyticsQuery({ startDate:fechaISO(ini84), endDate:fechaISO(fin), metrics:"views", dimensions:"day", sort:"day" }),
+        ytAnalyticsQuery({ startDate:fechaISO(ini28), endDate:fechaISO(fin), metrics:"views,estimatedMinutesWatched,estimatedRevenue", dimensions:"creatorContentType" }).catch(()=>({rows:[]}))
+      ]);
+      const fila = (r)=>{ const f=(r.rows||[])[0]||[]; return {
+        views:+f[0]||0, min:+f[1]||0, subsUp:+f[2]||0, subsDown:+f[3]||0,
+        likes:+f[4]||0, comments:+f[5]||0, rev:+f[6]||0, dur:+f[7]||0, pct:+f[8]||0
+      }; };
+      // Top vídeos con título (del Studio o pedido a la API)
+      const top = (topRes.rows||[]).map(r=>({ id:r[0], views:+r[1]||0, rev:+r[2]||0, likes:+r[3]||0 }));
+      const sinTitulo = top.filter(t=>!videos.find(v=>v.youtubeId===t.id));
+      const titulosApi = {};
+      if(sinTitulo.length){
+        try {
+          const res = await fetch("https://www.googleapis.com/youtube/v3/videos?"+new URLSearchParams({ part:"snippet", id:sinTitulo.map(t=>t.id).join(",") }), { headers: ytAuthHeader() });
+          if(res.ok){ ((await res.json()).items||[]).forEach(it=>{ titulosApi[it.id] = it.snippet?.title || it.id; }); }
+        } catch(e){}
+      }
+      top.forEach(t=>{ t.titulo = (videos.find(v=>v.youtubeId===t.id)?.title) || titulosApi[t.id] || t.id; });
+      // Semana tipo: media de visitas por día de la semana (últimas 12 semanas)
+      const porSemana = Array.from({length:7},()=>({sum:0,n:0}));
+      (porDia.rows||[]).forEach(r=>{ const d=new Date(r[0]+"T00:00"); const i=(d.getDay()+6)%7; porSemana[i].sum += (+r[1]||0); porSemana[i].n++; });
+      const semanaTipo = porSemana.map((x,i)=>({ dia:["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"][i], media: x.n ? Math.round(x.sum/x.n) : 0 }));
+      // Motores: reparto por tipo de contenido
+      const motores = { shorts:null, directos:null, videos:null };
+      (tipos.rows||[]).forEach(f=>{
+        const t = String(f[0]||"").toUpperCase();
+        const val = { views:+f[1]||0, min:+f[2]||0, rev:+f[3]||0 };
+        if(t.includes("SHORT")) motores.shorts = val;
+        else if(t.includes("LIVE")) motores.directos = val;
+        else if(t.includes("DEMAND") || t.includes("VIDEO")) motores.videos = val;
+      });
+      setDatos({ act: fila(act), prev: fila(prev), top, semanaTipo, motores, desde: fechaISO(ini28), hasta: fechaISO(fin) });
+    } catch(e){
+      if(e.message==="ANALYTICS_API_OFF") setError("off");
+      else if(e.message==="ANALYTICS_PERMISOS") setError("permisos");
+      else setError(e.message);
+    } finally { setCargando(false); }
+  };
+  useEffect(()=>{ if(ytTokenValid()) cargar(); else if(!ytIsConnected()) setError("conectar"); // eslint-disable-next-line
+  },[]);
+
+  // Huecos sin Short en los últimos 28 días (los valles cuestan visitas)
+  const hoyKey2 = fechaISO(new Date());
+  const dias28 = Array.from({length:28},(_,i)=>{
+    const d = new Date(); d.setDate(d.getDate()-(27-i));
+    const k = fechaISO(d);
+    const n = videos.filter(v=>v.type==="short" && v.status==="publicado" && v.date===k).length;
+    return { k, d: d.getDate(), n };
+  });
+  const huecos = dias28.filter(x=>x.n===0 && x.k<hoyKey2).length;
+
+  // Ritmo de publicación (últimas 8 semanas) — se mantiene de la versión anterior
   const monday = (d) => { const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; };
   const thisMonday = monday(new Date());
   const weeks = Array.from({length:8},(_,i)=>{
@@ -4133,295 +4282,187 @@ function StatsView({ videos, taskLists, formats }) {
   });
   const maxWeek = Math.max(1, ...weeks.map(w=>w.count));
 
-  // ——— Racha de días sin tareas vencidas ———
-  let streak = 0;
-  {
-    const allTasks = taskLists.flatMap(l=>l.tasks);
-    const hasOverdueNow = allTasks.some(t=>!t.done && t.due && new Date(t.due).getTime()<now);
-    if(!hasOverdueNow){
-      // Último evento de vencimiento: tarea completada tarde, o el vencimiento más reciente ya resuelto
-      let lastBad = 0;
-      allTasks.forEach(t=>{
-        if(t.done && t.due && t.completedAt && t.completedAt > new Date(t.due).getTime()){
-          lastBad = Math.max(lastBad, t.completedAt);
-        }
-      });
-      streak = lastBad ? Math.floor((now-lastBad)/DAY) : Math.min(99, Math.floor((now-(Math.min(...allTasks.map(t=>t.createdAt||now), now)))/DAY));
-    }
-  }
+  const caja = { background:"var(--bg-2)", border:"1px solid var(--border)", borderRadius:14, padding:16 };
+  const tituloZona = { fontSize:11.5, fontWeight:700, color:"var(--text-3)", textTransform:"uppercase", letterSpacing:".07em", marginBottom:12 };
 
-  // ——— Tiempo medio de producción (creación → fecha de publicación) ———
-  const prodTimes = videos.filter(v=>v.status==="publicado" && v.date && v.createdAt)
-    .map(v=>(new Date(v.date+"T00:00").getTime()-v.createdAt)/DAY).filter(d=>d>=0 && d<120);
-  const avgProd = prodTimes.length ? (prodTimes.reduce((a,b)=>a+b,0)/prodTimes.length) : null;
+  const Delta = ({ahora, antes, invertir}) => {
+    if(antes==null || antes===0 || ahora==null) return null;
+    const d = (ahora-antes)/Math.abs(antes)*100;
+    if(!isFinite(d) || Math.abs(d)<0.5) return <span style={{fontSize:10,color:"var(--text-3)"}}>=</span>;
+    const bueno = invertir ? d<0 : d>0;
+    return <span style={{fontSize:10.5,fontWeight:700,color:bueno?"var(--green)":"var(--red)"}}>{d>0?"▲":"▼"} {Math.abs(d).toFixed(0)}%</span>;
+  };
+  const KPI = ({label, valor, sub, ahora, antes}) => (
+    <div style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:"13px 15px"}}>
+      <div style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".05em",marginBottom:5}}>{label}</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+        <span style={{fontSize:20,fontWeight:800,fontFamily:"'Sora'",color:"var(--text)"}}>{valor}</span>
+        <Delta ahora={ahora} antes={antes}/>
+      </div>
+      {sub && <div style={{fontSize:10,color:"var(--text-3)",marginTop:3}}>{sub}</div>}
+    </div>
+  );
 
-  // ——— Tareas completadas (últimos 7 días) ———
-  const tasksDone7 = taskLists.reduce((a,l)=>a+l.tasks.filter(t=>t.done && t.completedAt && (now-t.completedAt)<WEEK).length,0);
-
-  // ——— Distribución por formato (vídeos activos) ———
-  const fmtCounts = {};
-  videos.forEach(v=>{ fmtCounts[v.format]=(fmtCounts[v.format]||0)+1; });
-  const fmtData = Object.entries(fmtCounts)
-    .map(([k,n])=>({ key:k, n, label:formats[k]?.label||"Sin formato", color:formats[k]?.color||"#6B6B6B" }))
-    .sort((a,b)=>b.n-a.n);
-  const totalFmt = fmtData.reduce((a,f)=>a+f.n,0);
-
-  // Donut SVG: arcos acumulados
-  const R = 54, C = 2*Math.PI*R;
-  let acc = 0;
-  const arcs = fmtData.map(f=>{
-    const frac = totalFmt? f.n/totalFmt : 0;
-    const a = { ...f, dash:`${frac*C} ${C}`, offset:-acc*C };
-    acc += frac;
-    return a;
-  });
-
-  // ——— Pipeline por estado ———
-  const pipeline = Object.entries(STATUSES).map(([k,s])=>({ key:k, label:s.label, color:s.color, n: videos.filter(v=>v.status===k).length }));
-  const maxPipe = Math.max(1, ...pipeline.map(p=>p.n));
-
-  // ——— Publicaciones por día de la semana ———
-  const dayCounts = [0,0,0,0,0,0,0];
-  videos.forEach(v=>{ if(v.status==="publicado" && v.date){ dayCounts[(new Date(v.date+"T00:00").getDay()+6)%7]++; } });
-  const maxDay = Math.max(1, ...dayCounts);
-
-  const published = videos.filter(v=>v.status==="publicado").length;
-
-  // ——— NUEVAS ESTADÍSTICAS ———
-
-  // Reparto Shorts vs Vídeos largos
-  const shorts = videos.filter(v=>v.type==="short").length;
-  const largos = videos.filter(v=>v.type==="largo").length;
-  const totalType = shorts + largos;
-
-  // Vídeos programados esta semana (con fecha en la semana actual)
-  const weekStart = new Date(thisMonday), weekEnd = new Date(thisMonday); weekEnd.setDate(weekEnd.getDate()+7);
-  const thisWeekVideos = videos.filter(v=>v.date && (()=>{ const t=new Date(v.date+"T00:00"); return t>=weekStart && t<weekEnd; })()).length;
-
-  // Vídeos pendientes de publicar (todo lo que no está publicado y tiene fecha)
-  const pendingScheduled = videos.filter(v=>v.status!=="publicado" && v.date).length;
-  const ideasPool = videos.filter(v=>v.status==="idea" && !v.date).length;
-
-  // Progreso de checklist global (media de completitud de todas las checklists)
-  let checkSum = 0, checkCount = 0;
-  videos.forEach(v=>{
-    if(Array.isArray(v.checklist) && v.checklist.length){
-      const done = v.checklist.filter(c=>c.done).length;
-      checkSum += done/v.checklist.length; checkCount++;
-    }
-  });
-  const avgChecklist = checkCount ? Math.round(checkSum/checkCount*100) : 0;
-
-  // Tareas: totales, pendientes, completadas, urgentes, vencidas
-  const allTasksFlat = taskLists.flatMap(l=>l.tasks||[]);
-  const tasksPending = allTasksFlat.filter(t=>!t.done).length;
-  const tasksDoneTotal = allTasksFlat.filter(t=>t.done).length;
-  const tasksUrgent = allTasksFlat.filter(t=>!t.done && t.urgent).length;
-  const tasksOverdue = allTasksFlat.filter(t=>!t.done && t.due && new Date(t.due).getTime()<now).length;
-  const taskCompletion = (tasksPending+tasksDoneTotal)>0 ? Math.round(tasksDoneTotal/(tasksPending+tasksDoneTotal)*100) : 0;
-
-  // Publicaciones por mes (últimos 6 meses)
-  const monthsArr = Array.from({length:6},(_,i)=>{
-    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-(5-i));
-    return { y:d.getFullYear(), m:d.getMonth(), label:d.toLocaleDateString("es-ES",{month:"short"}), count:0 };
-  });
-  videos.forEach(v=>{
-    if(v.status==="publicado" && v.date){
-      const t = new Date(v.date+"T00:00");
-      const slot = monthsArr.find(x=>x.y===t.getFullYear() && x.m===t.getMonth());
-      if(slot) slot.count++;
-    }
-  });
-  const maxMonth = Math.max(1, ...monthsArr.map(m=>m.count));
-
-  // Ritmo: media de vídeos publicados por semana (sobre las 8 semanas)
-  const avgPerWeek = (weeks.reduce((a,w)=>a+w.count,0)/8).toFixed(1);
-
-  const box = {background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:14,padding:"17px 18px"};
-  const boxTitle = {fontSize:13,fontWeight:700,color:"var(--text)",marginBottom:14,display:"flex",alignItems:"center",gap:8};
+  const a = datos ? datos.act : null;
+  const p = datos ? datos.prev : null;
+  const mejorDia = datos ? [...datos.semanaTipo].sort((x,y)=>y.media-x.media)[0] : null;
+  const maxSem = datos ? Math.max(1, ...datos.semanaTipo.map(s=>s.media)) : 1;
+  const mot = datos ? datos.motores : null;
+  const totV = mot ? ((mot.shorts?.views||0)+(mot.directos?.views||0)+(mot.videos?.views||0)) : 0;
+  const totM = mot ? ((mot.shorts?.min||0)+(mot.directos?.min||0)+(mot.videos?.min||0)) : 0;
+  const totR = mot ? ((mot.shorts?.rev||0)+(mot.directos?.rev||0)+(mot.videos?.rev||0)) : 0;
 
   return (
-    <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:14}}>
-      <div style={{marginBottom:4}}>
-        <h2 style={{fontSize:20,fontWeight:700}}>Estadísticas</h2>
-        <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Tu productividad de un vistazo</p>
+    <div className="fade-in">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:16}}>
+        <div>
+          <h2 style={{fontSize:20,fontWeight:700}}>Estadísticas del canal</h2>
+          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
+            {datos ? `Últimos 28 días cerrados (${new Date(datos.desde+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})} – ${new Date(datos.hasta+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}) comparados con los 28 anteriores` : "Análisis real de tu canal con la API de YouTube"}
+          </p>
+        </div>
+        <button onClick={cargar} disabled={cargando} style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 13px",background:"rgba(212,175,55,0.05)",opacity:cargando?0.6:1}}>
+          <span className={cargando?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>{cargando?"Analizando…":"Refrescar"}
+        </button>
       </div>
 
-      {/* Tarjetas resumen */}
-      <div className="stats-cards" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
-        <StatCard label="Racha sin vencidas" value={streak+"d"} sub={streak>0?"días sin tareas vencidas":"tienes tareas vencidas"} color={streak>0?"var(--green)":"var(--red)"} icon={Icons.flag}/>
-        <StatCard label="Publicados" value={published} sub="vídeos en total" icon={Icons.check}/>
-        <StatCard label="Ritmo semanal" value={avgPerWeek} sub="vídeos/semana (media 8 sem.)" color="var(--gold)" icon={Icons.chart}/>
-        <StatCard label="Producción media" value={avgProd!==null?avgProd.toFixed(1)+"d":"—"} sub={avgProd!==null?"de idea a publicado":"aún sin datos"} color="var(--purple)" icon={Icons.clock}/>
-        <StatCard label="Esta semana" value={thisWeekVideos} sub="vídeos programados" color="var(--blue)" icon={Icons.calendar}/>
-        <StatCard label="En cola" value={pendingScheduled} sub={`+ ${ideasPool} ideas sin fecha`} color="var(--orange)" icon={Icons.kanban}/>
-        <StatCard label="Tareas hechas" value={taskCompletion+"%"} sub={`${tasksDoneTotal} de ${tasksPending+tasksDoneTotal}`} color="var(--green)" icon={Icons.tasks}/>
-        <StatCard label="Checklist media" value={avgChecklist+"%"} sub="progreso de producción" color="var(--gold)" icon={Icons.check}/>
-      </div>
+      {error && (
+        <div style={{marginBottom:14,padding:"12px 14px",background:"rgba(212,175,55,0.07)",border:"1px solid var(--border-gold)",borderRadius:11,fontSize:12.5,color:"var(--text-2)",lineHeight:1.6}}>
+          {error==="conectar" ? <><button onClick={onConnect} style={{color:"var(--gold)",fontWeight:700}}>Conecta con Google</button> para analizar tu canal con datos reales.</>
+          : error==="off" ? <>Falta activar YouTube Analytics API: <a href="https://console.cloud.google.com/apis/library/youtubeanalytics.googleapis.com" target="_blank" rel="noopener" style={{color:"var(--gold)",fontWeight:600}}>habilitar</a> y refresca.</>
+          : error==="permisos" ? <><button onClick={onConnect} style={{color:"var(--gold)",fontWeight:700}}>Reconecta con Google</button> y acepta los permisos de analíticas.</>
+          : <>⚠ {error}</>}
+        </div>
+      )}
 
-      <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"3fr 2fr",gap:14,alignItems:"start"}}>
-        {/* Publicados por semana */}
-        <div style={box}>
-          <div style={boxTitle}>{Icons.chart} Vídeos publicados por semana</div>
-          <div style={{display:"flex",alignItems:"flex-end",gap:8,height:150,padding:"0 4px"}}>
-            {weeks.map((w,i)=>(
-              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,height:"100%",justifyContent:"flex-end"}}>
-                <span style={{fontSize:11,fontWeight:700,color:w.count?"var(--gold)":"var(--text-3)"}}>{w.count||""}</span>
-                <div title={`${w.count} vídeo(s)`} style={{
-                  width:"100%",maxWidth:38,borderRadius:"6px 6px 2px 2px",
-                  height:`${Math.max(4,(w.count/maxWeek)*100)}%`,
-                  background: w.count===0 ? "var(--track)" : (w.isThis?"linear-gradient(180deg,#FFD700,#D4AF37)":"linear-gradient(180deg,#D4AF37aa,#8a7320)"),
-                  boxShadow: w.count&&w.isThis?"0 0 14px rgba(212,175,55,0.35)":"none",
-                  transition:"height .4s ease"
-                }}/>
-                <span style={{fontSize:9.5,color:w.isThis?"var(--gold)":"var(--text-3)",fontWeight:w.isThis?700:400,whiteSpace:"nowrap"}}>{w.isThis?"Esta sem.":w.label}</span>
-              </div>
-            ))}
+      {datos && (
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {/* ——— KPIs comparados ——— */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+            <KPI label="Visitas" valor={nfc.format(a.views)} ahora={a.views} antes={p.views}/>
+            <KPI label="Horas vistas" valor={nfc.format(Math.round(a.min/60))} ahora={a.min} antes={p.min}/>
+            <KPI label="Suscriptores netos" valor={"+"+nf.format(a.subsUp-a.subsDown)} sub={`+${nf.format(a.subsUp)} · −${nf.format(a.subsDown)}`} ahora={a.subsUp-a.subsDown} antes={p.subsUp-p.subsDown}/>
+            <KPI label="Ingresos (reales)" valor={eur(a.rev)} ahora={a.rev} antes={p.rev}/>
+            <KPI label="Me gusta" valor={nfc.format(a.likes)} ahora={a.likes} antes={p.likes}/>
+            <KPI label="Comentarios" valor={nfc.format(a.comments)} ahora={a.comments} antes={p.comments}/>
+            <KPI label="Duración media" valor={`${Math.floor(a.dur/60)}:${String(Math.round(a.dur%60)).padStart(2,"0")}`} sub={a.pct?`${a.pct.toFixed(0)}% del vídeo visto`:null} ahora={a.dur} antes={p.dur}/>
+            <KPI label="Subs por 1.000 vistas" valor={a.views? ((a.subsUp-a.subsDown)/a.views*1000).toFixed(1) : "—"} sub="conversión a suscriptor" ahora={a.views?(a.subsUp-a.subsDown)/a.views:null} antes={p.views?(p.subsUp-p.subsDown)/p.views:null}/>
           </div>
-        </div>
 
-        {/* Donut por formato */}
-        <div style={box}>
-          <div style={boxTitle}>{Icons.tag} Reparto por formato</div>
-          {totalFmt===0 ? <div style={{color:"var(--empty)",fontSize:12,textAlign:"center",padding:"30px 0"}}>Sin vídeos todavía</div> : (
-            <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-              <svg width="130" height="130" viewBox="0 0 130 130" style={{flexShrink:0}}>
-                <circle cx="65" cy="65" r={R} fill="none" stroke="var(--track)" strokeWidth="15"/>
-                {arcs.map((a,i)=>(
-                  <circle key={i} cx="65" cy="65" r={R} fill="none" stroke={a.color} strokeWidth="15"
-                    strokeDasharray={a.dash} strokeDashoffset={a.offset} transform="rotate(-90 65 65)" strokeLinecap="butt"/>
-                ))}
-                <text x="65" y="61" textAnchor="middle" fill="var(--text)" fontSize="21" fontWeight="800" fontFamily="Sora">{totalFmt}</text>
-                <text x="65" y="78" textAnchor="middle" fill="var(--text-3)" fontSize="9.5">vídeos</text>
-              </svg>
-              <div style={{display:"flex",flexDirection:"column",gap:6,flex:1,minWidth:120}}>
-                {fmtData.slice(0,6).map(f=>(
-                  <div key={f.key} style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{width:9,height:9,borderRadius:3,background:f.color,flexShrink:0}}/>
-                    <span style={{fontSize:11.5,color:"var(--text-2)",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.label}</span>
-                    <span style={{fontSize:11.5,fontWeight:700,color:"var(--text)"}}>{f.n}</span>
-                    <span style={{fontSize:10,color:"var(--text-3)",width:32,textAlign:"right"}}>{Math.round(f.n/totalFmt*100)}%</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Pipeline de producción */}
-        <div style={box}>
-          <div style={boxTitle}>{Icons.kanban} Estado de la producción</div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {pipeline.map(p=>(
-              <div key={p.key} style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:11.5,color:"var(--text-2)",width:86,flexShrink:0}}>{p.label}</span>
-                <div style={{flex:1,height:20,background:"var(--track)",borderRadius:6,overflow:"hidden"}}>
-                  <div style={{height:"100%",width:`${(p.n/maxPipe)*100}%`,minWidth:p.n?18:0,background:`linear-gradient(90deg,${p.color}cc,${p.color}77)`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6,transition:"width .4s ease"}}>
-                    {p.n>0 && <span style={{fontSize:10.5,fontWeight:800,color:"#000"}}>{p.n}</span>}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Publicaciones por día de la semana */}
-        <div style={box}>
-          <div style={boxTitle}>{Icons.calendar} Tu día de publicar</div>
-          <div style={{display:"flex",gap:7,alignItems:"flex-end",height:110}}>
-            {DAYS.map((d,i)=>(
-              <div key={d} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5,height:"100%",justifyContent:"flex-end"}}>
-                <div title={`${dayCounts[i]} publicado(s)`} style={{
-                  width:"100%",maxWidth:30,borderRadius:5,
-                  height:`${Math.max(6,(dayCounts[i]/maxDay)*100)}%`,
-                  background: dayCounts[i]===0?"var(--track)":`rgba(212,175,55,${0.25+0.75*(dayCounts[i]/maxDay)})`,
-                  transition:"height .4s ease"
-                }}/>
-                <span style={{fontSize:10,color: dayCounts[i]===maxDay&&maxDay>0?"var(--gold)":"var(--text-3)",fontWeight:dayCounts[i]===maxDay&&maxDay>0?700:400}}>{d.slice(0,2)}</span>
-              </div>
-            ))}
-          </div>
-          <p style={{fontSize:11,color:"var(--text-3)",marginTop:10}}>Días de la semana en que más publicas (vídeos con estado «Publicado»)</p>
-        </div>
-
-        {/* Publicaciones por mes (últimos 6 meses) */}
-        <div style={box}>
-          <div style={boxTitle}>{Icons.chart} Publicaciones por mes</div>
-          <div style={{display:"flex",alignItems:"flex-end",gap:9,height:130,padding:"0 4px"}}>
-            {monthsArr.map((m,i)=>(
-              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6,height:"100%",justifyContent:"flex-end"}}>
-                <span style={{fontSize:11,fontWeight:700,color:m.count?"var(--purple)":"var(--text-3)"}}>{m.count||""}</span>
-                <div title={`${m.count} publicado(s)`} style={{
-                  width:"100%",maxWidth:40,borderRadius:"6px 6px 2px 2px",
-                  height:`${Math.max(4,(m.count/maxMonth)*100)}%`,
-                  background: m.count===0?"var(--track)":"linear-gradient(180deg,#a78bfa,#7c3aed)",
-                  transition:"height .4s ease"
-                }}/>
-                <span style={{fontSize:10,color:"var(--text-3)",textTransform:"capitalize"}}>{m.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Shorts vs Largos */}
-        <div style={box}>
-          <div style={boxTitle}>{Icons.short} Shorts vs Vídeos largos</div>
-          {totalType===0 ? <div style={{color:"var(--empty)",fontSize:12,textAlign:"center",padding:"30px 0"}}>Sin vídeos todavía</div> : (
-            <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <div style={{display:"flex",height:26,borderRadius:8,overflow:"hidden",border:"1px solid var(--border)"}}>
-                {shorts>0 && <div style={{width:`${shorts/totalType*100}%`,background:"linear-gradient(90deg,#60a5fa,#2563eb)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  <span style={{fontSize:11,fontWeight:800,color:"#fff"}}>{Math.round(shorts/totalType*100)}%</span>
-                </div>}
-                {largos>0 && <div style={{width:`${largos/totalType*100}%`,background:"linear-gradient(90deg,#D4AF37,#8a7320)",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  <span style={{fontSize:11,fontWeight:800,color:"#000"}}>{Math.round(largos/totalType*100)}%</span>
-                </div>}
-              </div>
-              <div style={{display:"flex",justifyContent:"space-around",gap:10}}>
-                <div style={{textAlign:"center"}}>
-                  <div style={{fontSize:24,fontWeight:800,fontFamily:"Sora",color:"var(--blue)"}}>{shorts}</div>
-                  <div style={{fontSize:11,color:"var(--text-3)",display:"flex",alignItems:"center",gap:5,justifyContent:"center"}}><span style={{width:9,height:9,borderRadius:3,background:"var(--blue)"}}/>Shorts</div>
-                </div>
-                <div style={{textAlign:"center"}}>
-                  <div style={{fontSize:24,fontWeight:800,fontFamily:"Sora",color:"var(--gold)"}}>{largos}</div>
-                  <div style={{fontSize:11,color:"var(--text-3)",display:"flex",alignItems:"center",gap:5,justifyContent:"center"}}><span style={{width:9,height:9,borderRadius:3,background:"var(--gold)"}}/>Largos</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Estado de las tareas */}
-        <div style={box}>
-          <div style={boxTitle}>{Icons.tasks} Estado de tus tareas</div>
-          {(tasksPending+tasksDoneTotal)===0 ? <div style={{color:"var(--empty)",fontSize:12,textAlign:"center",padding:"30px 0"}}>Sin tareas todavía</div> : (
-            <div style={{display:"flex",flexDirection:"column",gap:11}}>
-              {[
-                {label:"Completadas", n:tasksDoneTotal, color:"var(--green)"},
-                {label:"Pendientes", n:tasksPending, color:"var(--blue)"},
-                {label:"Urgentes", n:tasksUrgent, color:"var(--gold)"},
-                {label:"Vencidas", n:tasksOverdue, color:"var(--red)"},
-              ].map((r,i)=>{
-                const mx = Math.max(1, tasksPending+tasksDoneTotal);
-                return (
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
-                    <span style={{fontSize:11.5,color:"var(--text-2)",width:88,flexShrink:0}}>{r.label}</span>
-                    <div style={{flex:1,height:18,background:"var(--track)",borderRadius:5,overflow:"hidden"}}>
-                      <div style={{height:"100%",width:`${(r.n/mx)*100}%`,minWidth:r.n?16:0,background:r.color,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:6,transition:"width .4s ease"}}>
-                        {r.n>0 && <span style={{fontSize:10,fontWeight:800,color:"#000"}}>{r.n}</span>}
-                      </div>
+          {/* ——— Los dos motores: qué aporta cada tipo de contenido ——— */}
+          {mot && totV>0 && (
+            <div style={caja}>
+              <div style={tituloZona}>Tus motores · qué aporta cada tipo de contenido (28 días)</div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {[["Visitas", v=>v.views, totV, nfc.format(totV)], ["Horas vistas", v=>v.min, totM, nfc.format(Math.round(totM/60))+" h"], ["Ingresos", v=>v.rev, totR, eur(totR)]].map(([lbl, fn, tot, totTxt])=>(
+                  <div key={lbl}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,marginBottom:4}}>
+                      <span style={{fontWeight:600,color:"var(--text-2)"}}>{lbl}</span>
+                      <span style={{color:"var(--text-3)"}}>{totTxt}</span>
+                    </div>
+                    <div style={{display:"flex",height:12,borderRadius:8,overflow:"hidden",background:"var(--card)"}}>
+                      {[["shorts","#60a5fa","Shorts"],["directos","#D4AF37","Directos"],["videos","#a78bfa","Vídeos"]].map(([k,color,nombre])=>{
+                        const val = mot[k] ? fn(mot[k]) : 0;
+                        const w = tot ? val/tot*100 : 0;
+                        return w>0 ? <div key={k} title={`${nombre}: ${lbl==="Ingresos"?eur(val):nfc.format(lbl==="Horas vistas"?Math.round(val/60):val)} (${w.toFixed(0)}%)`} style={{width:w+"%",background:color,opacity:.85}}/> : null;
+                      })}
                     </div>
                   </div>
-                );
-              })}
+                ))}
+                <div style={{display:"flex",gap:14,fontSize:10.5,color:"var(--text-3)",flexWrap:"wrap"}}>
+                  <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"#60a5fa",marginRight:4}}/>Shorts</span>
+                  <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"#D4AF37",marginRight:4}}/>Directos</span>
+                  <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:"#a78bfa",marginRight:4}}/>Vídeos</span>
+                  <span style={{opacity:.85}}>Los Shorts traen el alcance; los directos, las horas y los suscriptores. Dos motores, no rivales.</span>
+                </div>
+              </div>
             </div>
           )}
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:14,alignItems:"start"}}>
+            {/* ——— Top vídeos ——— */}
+            <div style={caja}>
+              <div style={tituloZona}>Top del mes · por visitas</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {datos.top.map((t,i)=>(
+                  <div key={t.id} style={{display:"flex",alignItems:"center",gap:9,fontSize:12}}>
+                    <span style={{width:18,fontWeight:800,color: i<3?"var(--gold)":"var(--text-3)",flexShrink:0,fontFamily:"'Sora'"}}>{i+1}</span>
+                    <span style={{color:"var(--text)",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,minWidth:0}} title={t.titulo}>{t.titulo}</span>
+                    <span style={{color:"var(--text-2)",flexShrink:0,fontWeight:700}}>{nfc.format(t.views)}</span>
+                    <span style={{color:"var(--text-3)",flexShrink:0,fontSize:10.5,minWidth:52,textAlign:"right"}}>{t.rev>0?eur(t.rev):"—"}</span>
+                  </div>
+                ))}
+                {datos.top.length===0 && <div style={{fontSize:12,color:"var(--text-3)"}}>Sin datos todavía.</div>}
+              </div>
+            </div>
+
+            {/* ——— Semana tipo ——— */}
+            <div style={caja}>
+              <div style={tituloZona}>Tu semana tipo · visitas medias por día (12 semanas)</div>
+              <div style={{display:"flex",gap:8,alignItems:"flex-end",height:110}}>
+                {datos.semanaTipo.map(s=>{
+                  const esMejor = mejorDia && s.dia===mejorDia.dia;
+                  return (
+                    <div key={s.dia} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}} title={nf.format(s.media)+" visitas de media"}>
+                      <span style={{fontSize:9.5,color:esMejor?"var(--gold)":"var(--text-3)",fontWeight:600}}>{nfc.format(s.media)}</span>
+                      <div style={{width:"100%",maxWidth:32,height:Math.max(3, s.media/maxSem*78),borderRadius:5,background: esMejor?"linear-gradient(180deg,#FFD700,#D4AF37)":"var(--card-2)",border:"1px solid "+(esMejor?"transparent":"var(--border)")}}/>
+                      <span style={{fontSize:10,color:esMejor?"var(--gold)":"var(--text-3)",fontWeight:esMejor?700:400}}>{s.dia}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              {mejorDia && <div style={{fontSize:11,color:"var(--text-3)",marginTop:8}}>Tu público está más activo los <b style={{color:"var(--gold)"}}>{mejorDia.dia}</b>: guarda tus mejores Shorts para ese día.</div>}
+            </div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:14,alignItems:"start"}}>
+            {/* ——— Huecos sin Short ——— */}
+            <div style={caja}>
+              <div style={tituloZona}>Constancia · Shorts publicados por día (28 días)</div>
+              <div style={{display:"flex",gap:3,flexWrap:"wrap"}}>
+                {dias28.map(x=>(
+                  <div key={x.k} title={x.k+" · "+x.n+" Short(s)"} style={{
+                    width:20,height:20,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",
+                    fontSize:8.5,fontWeight:700,
+                    background: x.n>0 ? `rgba(74,222,128,${Math.min(0.18+x.n*0.18,0.75)})` : (x.k<hoyKey2?"rgba(248,113,113,0.25)":"var(--card)"),
+                    color: x.n>0?"var(--text)":"var(--text-3)",
+                    border:"1px solid var(--border)"
+                  }}>{x.n>0?x.n:""}</div>
+                ))}
+              </div>
+              <div style={{fontSize:11,color: huecos>3?"var(--red)":"var(--text-3)",marginTop:9,lineHeight:1.5}}>
+                {huecos===0
+                  ? "✅ Sin días en blanco: el feed no te olvida."
+                  : `${huecos} día${huecos!==1?"s":""} sin Short en 28 días. Cada hueco enfría el feed: guarda Shorts de reserva para no fallar ninguno.`}
+              </div>
+            </div>
+
+            {/* ——— Ritmo de publicación (8 semanas) ——— */}
+            <div style={caja}>
+              <div style={tituloZona}>Ritmo de publicación · vídeos por semana</div>
+              <div style={{display:"flex",gap:8,alignItems:"flex-end",height:110}}>
+                {weeks.map((w,i)=>(
+                  <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}} title={w.count+" publicados"}>
+                    <span style={{fontSize:9.5,color:w.isThis?"var(--gold)":"var(--text-3)",fontWeight:600}}>{w.count}</span>
+                    <div style={{width:"100%",maxWidth:30,height:Math.max(3, w.count/maxWeek*78),borderRadius:5,background: w.isThis?"linear-gradient(180deg,#FFD700,#D4AF37)":"var(--card-2)",border:"1px solid "+(w.isThis?"transparent":"var(--border)")}}/>
+                    <span style={{fontSize:9,color:w.isThis?"var(--gold)":"var(--text-3)"}}>{w.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div style={{fontSize:10.5,color:"var(--text-3)"}}>Los ingresos de estas estadísticas son los reales que reporta YouTube para periodos cerrados. RPM de Shorts del periodo: {a.views && mot && mot.shorts && mot.shorts.views ? (mot.shorts.rev/mot.shorts.views*1000).toLocaleString("es-ES",{maximumFractionDigits:3})+" €/1.000" : "—"}.</div>
         </div>
-      </div>
+      )}
+
+      {!datos && !error && cargando && (
+        <div style={{textAlign:"center",padding:"60px 0",color:"var(--text-3)",fontSize:13}}>Analizando tu canal…</div>
+      )}
     </div>
   );
 }
 
-/* ============================ PAPELERA ============================ */
 function TrashView({trash, onRestore, onDeleteForever, onEmpty, formats}) {
   const fmtDate = ts => {
     if(!ts) return "";
@@ -6960,7 +7001,7 @@ function App() {
         {view==="calendar" && <CalendarView videos={videos} onOpen={setEditing} onDrop={dropOnDate} onDragStart={onDragStart} onDragEnd={onDragEnd} weekOffset={weekOffset} setWeekOffset={setWeekOffset} calView={calView} setCalView={setCalView} onQuickAdd={quickAdd} onUnassign={unassignVideo} formats={formats}/>}
         {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
         {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} dailyArchive={dailyArchive} toast={toast} onTaskDeleted={(id)=>addTomb(id,"task")} onListDeleted={(id)=>addTomb(id,"list")} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
-        {view==="stats" && <StatsView videos={videos} taskLists={taskLists} formats={formats}/>}
+        {view==="stats" && <StatsView videos={videos} goals={goals} onConnect={connectGoogle}/>}
         {view==="scheduled" && <ScheduledView videos={videos} trashYtIds={trash.map(t=>t.youtubeId).filter(Boolean)} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} onAddVideos={(nuevos)=>setVideos(vs=>[...vs, ...nuevos])} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast} goals={goals} setGoals={setGoals}/>}
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
