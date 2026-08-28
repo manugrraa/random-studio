@@ -78,8 +78,11 @@ ipcMain.handle("studio-oauth", (ev, url, redirect, opts) => new Promise((resolve
   };
   const check = (u) => {
     if (u && typeof u === "string" && u.startsWith(redirect)) {
-      const i = u.indexOf("#");
-      finish(i >= 0 ? u.slice(i) : "");
+      // Devolver el fragmento (#access_token, flujo antiguo) o la query (?code, flujo nuevo)
+      const h = u.indexOf("#");
+      if (h >= 0) { finish(u.slice(h)); return true; }
+      const q = u.indexOf("?");
+      finish(q >= 0 ? u.slice(q) : "");
       return true;
     }
     return false;

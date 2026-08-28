@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.9.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -3941,7 +3941,7 @@ function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAddVideos,
       else toast("Estado actualizado");
     } catch(e){
       toast("❌ "+e.message);
-      if(/caducada|conectado/i.test(e.message)) ytClearTokens();
+      if(/caducada|conectado/i.test(e.message)) ytExpireAccess();
     } finally { setChecking(false); }
   };
 
@@ -4836,9 +4836,16 @@ function ytSaveTokens(tok){
 function ytClearTokens(){
   try { localStorage.removeItem(YT_TOKEN_KEY); } catch(e){}
 }
+// Caduca solo el access token pero CONSERVA el refresh token: la sesión no se pierde,
+// simplemente se renovará en la siguiente llamada
+function ytExpireAccess(){
+  const t = ytGetTokens();
+  if(t && t.refresh_token){ ytSaveTokens({ ...t, expires_at: 0 }); }
+  else ytClearTokens();
+}
 function ytIsConnected(){
   const t = ytGetTokens();
-  return !!(t && t.access_token);
+  return !!(t && (t.access_token || t.refresh_token));
 }
 // ¿El accessToken sigue vigente? (con margen de 2 min)
 function ytTokenValid(){
@@ -4846,13 +4853,50 @@ function ytTokenValid(){
   return !!(t && t.access_token && t.expires_at && Date.now() < t.expires_at - 120000);
 }
 
-// Inicia el flujo OAuth de Google usando el "token flow" del lado cliente (implicit),
-// que no necesita backend para autenticarse; el backend solo se usa para subir.
+/* ——— Sesión PERMANENTE: flujo con código + refresh token ———
+   Te logueas UNA vez; el backend guarda el client_secret y canjea/renueva.
+   El refresh token vive en este dispositivo hasta que pulses Desconectar. */
+async function ytExchangeCode(code){
+  try {
+    const res = await fetch(YT_BACKEND + "/api/auth/exchange", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ code, redirectUri: YT_REDIRECT })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || !data.success || !data.access_token) return false;
+    const prev = ytGetTokens() || {};
+    ytSaveTokens({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token || prev.refresh_token || null,
+      expires_at: Date.now() + (data.expires_in||3600)*1000
+    });
+    return true;
+  } catch(e){ return false; }
+}
+async function ytRefreshWithToken(){
+  const t = ytGetTokens();
+  if(!t || !t.refresh_token) return false;
+  try {
+    const res = await fetch(YT_BACKEND + "/api/auth/refresh", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ refreshToken: t.refresh_token })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(res.status===401){ ytClearTokens(); return false; } // refresh token revocado de verdad
+    if(!res.ok || !data.success || !data.access_token) return false;
+    ytSaveTokens({ ...t, access_token: data.access_token, expires_at: Date.now() + (data.expires_in||3600)*1000 });
+    return true;
+  } catch(e){ return false; }
+}
+
+// Inicia el login de Google con flujo de CÓDIGO (access_type=offline → refresh token
+// permanente). El backend canjea el código; la app nunca ve el client_secret.
 function ytStartAuth(){
   const params = new URLSearchParams({
     client_id: YT_CLIENT_ID,
     redirect_uri: YT_REDIRECT,
-    response_type: "token",
+    response_type: "code",
+    access_type: "offline",
     scope: YT_SCOPES,
     include_granted_scopes: "true",
     prompt: "consent",
@@ -4860,11 +4904,20 @@ function ytStartAuth(){
   });
   const authUrl = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
   if(window.studioFS && window.studioFS.oauth){
-    window.studioFS.oauth(authUrl, YT_REDIRECT, {}).then(hash=>{
-      const h = new URLSearchParams(String(hash||"").replace(/^#/,""));
-      const at = h.get("access_token");
+    window.studioFS.oauth(authUrl, YT_REDIRECT, {}).then(async ret=>{
+      const r = String(ret||"");
+      // Flujo nuevo: vuelve con ?code=...
+      const q = new URLSearchParams(r.replace(/^[?#]/,""));
+      const code = q.get("code");
+      if(code){
+        const ok = await ytExchangeCode(code);
+        if(ok) window.location.reload();
+        return;
+      }
+      // Compatibilidad con el flujo antiguo (#access_token=...)
+      const at = q.get("access_token");
       if(at){
-        ytSaveTokens({ access_token: at, expires_at: Date.now() + (parseInt(h.get("expires_in")||"3600",10))*1000 });
+        ytSaveTokens({ access_token: at, expires_at: Date.now() + (parseInt(q.get("expires_in")||"3600",10))*1000 });
         window.location.reload();
       }
     });
@@ -4937,6 +4990,9 @@ function ytSilentRefresh(){
 async function ytEnsureToken(){
   if(ytTokenValid()) return true;
   if(!ytIsConnected()) return false;
+  // Con refresh token la renovación es silenciosa y no caduca nunca
+  if(await ytRefreshWithToken()) return true;
+  // Respaldo del flujo antiguo (iframe con prompt=none)
   return await ytSilentRefresh();
 }
 
@@ -4973,7 +5029,7 @@ async function ytSearchDrive(title){
     pageSize: "10"
   });
   const res = await fetch(url, { headers: { Authorization: "Bearer " + t.access_token } });
-  if(res.status === 401){ ytClearTokens(); throw new Error("Sesión de Google caducada, vuelve a conectar"); }
+  if(res.status === 401){ ytExpireAccess(); throw new Error("Sesión de Google caducada, vuelve a conectar"); }
   if(!res.ok) throw new Error("Error al buscar en Drive ("+res.status+")");
   const data = await res.json();
   return data.files || [];
@@ -5004,7 +5060,7 @@ async function ytListPlaylists(){
     part: "snippet", mine: "true", maxResults: "50"
   });
   const res = await fetch(url, { headers: ytAuthHeader() });
-  if(res.status===401){ ytClearTokens(); throw new Error("Sesión de Google caducada"); }
+  if(res.status===401){ ytExpireAccess(); throw new Error("Sesión de Google caducada"); }
   if(!res.ok) throw new Error("Error al leer playlists ("+res.status+")");
   const data = await res.json();
   return (data.items||[]).map(p=>({ id:p.id, title:p.snippet?.title||"(sin título)" }));
@@ -5023,7 +5079,7 @@ async function ytGetChannelStats(){
     const ok = await ytSilentRefresh();
     if(ok) res = await doFetch();
   }
-  if(res.status===401){ ytClearTokens(); throw new Error("Sesión de Google caducada"); }
+  if(res.status===401){ ytExpireAccess(); throw new Error("Sesión de Google caducada"); }
   if(!res.ok) throw new Error("Error al leer el canal ("+res.status+")");
   const data = await res.json();
   const ch = data.items?.[0];
@@ -6681,24 +6737,38 @@ function App() {
   // Al volver del login de Google (redirect con #access_token), guardar el token
   // y reabrir el modal de subida del vídeo que estábamos subiendo.
   useEffect(()=>{
-    const captured = ytCaptureAuthFromHash();
-    if(captured){
-      toast("✅ Conectado con Google");
-      try {
-        const pendingId = sessionStorage.getItem("rds_yt_pending");
-        const ret = sessionStorage.getItem("rds_yt_return");
-        if(pendingId){
-          sessionStorage.removeItem("rds_yt_pending");
-          setTimeout(()=>{
-            const vid = (stateRef.current.videos||[]).find(v=>v.id===pendingId);
-            if(vid){ setView("calendar"); setYtUpload(vid); }
-          }, 300);
-        } else if(ret){
-          sessionStorage.removeItem("rds_yt_return");
-          setView(ret);
-        }
-      } catch(e){}
-    }
+    (async ()=>{
+      let captured = ytCaptureAuthFromHash();
+      // Flujo nuevo (?code=...): canjear en el backend por tokens permanentes
+      if(!captured){
+        try {
+          const q = new URLSearchParams(window.location.search);
+          const code = q.get("code");
+          if(code){
+            captured = await ytExchangeCode(code);
+            history.replaceState(null, "", window.location.pathname);
+            if(!captured) toast("❌ No se pudo completar el login de Google");
+          }
+        } catch(e){}
+      }
+      if(captured){
+        toast("✅ Conectado con Google · la sesión ya no caduca");
+        try {
+          const pendingId = sessionStorage.getItem("rds_yt_pending");
+          const ret = sessionStorage.getItem("rds_yt_return");
+          if(pendingId){
+            sessionStorage.removeItem("rds_yt_pending");
+            setTimeout(()=>{
+              const vid = (stateRef.current.videos||[]).find(v=>v.id===pendingId);
+              if(vid){ setView("calendar"); setYtUpload(vid); }
+            }, 300);
+          } else if(ret){
+            sessionStorage.removeItem("rds_yt_return");
+            setView(ret);
+          }
+        } catch(e){}
+      }
+    })();
   },[]);
 
   // ARCHIVADO DIARIO (corte a las 6:00): mueve las tareas diarias hechas ayer al archivo
