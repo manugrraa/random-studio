@@ -16,7 +16,10 @@ if (process.env.STUDIO_DEBUG) {
   });
 }
 
-const gotLock = app.requestSingleInstanceLock();
+// En modo captura (pruebas) se usa una carpeta de datos aparte: nunca toca sus
+// datos ni choca con su Studio abierto
+if (process.env.STUDIO_CAPTURA) app.setPath("userData", path.join(process.env.STUDIO_CAPTURA, "_datos_prueba"));
+const gotLock = process.env.STUDIO_CAPTURA ? true : app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 
 let mainWindow = null;
@@ -261,6 +264,74 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
   return { ok: true };
 });
 
+// ——— EL CLON DENTRO DE STUDIO (v3.1) ———
+// clon.py es la entrada única de la inteligencia del clon: directos, clips y
+// montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
+// largas (preparar, clipear, montar) van de una en una y mandan su progreso.
+const CLON_PY = () => path.join(CLON_DIR, "clon.py");
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar"]);
+const TAREAS = new Set(["preparar", "clipear", "montar"]);
+let tarea = null;          // { proc, args, eventos: [] }
+
+function leerEventos(texto) {
+  const out = [];
+  for (const l of String(texto).split("\n")) { const s = l.trim(); if (s.startsWith("{")) { try { out.push(JSON.parse(s)); } catch (x) {} } }
+  return out;
+}
+
+ipcMain.handle("clon-consultar", async (e, args) => {
+  if (!Array.isArray(args) || !CONSULTAS.has(args[0]) || !args.every(a => typeof a === "string")) return { error: "Orden no válida" };
+  if (!fs.existsSync(CLON_PY())) return { error: "No encuentro " + CLON_PY() };
+  return await new Promise(resolve => {
+    const p = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+    let out = "", err = "";
+    p.stdout.on("data", d => out += d); p.stderr.on("data", d => err += d);
+    p.on("error", x => resolve({ error: x.message }));
+    p.on("close", code => {
+      const eventos = leerEventos(out);
+      const fallo = eventos.find(x => x.evento === "error");
+      resolve(code === 0 && !fallo ? { eventos } : { eventos, error: (fallo && fallo.mensaje) || err.slice(-400) || ("código " + code) });
+    });
+  });
+});
+
+ipcMain.handle("clon-tarea", async (e, args) => {
+  if (tarea) return { error: "Ya hay una tarea del clon en marcha: " + tarea.args.slice(0, 2).join(" ") };
+  if (!Array.isArray(args) || !TAREAS.has(args[0]) || !args.every(a => typeof a === "string")) return { error: "Tarea no válida" };
+  const wc = e.sender;
+  const proc = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+  tarea = { proc, args, eventos: [], inicio: Date.now() };
+  const enviar = ev => { tarea && (tarea.eventos.push(ev), tarea.eventos.length > 400 && tarea.eventos.shift()); try { wc.send("clon-progreso", ev); } catch (x) {} };
+  let resto = "", err = "";
+  proc.stdout.on("data", d => { resto += d; const ls = resto.split("\n"); resto = ls.pop(); leerEventos(ls.join("\n")).forEach(enviar); });
+  proc.stderr.on("data", d => { err += d; if (err.length > 20000) err = err.slice(-10000); });
+  proc.on("close", code => {
+    leerEventos(resto).forEach(enviar);
+    enviar({ evento: "cerrado", codigo: code, error: code ? err.slice(-500) : "", tarea: args[0] });
+    tarea = null;
+  });
+  return { ok: true };
+});
+
+ipcMain.handle("clon-tarea-estado", async () => tarea ? { activa: true, args: tarea.args, eventos: tarea.eventos, inicio: tarea.inicio } : { activa: false });
+
+ipcMain.handle("clon-cancelar", async () => {
+  // el clon lanza ffmpeg, Whisper y Claude: se mata el árbol entero
+  if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"]); } catch (x) {} }
+  return { ok: true };
+});
+
+ipcMain.handle("clon-abrir", async (e, ruta) => {
+  if (ruta && ruta.startsWith(CLON_DIR) && fs.existsSync(ruta)) await shell.openPath(ruta);
+  return { ok: true };
+});
+
+ipcMain.handle("clon-elegir-carpeta", async () => {
+  const r = await dialog.showOpenDialog(mainWindow || undefined, { properties: ["openDirectory"], title: "Carpeta de los VODs",
+    defaultPath: path.join(CLON_DIR, "VODs") });
+  return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
+});
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 900,
@@ -284,6 +355,28 @@ function createWindow() {
     if (!u.startsWith("file:")) { e.preventDefault(); if (/^https?:/i.test(u)) shell.openExternal(u); }
   });
   mainWindow.on("closed", () => { mainWindow = null; });
+  // STUDIO_CAPTURA=carpeta: abre cada pestaña de STUDIO_PESTANAS ("Clips,Directos"),
+  // guarda una captura de cada una y se cierra (pruebas del clon sin tocar la pantalla)
+  if (process.env.STUDIO_CAPTURA) {
+    const dir = process.env.STUDIO_CAPTURA;
+    const pestanas = (process.env.STUDIO_PESTANAS || "Directos,Clips").split(",");
+    const esperar = ms => new Promise(r => setTimeout(r, ms));
+    mainWindow.webContents.once("did-finish-load", async () => {
+      await esperar(5000);
+      for (const p of pestanas) {
+        // "~texto" = el primer botón que CONTIENE ese texto (una tarjeta de clip)
+        const contiene = p.startsWith("~"), txt = contiene ? p.slice(1) : p;
+        await mainWindow.webContents.executeJavaScript(`(()=>{const t=${JSON.stringify(txt)};const b=[...document.querySelectorAll("button")].find(x=>${contiene}?x.textContent.includes(t):x.textContent.trim()===t);b&&b.click();return !!b;})()`);
+        await esperar(Number(process.env.STUDIO_ESPERA || 9000));
+        const v = await mainWindow.webContents.executeJavaScript(`(()=>{const v=document.querySelector("video");return v?{listo:v.readyState,dur:v.duration,err:v.error&&v.error.code}:null;})()`);
+        if (v) console.log("[captura] video", JSON.stringify(v));
+        const img = await mainWindow.webContents.capturePage();
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, "studio_" + txt.replace(/[^\w]+/g, "_") + ".png"), img.toPNG());
+      }
+      app.quit();
+    });
+  }
 }
 
 app.on("second-instance", () => {

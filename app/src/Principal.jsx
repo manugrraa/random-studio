@@ -2,6 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { AgentView } from "./agente";
 import { RankingView } from "./ranking";
+import { DirectosView, ClipsView } from "./clon";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { APP_VERSION, DEFAULT_FORMATS, Icons, SEED, STATUSES, clone, dnd, makeVideo, setIdBase, uid, useToast } from "./base";
 import { DEFAULT_TASK_LISTS, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudFecha, cloudLoad, cloudSave, cloudSaveUrgente, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
@@ -758,6 +759,8 @@ export function App() {
       return a + l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length;
     },0)},
     {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true},
+    {id:"directos", label:"Directos", icon:Icons.live, primary:true},
+    {id:"clips", label:"Clips", icon:Icons.scissors, primary:true},
     {id:"ranking", label:"Ranking", icon:Icons.chart, primary:true},
     {id:"agent", label:"Agente", icon:Icons.sparkles},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},
@@ -1210,6 +1213,8 @@ export function App() {
         {view==="stats" && <StatsView videos={videos} goals={goals} onConnect={connectGoogle}/>}
         {view==="scheduled" && <ScheduledView videos={videos} trashYtIds={trash.map(t=>t.youtubeId).filter(Boolean)} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} onAddVideos={(nuevos)=>setVideos(vs=>[...vs, ...nuevos])} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast} goals={goals} setGoals={setGoals}/>}
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
+        {view==="directos" && <DirectosView toast={toast}/>}
+        {view==="clips" && <ClipsView toast={toast}/>}
         {view==="ranking" && <RankingView toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
         {view==="config" && <ConfigView goals={goals} setGoals={setGoals} theme={theme} setTheme={setTheme} cardsExpanded={cardsExpanded} setCardsExpanded={setCardsExpanded} onConnect={connectGoogle} onExport={exportData} onImport={importData} onReset={resetAll} toast={toast}/>}

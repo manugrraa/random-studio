@@ -22,6 +22,18 @@ contextBridge.exposeInMainWorld("studioFS", {
     ipcRenderer.on("ranking-progreso", h);
     return () => ipcRenderer.removeListener("ranking-progreso", h);
   },
+  // El clon dentro de Studio (v3.1): directos, clips y montaje sin CapCut
+  clonConsultar: (args) => ipcRenderer.invoke("clon-consultar", args),
+  clonTarea: (args) => ipcRenderer.invoke("clon-tarea", args),
+  clonTareaEstado: () => ipcRenderer.invoke("clon-tarea-estado"),
+  clonCancelar: () => ipcRenderer.invoke("clon-cancelar"),
+  clonAbrir: (ruta) => ipcRenderer.invoke("clon-abrir", ruta),
+  clonElegirCarpeta: () => ipcRenderer.invoke("clon-elegir-carpeta"),
+  onClonProgreso: (cb) => {
+    const h = (e, d) => cb(d);
+    ipcRenderer.on("clon-progreso", h);
+    return () => ipcRenderer.removeListener("clon-progreso", h);
+  },
   onUploadProgress: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("studio-upload-progress", h);
