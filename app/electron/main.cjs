@@ -234,6 +234,7 @@ ipcMain.handle("ranking-analizar", async (e, opts) => {
   const o = opts || {};
   const args = ["analizar", ...((o.numeros || []).map(String)), "--paralelo", String(o.paralelo || 3)];
   if (o.todo) args.push("--todo");
+  if (["claude-opus-5-5", "claude-sonnet-5-5"].includes(o.modelo)) args.push("--modelo", o.modelo);
   const wc = e.sender;
   rankingProc = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
   let resto = "";

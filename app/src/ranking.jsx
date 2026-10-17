@@ -9,6 +9,8 @@ import { Icons } from "./base";
 
 const TEMA = { famoso:"youtuber conocido", torneo:"torneo", pregunta:"pregunta", caja:"cajas",
   baile:"baile", sub:"suscriptor", serie:"serie", hacker:"hackers", derrota:"derrota" };
+// v3.0.1: él decide con qué modelo se analiza (Opus por defecto)
+const MODELOS = [["claude-opus-5-5","Opus 5.5","más preciso"],["claude-sonnet-5-5","Sonnet 5.5","gasta menos límite"]];
 const PARTES = [["historia","Historia"],["emocion","Emoción"],["arranque","Arranque"],["duracion","Duración"],["ritmo","Ritmo"],["formato","Formato"]];
 
 const colorNota = n => n>=8.5 ? "var(--gold)" : n>=7 ? "var(--text)" : "var(--text-3)";
@@ -32,6 +34,7 @@ function Fila({ x, abierto, onToggle }) {
         <span style={{minWidth:0}}>
           <span style={{display:"block",fontWeight:650,fontSize:14,overflowWrap:"anywhere"}}>{x.n} · {x.titulo}</span>
           <span style={{display:"block",fontSize:12.5,color:"var(--text-2)",marginTop:3,overflowWrap:"anywhere"}}>{x.por_que}</span>
+          {x.modelo && <span style={{display:"block",fontSize:11,color:"var(--text-3)",marginTop:3}}>{x.modelo==="claude-opus-5-5"?"Analizado con Opus 5.5":x.modelo==="claude-sonnet-5-5"?"Analizado con Sonnet 5.5":x.modelo}</span>}
           {x.aviso && <span style={{display:"block",fontSize:12,color:"var(--red)",marginTop:4}}>⚠ {x.aviso}</span>}
         </span>
         <span style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,fontSize:11.5,color:"var(--text-3)"}}>
@@ -67,6 +70,9 @@ export function RankingView({ toast }) {
   const [abierto, setAbierto] = useState(null);
   const [filtro, setFiltro] = useState("todos");
   const [q, setQ] = useState("");
+  const [modelo, setModelo] = useState(()=>{ try { return localStorage.getItem("rds_ranking_modelo")||"claude-opus-5-5"; } catch(e){ return "claude-opus-5-5"; } });
+  useEffect(()=>{ try { localStorage.setItem("rds_ranking_modelo", modelo); } catch(e){} },[modelo]);
+  const nombreModelo = (MODELOS.find(m=>m[0]===modelo)||MODELOS[0])[1];
 
   const cargar = async () => {
     if(!enPC) return;
@@ -91,7 +97,7 @@ export function RankingView({ toast }) {
   },[]);
 
   const analizar = async (todo) => {
-    const r = await window.studioFS.rankingAnalizar({ todo });
+    const r = await window.studioFS.rankingAnalizar({ todo, modelo });
     if(r.error) toast && toast(r.error); else setProg({hechos:0,total:0});
   };
 
@@ -113,7 +119,7 @@ export function RankingView({ toast }) {
           <h2 style={{fontSize:20,fontWeight:700}}>Ranking de Shorts</h2>
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
             Los Shorts Listos ordenados por su posibilidad de hacerse virales: sube primero los de arriba.
-            Claude Opus 5.5 valora la historia y la emoción; lo demás se mide en cada vídeo con los datos reales de tu canal.
+            Claude (Opus o Sonnet, tú eliges) valora la historia y la emoción; lo demás se mide en cada vídeo con los datos reales de tu canal.
           </p>
         </div>
         {enPC && (
@@ -121,6 +127,12 @@ export function RankingView({ toast }) {
             {prog
               ? <button onClick={()=>window.studioFS.rankingCancelar()} style={boton(false)}>Detener análisis</button>
               : <>
+                  <div role="group" aria-label="Modelo" title="Con qué modelo de Claude se analiza" style={{display:"flex",border:"1px solid var(--border)",borderRadius:10,overflow:"hidden"}}>
+                    {MODELOS.map(([id,nom,desc])=>(
+                      <button key={id} onClick={()=>setModelo(id)} title={desc} style={{fontSize:12.5,fontWeight:600,padding:"8px 12px",
+                        color: modelo===id?"var(--gold)":"var(--text-3)", background: modelo===id?"rgba(212,175,55,0.12)":"transparent"}}>{nom}</button>
+                    ))}
+                  </div>
                   <button onClick={()=>analizar(false)} disabled={!pendientes} style={{...boton(!!pendientes),opacity:pendientes?1:.5}}>
                     {pendientes ? `Analizar ${pendientes} nuevo${pendientes!==1?"s":""}` : "Todo analizado"}
                   </button>
@@ -140,7 +152,7 @@ export function RankingView({ toast }) {
       {prog && (
         <div style={{padding:"12px 16px",border:"1px solid var(--border)",borderRadius:12,background:"var(--bg-2)"}}>
           <div style={{fontSize:13,color:"var(--text-2)"}}>
-            Analizando con Claude Opus 5.5… {prog.total ? `${prog.hechos} de ${prog.total}` : "preparando"}
+            Analizando con Claude {nombreModelo}… {prog.total ? `${prog.hechos} de ${prog.total}` : "preparando"}
             <span style={{color:"var(--text-3)"}}> · cada Short tarda entre 30 s y 1 min</span>
           </div>
           <Barra v={prog.total ? prog.hechos/prog.total*10 : 0}/>
