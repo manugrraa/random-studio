@@ -602,7 +602,8 @@ export async function ytListUploadsFull(max){
   const uploads = chData.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
   if(!uploads) return [];
   // 2. Últimos N ids del playlist (paginado: con muchos programados, 50 se quedaba corto)
-  const limite = Math.min(max||150, 200);
+  // v3: sin tope de 200 cuando se pide todo el historial (el canal tiene >700 vídeos)
+  const limite = max===Infinity ? Infinity : Math.min(max||150, 200);
   const ids = [];
   let pageToken = "";
   while(ids.length < limite){

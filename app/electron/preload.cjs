@@ -12,6 +12,16 @@ contextBridge.exposeInMainWorld("studioFS", {
   pickVideo: () => ipcRenderer.invoke("studio-pick-video"),
   scanVideos: (dir) => ipcRenderer.invoke("studio-scan-videos", dir),
   ytUpload: (args) => ipcRenderer.invoke("studio-yt-upload", args),
+  // Ranking de Shorts (v3): lo calcula el clon en el PC con Claude Opus
+  rankingDatos: () => ipcRenderer.invoke("ranking-datos"),
+  rankingAnalizar: (opts) => ipcRenderer.invoke("ranking-analizar", opts || {}),
+  rankingCancelar: () => ipcRenderer.invoke("ranking-cancelar"),
+  rankingAbrir: (carpeta) => ipcRenderer.invoke("ranking-abrir", carpeta),
+  onRankingProgreso: (cb) => {
+    const h = (e, d) => cb(d);
+    ipcRenderer.on("ranking-progreso", h);
+    return () => ipcRenderer.removeListener("ranking-progreso", h);
+  },
   onUploadProgress: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("studio-upload-progress", h);

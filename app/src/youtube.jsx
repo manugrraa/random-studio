@@ -760,7 +760,12 @@ export function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAdd
       // ——— B) IMPORTAR vídeos subidos directamente en YouTube (no desde la app) ———
       let imported = 0;
       try {
-        const uploads = await ytListUploadsFull(150);
+        // v3: la primera vez se trae TODO el historial del canal (antes solo los 150
+        // últimos: el Studio conocía 160 de sus 537 Shorts); luego, los 150 últimos
+        let completo = false;
+        try { completo = localStorage.getItem("rds_import_completo")==="1"; } catch(e){}
+        const uploads = await ytListUploadsFull(completo ? 150 : Infinity);
+        if(!completo){ try { localStorage.setItem("rds_import_completo","1"); } catch(e){} }
         const known = new Set([
           ...videos.map(v=>v.youtubeId).filter(Boolean),
           ...(trashYtIds||[])
@@ -1392,4 +1397,4 @@ export function TrashView({trash, onRestore, onDeleteForever, onEmpty, formats})
   );
 }
 
-/* ============================ STAT STRIP ============================ */
+/* ============================ STAT STRIP ============================ */

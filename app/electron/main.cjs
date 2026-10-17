@@ -42,15 +42,31 @@ ipcMain.on("studio-load", (e) => {
   catch (err) { e.returnValue = null; }
 });
 
-ipcMain.on("studio-save", (e, txt) => {
+// Los fallos de guardado se apuntan aquí en vez de tragárselos (v3: datos.json
+// llevaba sin actualizarse desde el 23/8 mientras las copias diarias sí se hacían)
+function apuntarError(donde, err) {
   try {
-    if (typeof txt !== "string") return;
+    fs.appendFileSync(path.join(dataDir(), "errores.log"),
+      new Date().toISOString() + " " + donde + ": " + (err && (err.code || err.message) || err) + "\n");
+  } catch (e) {}
+}
+
+ipcMain.on("studio-save", (e, txt) => {
+  if (typeof txt !== "string") return;
+  try {
     fs.mkdirSync(dataDir(), { recursive: true });
     const f = dataFile();
     fs.writeFileSync(f + ".tmp", txt);
-    fs.renameSync(f + ".tmp", f);
-    copiaDiaria(txt);
-  } catch (err) {}
+    // en Windows el antivirus o el indexador pueden tener el .tmp abierto un
+    // instante (EPERM/EBUSY): se reintenta y, si no, se escribe directo
+    let ok = false;
+    for (let i = 0; i < 5 && !ok; i++) {
+      try { fs.renameSync(f + ".tmp", f); ok = true; }
+      catch (err) { if (i === 4) apuntarError("renombrar", err); else { const t = Date.now() + 60; while (Date.now() < t) {} } }
+    }
+    if (!ok) { fs.writeFileSync(f, txt); try { fs.unlinkSync(f + ".tmp"); } catch (x) {} }
+  } catch (err) { apuntarError("guardar", err); }
+  copiaDiaria(txt);
 });
 
 ipcMain.on("studio-clear", () => {
@@ -184,6 +200,64 @@ ipcMain.handle("studio-yt-upload", async (e, args) => {
     stream.on("error", err => { try { req.destroy(err); } catch (x) {} reject(err); });
     stream.pipe(req);
   });
+});
+
+// ——— RANKING DE SHORTS (v3) ———
+// Lo calcula ranking_studio.py en la carpeta del clon: mide cada Short de
+// "Shorts Listos" y Claude Opus 5.5 (su Claude Code del PC) pone la parte
+// editorial. Aquí solo se lanza y se lee.
+const { spawn } = require("child_process");
+const CLON_DIR = process.env.RANDOMCLON_DIR || "E:\\A RdeRandom\\RandomClon";
+const RANKING_PY = () => path.join(CLON_DIR, "ranking_studio.py");
+let rankingProc = null;
+
+function correrPython(args) {
+  return new Promise((resolve, reject) => {
+    const p = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+    let out = "", err = "";
+    p.stdout.on("data", d => out += d); p.stderr.on("data", d => err += d);
+    p.on("error", reject);
+    p.on("close", code => code === 0 ? resolve(out) : reject(new Error((err || out).slice(-400) || ("código " + code))));
+  });
+}
+
+ipcMain.handle("ranking-datos", async () => {
+  if (!fs.existsSync(RANKING_PY())) return { error: "No encuentro " + RANKING_PY() };
+  try {
+    const [lista, ranking] = await Promise.all([correrPython(["lista"]), correrPython(["ranking"])]);
+    return { lista: JSON.parse(lista), ranking: JSON.parse(ranking), analizando: !!rankingProc };
+  } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.handle("ranking-analizar", async (e, opts) => {
+  if (rankingProc) return { error: "Ya hay un análisis en marcha" };
+  const o = opts || {};
+  const args = ["analizar", ...((o.numeros || []).map(String)), "--paralelo", String(o.paralelo || 3)];
+  if (o.todo) args.push("--todo");
+  const wc = e.sender;
+  rankingProc = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+  let resto = "";
+  rankingProc.stdout.on("data", d => {
+    resto += d; const lineas = resto.split("\n"); resto = lineas.pop();
+    for (const l of lineas) { try { wc.send("ranking-progreso", JSON.parse(l)); } catch (x) {} }
+  });
+  let err = "";
+  rankingProc.stderr.on("data", d => err += d);
+  rankingProc.on("close", code => {
+    rankingProc = null;
+    try { wc.send("ranking-progreso", { evento: "cerrado", codigo: code, error: code ? err.slice(-400) : "" }); } catch (x) {}
+  });
+  return { ok: true };
+});
+
+ipcMain.handle("ranking-cancelar", async () => {
+  if (rankingProc) { try { rankingProc.kill(); } catch (x) {} }
+  return { ok: true };
+});
+
+ipcMain.handle("ranking-abrir", async (e, carpeta) => {
+  if (carpeta && carpeta.startsWith(CLON_DIR) && fs.existsSync(carpeta)) await shell.openPath(carpeta);
+  return { ok: true };
 });
 
 function createWindow() {

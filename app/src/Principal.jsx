@@ -1,6 +1,7 @@
 import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { AgentView } from "./agente";
+import { RankingView } from "./ranking";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { APP_VERSION, DEFAULT_FORMATS, Icons, SEED, STATUSES, clone, dnd, makeVideo, setIdBase, uid, useToast } from "./base";
 import { DEFAULT_TASK_LISTS, SUPABASE_KEY, SUPABASE_URL, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudLoad, cloudSave, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
@@ -794,12 +795,15 @@ export function App() {
       return a + l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length;
     },0)},
     {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true},
+    {id:"ranking", label:"Ranking", icon:Icons.chart, primary:true},
     {id:"agent", label:"Agente", icon:Icons.sparkles},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},
     {id:"config", label:"Configuración", icon:Icons.gear},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
   ];
-  const primaryTabs = tabs.filter(t=>t.primary);
+  // v3: arriba van las principales y, si estás en otra, también esa (resaltada),
+  // para que siempre se vea dónde estás
+  const primaryTabs = tabs.filter(t=>t.primary || t.id===view);
 
   // Registro del Service Worker + permiso al arrancar
   // Inicia la conexión con Google desde la vista de YouTube
@@ -1205,7 +1209,7 @@ export function App() {
               }}>{Icons.cloud}<span>Sincronización</span></button>
             </div>
             <div style={{padding:"10px 16px 0",borderTop:"1px solid var(--border)",fontSize:10.5,color:"var(--text-3)"}}>
-              Datos sincronizados con la nube
+              {syncStatus==="offline" ? "Sin conexión con la nube: los cambios se subirán al volver" : (syncMode==="manual" ? "Sincronización manual" : "Datos sincronizados con la nube")}
             </div>
           </div>
         </div>
@@ -1225,7 +1229,7 @@ export function App() {
             </button>
           </div>
         )}
-        {view!=="trash" && view!=="tasks" && view!=="stats" && view!=="config" && <StatStrip videos={videos}/>}
+        {["calendar","kanban","scheduled"].includes(view) && <StatStrip videos={videos}/>}
         {view==="kanban" && (
           <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
             <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:"var(--text-3)",display:"flex"}}>{Icons.search}</span>
@@ -1238,13 +1242,14 @@ export function App() {
         {view==="stats" && <StatsView videos={videos} goals={goals} onConnect={connectGoogle}/>}
         {view==="scheduled" && <ScheduledView videos={videos} trashYtIds={trash.map(t=>t.youtubeId).filter(Boolean)} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} onAddVideos={(nuevos)=>setVideos(vs=>[...vs, ...nuevos])} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast} goals={goals} setGoals={setGoals}/>}
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
+        {view==="ranking" && <RankingView toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
         {view==="config" && <ConfigView goals={goals} setGoals={setGoals} theme={theme} setTheme={setTheme} cardsExpanded={cardsExpanded} setCardsExpanded={setCardsExpanded} onConnect={connectGoogle} onExport={exportData} onImport={importData} onReset={resetAll} toast={toast}/>}
 
         <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
             <p style={{fontSize:12,color:"var(--text-3)",lineHeight:1.5,maxWidth:520}}>
-              Tus datos se guardan en este navegador y se sincronizan de forma segura en la nube con tu código de sincronización. Úsalo en otro dispositivo para tener todo al día.
+              Tus datos se guardan en este dispositivo y se sincronizan en la nube con tu código de sincronización. Úsalo en otro dispositivo para tener todo al día.
             </p>
             <button onClick={resetAll} style={{
               display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--text-3)",padding:"8px 13px",borderRadius:9,
