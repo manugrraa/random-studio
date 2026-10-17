@@ -4,7 +4,7 @@ import { AgentView } from "./agente";
 import { RankingView } from "./ranking";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { APP_VERSION, DEFAULT_FORMATS, Icons, SEED, STATUSES, clone, dnd, makeVideo, setIdBase, uid, useToast } from "./base";
-import { DEFAULT_TASK_LISTS, SUPABASE_KEY, SUPABASE_URL, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudLoad, cloudSave, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
+import { DEFAULT_TASK_LISTS, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudFecha, cloudLoad, cloudSave, cloudSaveUrgente, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
 import { ConfirmDialog, SyncModal } from "./dialogos";
 import { CalendarView, FormatsModal, KanbanView } from "./planificacion";
 import { TasksView, dailyDayKey, weekKey } from "./tareas";
@@ -303,7 +303,13 @@ export function App() {
     pullingRef.current = true;
     try {
       if(!silent) setSyncStatus("connecting");
+      // v3: en el sondeo, primero solo la fecha; se baja todo solo si hay algo nuevo
+      if(silent && lastRemoteTsRef.current){
+        const f = await cloudFecha(syncCode);
+        if(f && f <= lastRemoteTsRef.current) return;
+      }
       const remote = await cloudLoad(syncCode);
+      if(remote && remote.updated_at) lastRemoteTsRef.current = Math.max(lastRemoteTsRef.current||0, new Date(remote.updated_at).getTime());
       if(remote && remote.data) {
         await integrateRemote(remote.data, silent);
       } else {
@@ -356,21 +362,8 @@ export function App() {
     const s = stateRef.current;
     const huella = fp(s);
     if(huella === lastSyncedRef.current) return; // nada pendiente
-    try {
-      // Usamos SIEMPRE la apikey pública (estable). Un token de sesión puede haber caducado
-      // y provocaría un 500/error CORS al cerrar. La apikey funciona con las políticas RLS.
-      fetch(SUPABASE_URL + "/rest/v1/rivals_data?on_conflict=user_id", {
-        method: "POST",
-        keepalive: true,
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": SUPABASE_KEY,
-          "Authorization": "Bearer " + SUPABASE_KEY,
-          "Prefer": "resolution=merge-duplicates"
-        },
-        body: JSON.stringify([{ user_id: syncCode, data: { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], goals:s.goals||null, savedAt: Date.now() }, updated_at: new Date().toISOString() }])
-      }).catch(()=>{}); // si falla (sin red), la reconciliación lo reintenta al volver
-    } catch(e){}
+    // v3: por el backend protegido (la clave pública de Supabase ya no entra)
+    cloudSaveUrgente(syncCode, { videos:s.videos, formats:s.formats, trash:s.trash, taskLists:s.taskLists, tombstones:pruneTombs(s.tombstones), dailyArchive:s.dailyArchive||{}, tagTemplates:s.tagTemplates||[], subHistory:s.subHistory||[], promptTemplates:s.promptTemplates||[], goals:s.goals||null, savedAt: Date.now() });
   };
   const flushRef = useRef(flushNow);
   useEffect(()=>{ flushRef.current = flushNow; });
@@ -409,38 +402,8 @@ export function App() {
 
   // Suscripción en tiempo real: si otro dispositivo cambia algo, lo recibimos al instante
   const rtOkRef = useRef(false); // true si Realtime está funcionando
-  useEffect(()=>{
-    let channel = null;
-    ensureAuth().then(sb => {
-      channel = sb.channel("rivals-"+syncCode+"-"+rtKey)
-        .on("postgres_changes", { event:"*", schema:"public", table:"rivals_data", filter:"user_id=eq."+syncCode }, payload=>{
-          const r = payload && payload.new && payload.new.data;
-          if(!r) return;
-          const remoteTs = payload.new.updated_at ? new Date(payload.new.updated_at).getTime() : Date.now();
-          const incoming = fp({videos:r.videos, formats:r.formats, trash:r.trash, taskLists:r.taskLists, dailyArchive:r.dailyArchive, tagTemplates:r.tagTemplates});
-          // Eco de nuestro propio guardado: ya lo tenemos → solo actualizar marcas, sin tocar la app
-          if(incoming === lastSyncedRef.current || incoming === fp(stateRef.current)){
-            lastSyncedRef.current = fp(stateRef.current);
-            lastRemoteTsRef.current = Math.max(lastRemoteTsRef.current, remoteTs);
-            setSyncStatus("online");
-            return;
-          }
-          // Integración no destructiva: solo cambia la app si el otro dispositivo aportó
-          // algo genuinamente nuevo; nunca hace retroceder lo que tú tienes aquí.
-          integrateRemote(r, false).catch(()=>{});
-          setSyncStatus("online");
-        })
-        .subscribe((st)=>{
-          // st: 'SUBSCRIBED' | 'CHANNEL_ERROR' | 'TIMED_OUT' | 'CLOSED'
-          rtOkRef.current = (st === "SUBSCRIBED");
-          if(st === "CHANNEL_ERROR" || st === "TIMED_OUT"){
-            // Realtime no disponible → nos apoyamos en el sondeo rápido
-            rtOkRef.current = false;
-          }
-        });
-    }).catch(()=>{});
-    return ()=>{ try { if(channel) getClient()?.removeChannel(channel); } catch(e){} };
-  },[syncCode, rtKey]);
+  // v3: sin Supabase Realtime (la tabla está cerrada con RLS): los cambios de otro
+  // dispositivo llegan por el sondeo periódico (rtOkRef queda en false)
 
   // Sondeo adaptativo que SOLO corre con la pestaña visible.
   // Si la app está oculta (otra app, pantalla bloqueada, pestaña en segundo plano),
@@ -1151,9 +1114,14 @@ export function App() {
       {/* AVISO DE MODO SIN CONEXIÓN */}
       {syncStatus==="offline" && (
         <div className="fade-in" style={{background:"rgba(248,113,113,0.08)",borderBottom:"1px solid rgba(248,113,113,0.25)",padding:"9px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:9,flexWrap:"wrap"}}>
-          <span style={{fontSize:12.5,color:"var(--red)",fontWeight:600}}>Sin conexión</span>
-          <span style={{fontSize:12,color:"var(--text-2)"}}>Trabajas con la copia guardada en este dispositivo. Tus cambios se conservan y se subirán solos al volver internet.</span>
-          <button onClick={syncNow} style={{fontSize:12,fontWeight:700,color:"var(--red)",border:"1px solid rgba(248,113,113,0.4)",borderRadius:8,padding:"4px 11px"}}>Reintentar</button>
+          {/* v3: la nube exige la sesión de Google del canal */}
+          <span style={{fontSize:12.5,color:"var(--red)",fontWeight:600}}>{ytIsConnected() ? "Sin conexión" : "Nube sin conectar"}</span>
+          <span style={{fontSize:12,color:"var(--text-2)"}}>{ytIsConnected()
+            ? "Trabajas con la copia guardada en este dispositivo. Tus cambios se conservan y se subirán solos al volver internet."
+            : "Para sincronizar, conecta tu cuenta de Google del canal. Mientras, todo se guarda en este dispositivo."}</span>
+          {ytIsConnected()
+            ? <button onClick={syncNow} style={{fontSize:12,fontWeight:700,color:"var(--red)",border:"1px solid rgba(248,113,113,0.4)",borderRadius:8,padding:"4px 11px"}}>Reintentar</button>
+            : <button onClick={connectGoogle} style={{fontSize:12,fontWeight:700,color:"var(--red)",border:"1px solid rgba(248,113,113,0.4)",borderRadius:8,padding:"4px 11px"}}>Conectar Google</button>}
         </div>
       )}
 

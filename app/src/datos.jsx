@@ -1112,19 +1112,50 @@ export function getSyncCode() {
 }
 export function storeSyncCode(code) { try { localStorage.setItem(SYNC_CODE_KEY, code); } catch(e){} }
 
+// v3: la nube va a través del backend (/api/datos) con la sesión de Google del
+// canal. Supabase ya no se toca desde la app: la tabla está cerrada (RLS) y antes
+// cualquiera con la web pública podía leer o borrar los datos.
+export async function cloudToken() {
+  if(!ytIsConnected()) throw new Error("Conecta Google para sincronizar");
+  if(!(await ytEnsureToken())) throw new Error("La sesión de Google caducó");
+  const t = ytGetTokens();
+  return t && t.access_token;
+}
 export async function cloudLoad(code) {
-  const sb = await ensureAuth();
-  const { data, error } = await sb.from("rivals_data").select("data, updated_at").eq("user_id", code).maybeSingle();
-  if(error) throw error;
-  return data;
+  const token = await cloudToken();
+  const r = await fetch(YT_BACKEND + "/api/datos?code=" + encodeURIComponent(code), { headers: { Authorization: "Bearer " + token } });
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
+  return j.data ? { data: j.data, updated_at: j.updated_at } : null;
+}
+export async function cloudFecha(code) {
+  const token = await cloudToken();
+  const r = await fetch(YT_BACKEND + "/api/datos?solo=fecha&code=" + encodeURIComponent(code), { headers: { Authorization: "Bearer " + token } });
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
+  return j.updated_at ? new Date(j.updated_at).getTime() : 0;
 }
 export async function cloudSave(code, payload) {
-  const sb = await ensureAuth();
-  const { error } = await sb.from("rivals_data").upsert(
-    { user_id: code, data: payload, updated_at: new Date().toISOString() },
-    { onConflict: "user_id" }
-  );
-  if(error) throw error;
+  const token = await cloudToken();
+  const r = await fetch(YT_BACKEND + "/api/datos", {
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    body: JSON.stringify({ code, data: payload })
+  });
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
+}
+// Guardado urgente al cerrar o pasar a segundo plano (fetch keepalive): usa el
+// token que ya haya, sin renovarlo (no da tiempo)
+export function cloudSaveUrgente(code, payload) {
+  const t = ytGetTokens();
+  if(!t || !t.access_token || !ytTokenValid()) return;
+  try {
+    fetch(YT_BACKEND + "/api/datos", {
+      method: "POST", keepalive: true,
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + t.access_token },
+      body: JSON.stringify({ code, data: payload })
+    }).catch(()=>{});
+  } catch(e){}
 }
 
 /* ============================ CONFIGURACIÓN ============================ */
