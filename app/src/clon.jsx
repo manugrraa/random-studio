@@ -289,9 +289,26 @@ export function ClipsView({ toast }) {
     catch(e){ toast && toast(e.message); cargar(); }
     finally { setOcupados(o=>{ const n={...o}; delete n[c.carpeta]; return n; }); }
   };
+  // el reproductor tiene el vídeo abierto y Windows no deja renombrar la carpeta
+  // (18/10, "[WinError 5] Acceso denegado"): se suelta antes de tocar nada
+  const soltarVideo = async () => {
+    document.querySelectorAll("video").forEach(v=>{ try { v.pause(); v.removeAttribute("src"); v.load(); } catch(x){} });
+    setAbierto(null);
+    await new Promise(r=>setTimeout(r,400));
+  };
   const renombrar = async (c, nombre) => {
-    try { const ev = await consultar(["renombrar", c.carpeta, nombre.trim()]); const h = ev.find(e=>e.evento==="hecho"); await cargar(); h && setAbierto(h.nueva); toast && toast("Nombre guardado"); }
-    catch(e){ toast && toast(e.message); }
+    if(ocupados[c.carpeta]) return;
+    setOcupados(o=>({...o,[c.carpeta]:true}));
+    try {
+      await soltarVideo();
+      const ev = await consultar(["renombrar", c.carpeta, nombre.trim()]);
+      const h = ev.find(e=>e.evento==="hecho");
+      await cargar();
+      h && setAbierto(h.nueva);
+      toast && toast("Nombre guardado");
+    }
+    catch(e){ toast && toast(e.message); setAbierto(c.carpeta); }
+    finally { setOcupados(o=>{ const n={...o}; delete n[c.carpeta]; return n; }); }
   };
   const cuenta = k => (clips||[]).filter(c=>k==="todos"||c.estado===k).length;
   const lista = (clips||[]).filter(c=>(filtro==="todos"||c.estado===filtro) &&
