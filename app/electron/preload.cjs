@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   rankingAbrir: (carpeta) => ipcRenderer.invoke("ranking-abrir", carpeta),
   rankingVerificar: () => ipcRenderer.invoke("ranking-verificar"),
   rankingSubido: (n, si) => ipcRenderer.invoke("ranking-subido", n, si),
+  rankingEliminar: (n, recuperar) => ipcRenderer.invoke("ranking-eliminar", n, !!recuperar),
   onRankingProgreso: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("ranking-progreso", h);
@@ -35,6 +36,17 @@ contextBridge.exposeInMainWorld("studioFS", {
     const h = (e, d) => cb(d);
     ipcRenderer.on("clon-progreso", h);
     return () => ipcRenderer.removeListener("clon-progreso", h);
+  },
+  // Convertidor YT dentro de Studio (v3.4)
+  ytDestinos: () => ipcRenderer.invoke("yt-destinos"),
+  ytDescargar: (o) => ipcRenderer.invoke("yt-descargar", o),
+  ytCancelar: () => ipcRenderer.invoke("yt-cancelar"),
+  ytAbrir: (ruta) => ipcRenderer.invoke("yt-abrir", ruta),
+  ytElegirCarpeta: () => ipcRenderer.invoke("yt-elegir-carpeta"),
+  onYtProgreso: (cb) => {
+    const h = (e, d) => cb(d);
+    ipcRenderer.on("yt-progreso", h);
+    return () => ipcRenderer.removeListener("yt-progreso", h);
   },
   onUploadProgress: (cb) => {
     const h = (e, d) => cb(d);

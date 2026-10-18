@@ -229,7 +229,7 @@ ipcMain.handle("ranking-datos", async () => {
   try {
     // v3.2: lista y ranking en UNA llamada (antes dos procesos de Python cada vez)
     const d = JSON.parse(await correrPython(["datos"]));
-    return { lista: d.lista, ranking: d.ranking, analizando: !!rankingProc };
+    return { lista: d.lista, ranking: d.ranking, eliminados: d.eliminados || [], analizando: !!rankingProc };
   } catch (e) { return { error: e.message }; }
 });
 
@@ -241,6 +241,16 @@ ipcMain.handle("ranking-verificar", async () => {
     const fin = ev.find(x => x.evento === "fin"), err = ev.find(x => x.evento === "error");
     return err ? { error: err.error } : fin || { ok: true };
   } catch (e) { return { error: e.message }; }
+});
+
+// v3.4: eliminar un Short del ranking = a Shorts Listos/_Eliminados (se puede recuperar)
+ipcMain.handle("ranking-eliminar", async (e, n, recuperar) => {
+  if (!Number.isInteger(n)) return { error: "número no válido" };
+  try { await correrPython([recuperar ? "recuperar" : "eliminar", String(n)]); return { ok: true }; }
+  catch (x) {
+    const m = String(x.message || x).match(/"error":\s*"([^"]+)"/);
+    return { error: m ? m[1] : x.message };
+  }
 });
 
 ipcMain.handle("ranking-subido", async (e, n, si) => {
@@ -286,7 +296,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "retencion", "aprender"]);
 const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
@@ -343,6 +353,57 @@ ipcMain.handle("clon-abrir", async (e, ruta) => {
   return { ok: true };
 });
 
+// ——— CONVERTIDOR YT (v3.4) ———
+// El mismo motor de su "Convertidor YT" (convertidor.py --cli): 8 conexiones,
+// enlaces frescos si YouTube corta, yt-dlp que se actualiza solo.
+const CONVERTIDOR_DIR = process.env.CONVERTIDOR_DIR || "E:\\A RdeRandom\\Convertidor YT";
+const RAIZ_RDR = "E:\\A RdeRandom";
+let ytProc = null;
+
+ipcMain.handle("yt-destinos", async () => ([
+  ["Descargas del convertidor", path.join(CONVERTIDOR_DIR, "Descargas")],
+  ["Música de la biblioteca", path.join(CLON_DIR, "Biblioteca", "Música")],
+  ["SFX de la biblioteca", path.join(CLON_DIR, "Biblioteca", "SFX")],
+  ["VODs (para clipear)", path.join(CLON_DIR, "VODs")],
+]));
+
+ipcMain.handle("yt-descargar", async (e, o) => {
+  if (ytProc) return { error: "Ya hay una descarga en marcha" };
+  const url = String((o && o.url) || "").trim();
+  if (!/^https?:\/\/(www\.|m\.|music\.)?(youtube\.com|youtu\.be)\//i.test(url)) return { error: "Eso no es un enlace de YouTube" };
+  const formato = o.formato === "mp3" ? "mp3" : "mp4";
+  const args = [path.join(CONVERTIDOR_DIR, "convertidor.py"), "--cli", url, formato,
+    "--altura", String(parseInt(o.altura) || 1080), "--kbps", String(parseInt(o.kbps) || 192)];
+  if (o.destino && String(o.destino).startsWith(RAIZ_RDR)) args.push("--destino", o.destino);
+  const wc = e.sender;
+  ytProc = spawn("python", args, { cwd: CONVERTIDOR_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+  let resto = "";
+  ytProc.stdout.on("data", d => { resto += d; const ls = resto.split("\n"); resto = ls.pop();
+    leerEventos(ls.join("\n")).forEach(ev => { try { wc.send("yt-progreso", ev); } catch (x) {} }); });
+  let err = ""; ytProc.stderr.on("data", d => { err += d; if (err.length > 8000) err = err.slice(-4000); });
+  ytProc.on("close", code => { leerEventos(resto).forEach(ev => { try { wc.send("yt-progreso", ev); } catch (x) {} });
+    try { wc.send("yt-progreso", { evento: "cerrado", codigo: code, error: code ? err.slice(-300) : "" }); } catch (x) {}
+    ytProc = null; });
+  return { ok: true };
+});
+
+ipcMain.handle("yt-cancelar", async () => {
+  if (ytProc) { try { spawn("taskkill", ["/PID", String(ytProc.pid), "/T", "/F"]); } catch (x) {} }
+  return { ok: true };
+});
+
+ipcMain.handle("yt-abrir", async (e, ruta) => {
+  if (ruta && ruta.startsWith(RAIZ_RDR) && fs.existsSync(ruta)) {
+    if (fs.statSync(ruta).isDirectory()) await shell.openPath(ruta); else shell.showItemInFolder(ruta);
+  }
+  return { ok: true };
+});
+
+ipcMain.handle("yt-elegir-carpeta", async () => {
+  const r = await dialog.showOpenDialog(mainWindow || undefined, { properties: ["openDirectory"], title: "Dónde guardar las descargas", defaultPath: RAIZ_RDR });
+  return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
+});
+
 ipcMain.handle("clon-elegir-carpeta", async () => {
   const r = await dialog.showOpenDialog(mainWindow || undefined, { properties: ["openDirectory"], title: "Carpeta de los VODs",
     defaultPath: path.join(CLON_DIR, "VODs") });
@@ -382,11 +443,15 @@ function createWindow() {
       await esperar(5000);
       for (const p of pestanas) {
         // "~texto" = el primer botón que CONTIENE ese texto (una tarjeta de clip)
-        const contiene = p.startsWith("~"), txt = contiene ? p.slice(1) : p;
-        await mainWindow.webContents.executeJavaScript(`(()=>{const t=${JSON.stringify(txt)};const b=[...document.querySelectorAll("button")].find(x=>${contiene}?x.textContent.includes(t):x.textContent.trim()===t);b&&b.click();b&&setTimeout(()=>b.scrollIntoView({block:"start"}),300);return !!b;})()`);
+        // "#selector" = el primer elemento que case con ese selector CSS (el botón del menú)
+        const contiene = p.startsWith("~"), css = p.startsWith("#"), txt = (contiene || css) ? p.slice(1) : p;
+        await mainWindow.webContents.executeJavaScript(`(()=>{const t=${JSON.stringify(txt)};const b=${css}?document.querySelector(t):[...document.querySelectorAll("button")].find(x=>${contiene}?x.textContent.includes(t):x.textContent.trim()===t);b&&b.click();b&&setTimeout(()=>b.scrollIntoView({block:"start"}),300);return !!b;})()`);
         await esperar(Number(process.env.STUDIO_ESPERA || 9000));
         const v = await mainWindow.webContents.executeJavaScript(`(()=>{const v=document.querySelector("video");return v?{listo:v.readyState,dur:v.duration,err:v.error&&v.error.code}:null;})()`);
         if (v) console.log("[captura] video", JSON.stringify(v));
+        const txt0 = await Promise.race([mainWindow.webContents.executeJavaScript(`document.body.innerText.length+" | "+(document.querySelector("h2")||{}).textContent`),
+          esperar(5000).then(() => "LA PÁGINA NO RESPONDE")]);
+        console.log("[captura]", p, "->", txt0);
         const img = await mainWindow.webContents.capturePage();
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, "studio_" + txt.replace(/[^\w]+/g, "_") + ".png"), img.toPNG());
