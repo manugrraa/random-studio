@@ -41,7 +41,7 @@ export function SelectorModelo({ clave }) {
 }
 
 /* --- la tarea en marcha (una a la vez): preparar, clipear o montar --- */
-function useTarea(onFin) {
+export function useTarea(onFin) {
   const [tarea, setTarea] = useState(null);   // {args, eventos, inicio}
   const fin = useRef(onFin); fin.current = onFin;
   useEffect(()=>{
@@ -63,9 +63,9 @@ function useTarea(onFin) {
   return [tarea, lanzar, ()=>setTarea(null)];
 }
 
-const NOMBRE_TAREA = { preparar:"Preparando", clipear:"Clipeando", montar:"Montando" };
+const NOMBRE_TAREA = { preparar:"Preparando", clipear:"Clipeando", montar:"Montando", mejorar:"Mejorando" };
 
-function PanelTarea({ tarea, onCerrar }) {
+export function PanelTarea({ tarea, onCerrar }) {
   const [verLog, setVerLog] = useState(false);
   if(!tarea) return null;
   const evs = tarea.eventos;
@@ -97,7 +97,8 @@ function PanelTarea({ tarea, onCerrar }) {
       {verLog && <pre style={{fontSize:11,color:"var(--text-3)",whiteSpace:"pre-wrap",maxHeight:180,overflow:"auto",margin:0}}>{logs.map(l=>"["+l.fuente+"] "+l.linea).join("\n")}</pre>}
       {hechos.map((h,i)=>(
         <div key={i} style={{fontSize:12.5,color:"var(--text-2)",borderTop:"1px solid var(--border)",paddingTop:8}}>
-          {h.short ? <>✓ <b style={{color:"var(--text)"}}>{h.n} · {h.short}</b> · {h.duracion} s{h.nota!=null && <> · nota <b style={{color:"var(--gold)"}}>{Number(h.nota).toFixed(1)}</b></>}
+          {h.short ? <>✓ <b style={{color:"var(--text)"}}>{h.n ? (String(h.short).startsWith(h.n+" ") ? h.short : h.n+" · "+h.short) : h.short}</b> · {h.duracion} s{h.antes && h.antes.dur ? ` (antes ${Math.round(h.antes.dur)} s)` : ""}{h.nota!=null && <> · nota <b style={{color:"var(--gold)"}}>{Number(h.nota).toFixed(1)}</b></>}
+              {(h.cambios||[]).length>0 && <ul style={{margin:"4px 0 0 18px",padding:0,color:"var(--text-2)"}}>{h.cambios.slice(0,8).map((x,k)=><li key={k}>{x}</li>)}</ul>}
               {h.titulo_youtube && <div style={{color:"var(--text-3)"}}>Título para YouTube: {h.titulo_youtube}</div>}
               {h.por_que && <div style={{color:"var(--text-3)"}}>{h.por_que}</div>}
               {(h.nombres_dudosos||[]).length>0 && <div style={{color:"#fbbf24"}}>Revisa estos nombres: {h.nombres_dudosos.join(", ")}</div>}

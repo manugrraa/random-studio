@@ -287,7 +287,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
 const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar"]);
-const TAREAS = new Set(["preparar", "clipear", "montar"]);
+const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
 function leerEventos(texto) {
@@ -383,7 +383,7 @@ function createWindow() {
       for (const p of pestanas) {
         // "~texto" = el primer botón que CONTIENE ese texto (una tarjeta de clip)
         const contiene = p.startsWith("~"), txt = contiene ? p.slice(1) : p;
-        await mainWindow.webContents.executeJavaScript(`(()=>{const t=${JSON.stringify(txt)};const b=[...document.querySelectorAll("button")].find(x=>${contiene}?x.textContent.includes(t):x.textContent.trim()===t);b&&b.click();return !!b;})()`);
+        await mainWindow.webContents.executeJavaScript(`(()=>{const t=${JSON.stringify(txt)};const b=[...document.querySelectorAll("button")].find(x=>${contiene}?x.textContent.includes(t):x.textContent.trim()===t);b&&b.click();b&&setTimeout(()=>b.scrollIntoView({block:"start"}),300);return !!b;})()`);
         await esperar(Number(process.env.STUDIO_ESPERA || 9000));
         const v = await mainWindow.webContents.executeJavaScript(`(()=>{const v=document.querySelector("video");return v?{listo:v.readyState,dur:v.duration,err:v.error&&v.error.code}:null;})()`);
         if (v) console.log("[captura] video", JSON.stringify(v));

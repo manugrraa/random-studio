@@ -1,6 +1,7 @@
 import React from "react";
 const { useState, useEffect, useMemo } = React;
 import { Icons } from "./base";
+import { useTarea, PanelTarea } from "./clon";
 
 /* ============================ RANKING DE SHORTS (v3) ============================
    Los Shorts de "Shorts Listos" ordenados por posibilidad de hacerse virales.
@@ -22,8 +23,13 @@ function Barra({ v }) {
   </div>;
 }
 
-function Fila({ x, abierto, onToggle, onSubido }) {
+// v3.3: diferencia del mejorado con el original (mismo juez: el ranking re-puntúa el original)
+const delta = (a, b) => { const d = Math.round((a-b)*10)/10; return (d>0?"+":"")+d.toFixed(1); };
+const colorDelta = d => d>0.05 ? "#4ade80" : d<-0.05 ? "var(--red)" : "var(--text-3)";
+
+function Fila({ x, abierto, onToggle, onSubido, onMejorar, ocupado }) {
   const sub = x.subido;
+  const mej = x.mejorado;
   return (
     <div style={{border:"1px solid "+(sub?"rgba(74,222,128,0.35)":"var(--border)"),borderRadius:12,background:"var(--bg-2)",overflow:"hidden",opacity:sub?0.72:1}}>
       <button onClick={onToggle} style={{display:"grid",gridTemplateColumns:"34px 54px 56px minmax(0,1fr) auto",gap:12,alignItems:"center",width:"100%",padding:"10px 14px",textAlign:"left"}}>
@@ -37,6 +43,8 @@ function Fila({ x, abierto, onToggle, onSubido }) {
             {sub && <span style={{marginLeft:8,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:"rgba(74,222,128,0.14)",color:"#4ade80",verticalAlign:"middle"}}>
               ✓ Subido{sub.visitas!=null ? " · "+Number(sub.visitas).toLocaleString("es-ES")+" visitas" : ""}</span>}</span>
           {sub && sub.titulo_yt && sub.titulo_yt.replace(/\s*#.*$/,"").trim()!==x.titulo && <span style={{display:"block",fontSize:11.5,color:"var(--text-3)",marginTop:2}}>En YouTube: {sub.titulo_yt.replace(/\s*#.*$/,"")}</span>}
+          {mej && mej.nota!=null && x.nota!=null && <span style={{display:"inline-block",marginTop:4,fontSize:11.5,fontWeight:700,padding:"2px 8px",borderRadius:999,
+            background:"rgba(212,175,55,0.12)",color:colorDelta(mej.nota-x.nota)}}>Mejorado: {mej.nota.toFixed(1)} ({delta(mej.nota,x.nota)})</span>}
           <span style={{display:"block",fontSize:12.5,color:"var(--text-2)",marginTop:3,overflowWrap:"anywhere"}}>{x.por_que}</span>
           {x.modelo && <span style={{display:"block",fontSize:11,color:"var(--text-3)",marginTop:3}}>{x.modelo==="claude-opus-5-5"?"Analizado con Opus 5.5":x.modelo==="claude-sonnet-5-5"?"Analizado con Sonnet 5.5":x.modelo}</span>}
           {x.aviso && <span style={{display:"block",fontSize:12,color:"var(--red)",marginTop:4}}>⚠ {x.aviso}</span>}
@@ -49,9 +57,17 @@ function Fila({ x, abierto, onToggle, onSubido }) {
       {abierto && (
         <div style={{padding:"4px 14px 14px 110px",display:"flex",flexDirection:"column",gap:10}}>
           {x.nota!=null && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:"8px 16px"}}>
-            {PARTES.map(([k,l])=>(
-              <div key={k} style={{fontSize:12,color:"var(--text-2)"}}>{l} · {(x.partes?.[k]??0).toFixed(1)}<Barra v={x.partes?.[k]||0}/></div>
-            ))}
+            {PARTES.map(([k,l])=>{
+              const a = x.partes?.[k]??0, b = mej?.partes?.[k];
+              return <div key={k} style={{fontSize:12,color:"var(--text-2)"}}>{l} · {a.toFixed(1)}
+                {b!=null && <span style={{color:colorDelta(b-a),fontWeight:700}}> → {b.toFixed(1)}</span>}<Barra v={a}/>
+                {b!=null && <div style={{height:5,borderRadius:3,background:"var(--border)",overflow:"hidden",marginTop:2}}><div style={{height:"100%",width:(b*10)+"%",background:"#4ade80"}}/></div>}
+              </div>;
+            })}
+          </div>}
+          {mej && <div style={{fontSize:12.5,color:"var(--text-2)"}}>
+            <b style={{color:"var(--text)"}}>El mejorado</b> · {Math.round(mej.medido?.dur||0)} s (antes {Math.round(x.medido?.dur||0)} s) · {mej.por_que}
+            {x.nota_anterior!=null && <span style={{color:"var(--text-3)"}}> · el original se volvió a puntuar con el mismo modelo (antes {Number(x.nota_anterior).toFixed(1)})</span>}
           </div>}
           <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
             {x.nota!=null && ((x.temas||[]).length ? x.temas.map(t=><span key={t} style={{fontSize:11.5,padding:"2px 9px",borderRadius:999,background:"var(--border)",color:"var(--text-2)"}}>{TEMA[t]||t}</span>)
@@ -60,6 +76,12 @@ function Fila({ x, abierto, onToggle, onSubido }) {
             <span style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
               {sub && sub.id && <a href={"https://www.youtube.com/shorts/"+sub.id} target="_blank" rel="noreferrer" style={{fontSize:12,fontWeight:600,color:"var(--text-2)",border:"1px solid var(--border)",borderRadius:8,padding:"5px 10px"}}>Ver en YouTube</a>}
               {window.studioFS?.rankingSubido && <button onClick={()=>onSubido(x, !sub)} style={{fontSize:12,fontWeight:600,color:sub?"var(--text-2)":"#4ade80",border:"1px solid var(--border)",borderRadius:8,padding:"5px 10px"}}>{sub?"No está subido":"✓ Marcar como subido"}</button>}
+              {x.mp4_mejorado && window.studioFS?.clonAbrir && <>
+                <button onClick={()=>window.studioFS.clonAbrir(x.carpeta+"\\"+x.titulo+".mp4")} style={{fontSize:12,fontWeight:600,color:"var(--text-2)",border:"1px solid var(--border)",borderRadius:8,padding:"5px 10px"}}>Ver original</button>
+                <button onClick={()=>window.studioFS.clonAbrir(x.mp4_mejorado)} style={{fontSize:12,fontWeight:600,color:"#4ade80",border:"1px solid var(--border)",borderRadius:8,padding:"5px 10px"}}>Ver mejorado</button>
+              </>}
+              {!sub && x.remontable && x.nota!=null && onMejorar && <button disabled={ocupado} onClick={()=>onMejorar([x.n])} title="El clon lo vuelve a montar atacando lo que flojea; el original no se toca"
+                style={{fontSize:12,fontWeight:600,color:"var(--gold)",border:"1px solid var(--gold)",borderRadius:8,padding:"5px 10px",opacity:ocupado?.5:1}}>{mej?"Volver a mejorar":"✦ Mejorar"}</button>}
               {window.studioFS?.rankingAbrir && <button onClick={()=>window.studioFS.rankingAbrir(x.carpeta)} style={{fontSize:12,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border)",borderRadius:8,padding:"5px 10px"}}>Abrir carpeta</button>}
             </span>
           </div>
@@ -128,6 +150,16 @@ export function RankingView({ toast }) {
     });
   },[]);
 
+  // v3.3: MEJORAR (él, 18/10): el clon remonta los Shorts con más potencial atacando
+  // lo que flojea; el original no se toca y los dos se puntúan con el mismo juez
+  const [tarea, lanzarTarea, cerrarTarea] = useTarea(ev=>{ cargar(); if(!ev.codigo) toast && toast("Mejorados: están junto al original en su carpeta"); });
+  const ocupado = !!(tarea && !tarea.cerrada);
+  const mejorar = async (nums) => {
+    try { await lanzarTarea(["mejorar", ...nums.map(String), "--modelo", modelo]); }
+    catch(e){ toast && toast(e.message); }
+  };
+  const candidatos = datos ? datos.ranking.filter(x=>!x.subido && x.remontable && x.nota!=null && !x.mejorado).slice(0,5) : [];
+
   const analizar = async (todo) => {
     const r = await window.studioFS.rankingAnalizar({ todo, modelo });
     if(r.error) toast && toast(r.error); else setProg({hechos:0,total:0});
@@ -171,6 +203,9 @@ export function RankingView({ toast }) {
                     {pendientes ? `Analizar ${pendientes} nuevo${pendientes!==1?"s":""}` : "Todo analizado"}
                   </button>
                   <button onClick={()=>analizar(true)} style={boton(false)}>Reanalizar todos</button>
+                  {window.studioFS?.clonTarea && <button disabled={!candidatos.length||ocupado} onClick={()=>mejorar(candidatos.map(x=>x.n))}
+                    title={candidatos.length ? "Mejora: "+candidatos.map(x=>x.n+" "+x.titulo).join(", ") : "No quedan Shorts por mejorar"}
+                    style={{...boton(false),color:"var(--gold)",borderColor:"var(--gold)",opacity:candidatos.length&&!ocupado?1:.5}}>✦ Mejorar los {candidatos.length||5} mejores</button>}
                 </>}
           </div>
         )}
@@ -183,6 +218,7 @@ export function RankingView({ toast }) {
       )}
       {error && <div style={{padding:"14px 16px",border:"1px solid rgba(248,113,113,0.35)",borderRadius:12,color:"var(--red)",fontSize:13}}>{error}</div>}
 
+      <PanelTarea tarea={tarea} onCerrar={cerrarTarea}/>
       {prog && (
         <div style={{padding:"12px 16px",border:"1px solid var(--border)",borderRadius:12,background:"var(--bg-2)"}}>
           <div style={{fontSize:13,color:"var(--text-2)"}}>
@@ -216,7 +252,7 @@ export function RankingView({ toast }) {
       )}
 
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {lista.map(x=><Fila key={x.carpeta} x={x} abierto={abierto===x.carpeta} onToggle={()=>setAbierto(a=>a===x.carpeta?null:x.carpeta)} onSubido={marcarSubido}/>)}
+        {lista.map(x=><Fila key={x.carpeta} x={x} abierto={abierto===x.carpeta} onToggle={()=>setAbierto(a=>a===x.carpeta?null:x.carpeta)} onSubido={marcarSubido} onMejorar={window.studioFS?.clonTarea ? mejorar : null} ocupado={ocupado}/>)}
         {datos && !lista.length && !prog && (
           <div style={{padding:"40px 20px",textAlign:"center",color:"var(--text-3)",border:"1px dashed var(--border)",borderRadius:14,fontSize:13}}>
             {datos.ranking.length ? "Ningún Short coincide con la búsqueda." : "Todavía no hay ningún Short analizado: pulsa «Analizar» para empezar."}
