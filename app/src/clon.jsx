@@ -265,9 +265,28 @@ export function ClipsView({ toast }) {
   useEffect(()=>{ if(enPC()) cargar(); },[]);
   if(!enPC()) return <div className="fade-in"><h2 style={{fontSize:20,fontWeight:700,marginBottom:12}}>Clips</h2><SinPC que="La criba y el montaje"/></div>;
 
+  // v3.2: un clic a la vez por clip, y el reproductor se cierra ANTES de mover la
+  // carpeta (18/10: con el vídeo abierto Windows no la deja mover y se duplicaba)
+  const [ocupados, setOcupados] = useState({});
   const cribar = async (c, accion) => {
-    try { await consultar(["cribar", c.carpeta, accion]); await cargar(); if(accion==="descartar") setAbierto(null); }
-    catch(e){ toast && toast(e.message); }
+    if(ocupados[c.carpeta]) return;
+    setOcupados(o=>({...o,[c.carpeta]:true}));
+    try {
+      if(accion==="descartar" || accion==="restaurar"){
+        if(abierto===c.carpeta){
+          document.querySelectorAll("video").forEach(v=>{ try { v.pause(); v.removeAttribute("src"); v.load(); } catch(x){} });
+          setAbierto(null);
+          await new Promise(r=>setTimeout(r,400));
+        }
+      }
+      await consultar(["cribar", c.carpeta, accion]);
+      // sin volver a leer los 100 clips: se cambia solo este
+      const est = {aprobar:"aprobado", nuevo:"nuevo", descartar:"descartado", restaurar:"nuevo"}[accion];
+      setClips(cs=>cs.map(x=>x.carpeta===c.carpeta ? {...x, estado:est} : x));
+      if(accion==="descartar" || accion==="restaurar") cargar();   // sus rutas cambian: se releen por detrás
+    }
+    catch(e){ toast && toast(e.message); cargar(); }
+    finally { setOcupados(o=>{ const n={...o}; delete n[c.carpeta]; return n; }); }
   };
   const renombrar = async (c, nombre) => {
     try { const ev = await consultar(["renombrar", c.carpeta, nombre.trim()]); const h = ev.find(e=>e.evento==="hecho"); await cargar(); h && setAbierto(h.nueva); toast && toast("Nombre guardado"); }

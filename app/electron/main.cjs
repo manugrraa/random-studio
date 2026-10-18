@@ -227,9 +227,26 @@ function correrPython(args) {
 ipcMain.handle("ranking-datos", async () => {
   if (!fs.existsSync(RANKING_PY())) return { error: "No encuentro " + RANKING_PY() };
   try {
-    const [lista, ranking] = await Promise.all([correrPython(["lista"]), correrPython(["ranking"])]);
-    return { lista: JSON.parse(lista), ranking: JSON.parse(ranking), analizando: !!rankingProc };
+    // v3.2: lista y ranking en UNA llamada (antes dos procesos de Python cada vez)
+    const d = JSON.parse(await correrPython(["datos"]));
+    return { lista: d.lista, ranking: d.ranking, analizando: !!rankingProc };
   } catch (e) { return { error: e.message }; }
+});
+
+// v3.2: los Shorts ya subidos, reconocidos por su miniatura en YouTube (o a mano)
+ipcMain.handle("ranking-verificar", async () => {
+  try {
+    const out = await correrPython(["verificar", "150"]);
+    const ev = out.split("\n").map(l => { try { return JSON.parse(l); } catch (x) { return null; } }).filter(Boolean);
+    const fin = ev.find(x => x.evento === "fin"), err = ev.find(x => x.evento === "error");
+    return err ? { error: err.error } : fin || { ok: true };
+  } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.handle("ranking-subido", async (e, n, si) => {
+  if (!Number.isInteger(n)) return { error: "número no válido" };
+  try { await correrPython(["subido", String(n), si ? "si" : "no"]); return { ok: true }; }
+  catch (x) { return { error: x.message }; }
 });
 
 ipcMain.handle("ranking-analizar", async (e, opts) => {

@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   rankingAnalizar: (opts) => ipcRenderer.invoke("ranking-analizar", opts || {}),
   rankingCancelar: () => ipcRenderer.invoke("ranking-cancelar"),
   rankingAbrir: (carpeta) => ipcRenderer.invoke("ranking-abrir", carpeta),
+  rankingVerificar: () => ipcRenderer.invoke("ranking-verificar"),
+  rankingSubido: (n, si) => ipcRenderer.invoke("ranking-subido", n, si),
   onRankingProgreso: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("ranking-progreso", h);
