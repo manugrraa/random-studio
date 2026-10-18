@@ -47,7 +47,8 @@ function Fila({ x, abierto, onToggle, onSubido, onMejorar, ocupado }) {
             background:"rgba(212,175,55,0.12)",color:colorDelta(mej.nota-x.nota)}}>Mejorado: {mej.nota.toFixed(1)} ({delta(mej.nota,x.nota)})</span>}
           <span style={{display:"block",fontSize:12.5,color:"var(--text-2)",marginTop:3,overflowWrap:"anywhere"}}>{x.por_que}</span>
           {x.modelo && <span style={{display:"block",fontSize:11,color:"var(--text-3)",marginTop:3}}>{x.modelo==="claude-opus-5-5"?"Analizado con Opus 5.5":x.modelo==="claude-sonnet-5-5"?"Analizado con Sonnet 5.5":x.modelo}</span>}
-          {x.aviso && <span style={{display:"block",fontSize:12,color:"var(--red)",marginTop:4}}>⚠ {x.aviso}</span>}
+          {x.no_subir && <span style={{display:"inline-block",marginTop:4,fontSize:11.5,fontWeight:800,padding:"2px 8px",borderRadius:999,background:"rgba(248,113,113,0.15)",color:"var(--red)"}}>⛔ No subir tal cual</span>}
+          {x.aviso && <span style={{display:"block",fontSize:12,color:x.no_subir?"var(--red)":"#fbbf24",marginTop:4}}>⚠ {x.aviso}</span>}
         </span>
         <span style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,fontSize:11.5,color:"var(--text-3)"}}>
           {x.nota!=null && <span>{Math.round(x.medido?.dur||0)} s</span>}
