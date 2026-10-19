@@ -209,17 +209,31 @@ export function DirectosView({ toast }) {
 const ESTADOS = [["nuevo","Por cribar"],["aprobado","Aprobados"],["montado","Montados"],["descartado","Descartados"],["todos","Todos"]];
 const COLOR_EST = { nuevo:"var(--text-3)", aprobado:"#4ade80", montado:"var(--gold)", descartado:"var(--red)" };
 
-function Detalle({ c, onCribar, onRenombrar, onCerrar }) {
+const archivoDe = x => x.split(/[\\/]/).pop();
+
+function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
-  useEffect(()=>{ setNombre(c.nombre); setV(0); },[c.carpeta]);
+  const [nota, setNota] = useState(c.nota_suya||"");
+  useEffect(()=>{ setNombre(c.nombre); setNota(c.nota_suya||""); setV(0); },[c.carpeta]);
+  useEffect(()=>{ setNota(c.nota_suya||""); },[c.nota_suya]);
+  const editable = c.estado!=="montado" && c.estado!=="descartado";
+  const fuera = new Set(c.fuera||[]);
   return (
     <div style={{border:"1px solid var(--gold)",borderRadius:14,background:"var(--bg-2)",padding:14,display:"grid",gridTemplateColumns:"minmax(0,300px) minmax(0,1fr)",gap:16}}>
       <div>
-        <video key={c.videos[v]} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10}}/>
-        {c.videos.length>1 && <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-          {c.videos.map((x,i)=><button key={x} onClick={()=>setV(i)} style={{...boton(i===v),padding:"4px 9px",fontSize:11.5}}>{x.split(/[\\/]/).pop().replace(/\.mp4$/i,"")}</button>)}
-        </div>}
+        <video key={c.videos[v]} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>
+        {c.videos.length>1 && <>
+          <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4,marginTop:10}}>Momentos de la recopilación · {c.videos.length-fuera.size} de {c.videos.length} entran</div>
+          <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>
+            {c.videos.map((x,i)=>{ const a = archivoDe(x), dentro = !fuera.has(a); return (
+              <div key={x} style={{display:"flex",gap:6,alignItems:"center"}}>
+                <button onClick={()=>setV(i)} style={{...boton(i===v),flex:1,minWidth:0,padding:"4px 9px",fontSize:11.5,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:dentro?"none":"line-through"}}>{a.replace(/\.mp4$/i,"")}</button>
+                {editable && <button onClick={()=>onExcluir(c, a, dentro)} disabled={ocupado} title={dentro?"Quitarlo de la recopilación (el archivo no se borra)":"Volver a meterlo en la recopilación"}
+                  style={{...boton(false,dentro),padding:"4px 8px",fontSize:11.5,whiteSpace:"nowrap"}}>{dentro?"Quitar":"Meter"}</button>}
+              </div>); })}
+          </div>
+        </>}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10,minWidth:0}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
@@ -235,8 +249,17 @@ function Detalle({ c, onCribar, onRenombrar, onCerrar }) {
         {[["Título propuesto",c.titulo],["De qué va",c.de_que_va],["Por qué",c.por_que],["Con quién",c.con_quien],["Directo",c.directo && c.directo+(c.tramo?" · "+c.tramo:"")]].filter(x=>x[1]).map(([k,t])=>(
           <div key={k}><div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>{k}</div><div style={{fontSize:13,color:"var(--text-2)",overflowWrap:"anywhere"}}>{t}</div></div>
         ))}
+        <div>
+          <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>Tu nota para el montaje</div>
+          <textarea value={nota} onChange={e=>setNota(e.target.value)} disabled={!editable} rows={3} maxLength={2000}
+            placeholder="Lo que quieras que el clon tenga en cuenta al montarlo: «empieza en la kill de la sniper», «música más tranquila», «el final es cuando se ríe»…"
+            style={{width:"100%",marginTop:4,fontSize:13,padding:"8px 10px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",resize:"vertical",fontFamily:"inherit"}}/>
+          {editable && nota.trim()!==(c.nota_suya||"") && <button onClick={()=>onNota(c, nota)} disabled={ocupado} style={{...boton(true),padding:"5px 11px",fontSize:12,marginTop:4}}>{nota.trim()?"Guardar nota":"Quitar nota"}</button>}
+          {editable && <div style={{fontSize:11.5,color:"var(--text-3)",marginTop:4}}>Manda sobre el criterio del clon (salvo las reglas del canal: si choca, te avisa).</div>}
+        </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:"auto"}}>
           {c.estado==="descartado" ? <button onClick={()=>onCribar(c,"restaurar")} style={boton(false)}>Recuperar</button> : c.estado!=="montado" && <>
+            {c.estado==="aprobado" && <button onClick={()=>onMontar([c])} disabled={ocupado} style={{...boton(true),opacity:ocupado?.5:1}}>Montar este clip</button>}
             <button onClick={()=>onCribar(c, c.estado==="aprobado"?"nuevo":"aprobar")} style={boton(c.estado!=="aprobado")}>{c.estado==="aprobado"?"Quitar aprobado":"✓ Aprobar"}</button>
             <button onClick={()=>onCribar(c,"descartar")} style={boton(false,true)}>✗ Descartar</button>
           </>}
@@ -263,12 +286,13 @@ export function ClipsView({ toast }) {
     catch(e){ setError(e.message); }
   };
   const [tarea, lanzar, cerrarTarea] = useTarea(ev=>{ cargar(); if(!ev.codigo) toast && toast("Shorts montados: están en Shorts Listos"); });
-  useEffect(()=>{ if(enPC()) cargar(); },[]);
-  if(!enPC()) return <div className="fade-in"><h2 style={{fontSize:20,fontWeight:700,marginBottom:12}}>Clips</h2><SinPC que="La criba y el montaje"/></div>;
-
   // v3.2: un clic a la vez por clip, y el reproductor se cierra ANTES de mover la
   // carpeta (18/10: con el vídeo abierto Windows no la deja mover y se duplicaba)
   const [ocupados, setOcupados] = useState({});
+  const [sel, setSel] = useState(()=>new Set());    // 19/10: los aprobados que él elige montar
+  useEffect(()=>{ if(enPC()) cargar(); },[]);
+  if(!enPC()) return <div className="fade-in"><h2 style={{fontSize:20,fontWeight:700,marginBottom:12}}>Clips</h2><SinPC que="La criba y el montaje"/></div>;
+
   const cribar = async (c, accion) => {
     if(ocupados[c.carpeta]) return;
     setOcupados(o=>({...o,[c.carpeta]:true}));
@@ -314,13 +338,33 @@ export function ClipsView({ toast }) {
   const lista = (clips||[]).filter(c=>(filtro==="todos"||c.estado===filtro) &&
     (!q.trim() || String(c.n)===q.trim() || (c.carpeta+" "+(c.titulo||"")+" "+(c.de_que_va||"")).toLowerCase().includes(q.trim().toLowerCase())));
   const aprobados = (clips||[]).filter(c=>c.estado==="aprobado");
+  const elegidos = aprobados.filter(c=>sel.has(c.carpeta));
   const ocupado = tarea && !tarea.cerrada;
-  const montar = async () => {
+  const elegir = c => setSel(s=>{ const n=new Set(s); n.has(c.carpeta)?n.delete(c.carpeta):n.add(c.carpeta); return n; });
+  const montar = async (cuales) => {
+    if(!cuales.length) return;
     try {
-      await lanzar(["montar", ...aprobados.map(c=>c.carpeta), "--modelo", ls("rds_clon_modelo_montar","claude-opus-5-5"),
+      await lanzar(["montar", ...cuales.map(c=>c.carpeta), "--modelo", ls("rds_clon_modelo_montar","claude-opus-5-5"),
         ...(aCapcut?[]:["--sin-capcut"]), ...(conNota?[]:["--sin-ranking"])]);
+      setSel(new Set());
     } catch(e){ toast && toast(e.message); }
   };
+  // 19/10: su nota por clip y los momentos que quita de una recopilación
+  const conClip = async (c, args, cambio, aviso) => {
+    if(ocupados[c.carpeta]) return;
+    setOcupados(o=>({...o,[c.carpeta]:true}));
+    try {
+      const ev = await consultar(args);
+      const h = ev.find(e=>e.evento==="hecho") || {};
+      setClips(cs=>cs.map(x=>x.carpeta===c.carpeta ? {...x, ...cambio(h)} : x));
+      aviso && toast && toast(aviso);
+    }
+    catch(e){ toast && toast(e.message); }
+    finally { setOcupados(o=>{ const n={...o}; delete n[c.carpeta]; return n; }); }
+  };
+  const guardarNota = (c, texto) => conClip(c, ["nota", c.carpeta, texto.trim()], h=>({nota_suya:h.nota||""}),
+    texto.trim() ? "Nota guardada: se tendrá en cuenta al montarlo" : "Nota quitada");
+  const excluir = (c, archivo, quitar) => conClip(c, ["excluir", c.carpeta, archivo, quitar?"si":"no"], h=>({fuera:h.fuera||[]}));
   const det = clips && abierto && clips.find(c=>c.carpeta===abierto);
   return (
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -334,8 +378,11 @@ export function ClipsView({ toast }) {
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <SelectorModelo clave="rds_clon_modelo_montar"/>
-          <button disabled={!aprobados.length||ocupado} onClick={montar} style={{...boton(!!aprobados.length&&!ocupado),opacity:aprobados.length&&!ocupado?1:.5}}>
-            {aprobados.length ? `Montar ${aprobados.length} aprobado${aprobados.length!==1?"s":""}` : "Montar"}
+          {elegidos.length>0 && <button disabled={ocupado} onClick={()=>montar(elegidos)} style={{...boton(!ocupado),opacity:ocupado?.5:1}}>
+            {`Montar ${elegidos.length} elegido${elegidos.length!==1?"s":""}`}
+          </button>}
+          <button disabled={!aprobados.length||ocupado} onClick={()=>montar(aprobados)} style={{...boton(!!aprobados.length&&!ocupado&&!elegidos.length),opacity:aprobados.length&&!ocupado?1:.5}}>
+            {aprobados.length ? `Montar todos los aprobados (${aprobados.length})` : "Montar"}
           </button>
         </div>
       </div>
@@ -351,15 +398,25 @@ export function ClipsView({ toast }) {
         {ESTADOS.map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={boton(filtro===k)}>{l} · {cuenta(k)}</button>)}
         <button onClick={cargar} style={boton(false)}>Actualizar</button>
       </div>
-      {det && <Detalle c={det} onCribar={cribar} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}/>}
+      {aprobados.length>0 && <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",fontSize:12.5,color:"var(--text-2)"}}>
+        <span>Marca la casilla de los aprobados que quieras montar ahora{elegidos.length ? ` · ${elegidos.length} elegido${elegidos.length!==1?"s":""}` : ""}.</span>
+        {elegidos.length<aprobados.length && <button onClick={()=>setSel(new Set(aprobados.map(c=>c.carpeta)))} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Elegir todos</button>}
+        {elegidos.length>0 && <button onClick={()=>setSel(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Quitar selección</button>}
+      </div>}
+      {det && <Detalle c={det} onCribar={cribar} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
+        onNota={guardarNota} onExcluir={excluir} onMontar={montar} ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
         {lista.map(c=>(
-          <div key={c.carpeta} style={{border:"1px solid "+(abierto===c.carpeta?"var(--gold)":"var(--border)"),borderRadius:12,background:"var(--bg-2)",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+          <div key={c.carpeta} style={{position:"relative",border:"1px solid "+(abierto===c.carpeta?"var(--gold)":sel.has(c.carpeta)&&c.estado==="aprobado"?"#4ade80":"var(--border)"),borderRadius:12,background:"var(--bg-2)",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            {c.estado==="aprobado" && <label title="Elegirlo para montar" onClick={e=>e.stopPropagation()} style={{position:"absolute",right:6,top:6,zIndex:2,width:24,height:24,borderRadius:6,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+              <input type="checkbox" checked={sel.has(c.carpeta)} onChange={()=>elegir(c)} style={{cursor:"pointer",accentColor:"#4ade80"}}/>
+            </label>}
             <button onClick={()=>setAbierto(a=>a===c.carpeta?null:c.carpeta)} style={{textAlign:"left",display:"block",width:"100%"}}>
               <div style={{position:"relative",aspectRatio:"9/16",background:"#111"}}>
                 {c.miniatura && <img src={fileUrl(c.miniatura)} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}
                 <span style={{position:"absolute",right:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{mmss(c.duracion)}</span>
-                {c.videos.length>1 && <span style={{position:"absolute",left:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{c.videos.length} momentos</span>}
+                {c.videos.length>1 && <span style={{position:"absolute",left:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{(c.fuera||[]).length ? `${c.videos.length-c.fuera.length} de ${c.videos.length}` : c.videos.length} momentos</span>}
+                {c.nota_suya && <span title={c.nota_suya} style={{position:"absolute",right:6,top:c.estado==="aprobado"?34:6,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"var(--gold)"}}>nota</span>}
                 <span style={{position:"absolute",left:6,top:6,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:COLOR_EST[c.estado]}}>{(ESTADOS.find(e=>e[0]===c.estado)||[0,c.estado])[1].replace("Por cribar","nuevo")}</span>
               </div>
               <div style={{padding:"8px 10px 4px"}}>
