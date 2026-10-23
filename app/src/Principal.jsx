@@ -4,6 +4,7 @@ import { AgentView } from "./agente";
 import { RankingView } from "./ranking";
 import { DirectosView, ClipsView } from "./clon";
 import { ConvertidorView } from "./convertidor";
+import { RandomChatView } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { APP_VERSION, DEFAULT_FORMATS, Icons, SEED, STATUSES, clone, dnd, makeVideo, setIdBase, uid, useToast } from "./base";
 import { DEFAULT_TASK_LISTS, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudFecha, cloudLoad, cloudSave, cloudSaveUrgente, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
@@ -764,6 +765,7 @@ export function App() {
     {id:"clips", label:"Clips", icon:Icons.scissors, primary:true},
     {id:"ranking", label:"Ranking", icon:Icons.chart, primary:true},
     {id:"convertidor", label:"Convertidor YT", icon:Icons.download},
+    {id:"randomchat", label:"RandomChat", icon:Icons.chat},
     {id:"agent", label:"Agente", icon:Icons.sparkles},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},
     {id:"config", label:"Configuración", icon:Icons.gear},
@@ -1219,6 +1221,7 @@ export function App() {
         {view==="clips" && <ClipsView toast={toast}/>}
         {view==="ranking" && <RankingView toast={toast}/>}
         {view==="convertidor" && <ConvertidorView toast={toast}/>}
+        {view==="randomchat" && <RandomChatView toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
         {view==="config" && <ConfigView goals={goals} setGoals={setGoals} theme={theme} setTheme={setTheme} cardsExpanded={cardsExpanded} setCardsExpanded={setCardsExpanded} onConnect={connectGoogle} onExport={exportData} onImport={importData} onReset={resetAll} toast={toast}/>}
 

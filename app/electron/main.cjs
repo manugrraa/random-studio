@@ -468,3 +468,122 @@ app.on("second-instance", () => {
 app.whenReady().then(createWindow);
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on("window-all-closed", () => app.quit());
+
+// ——— RANDOMCHAT DENTRO DE STUDIO (v3.6) ———
+// Él: "implementar el RandomChat dentro de RandomStudio, encender y apagar el servidor desde un apartado".
+// RandomChat (E:\A RdeRandom\RandomChat) es su chat + alertas para OBS: un servidor Node en 127.0.0.1:7470.
+// Lo arrancan Studio y su lanzador de OBS con el MISMO arranque (RandomChat\arrancar.cmd, sin ventana y con
+// registro en logs\servidor.log). Studio le habla por sus rutas /studio/* con la clave de RandomChat\studio.key
+// (la crea el chat): da igual quién lo encendiera, Studio siempre lo controla.
+// No se apaga al cerrar Studio: se apaga con el botón o solo, 3 min después de terminar el directo en OBS.
+// La sesión de YouTube de Studio (refresh token) se le pasa en memoria por 127.0.0.1: nunca se escribe en
+// disco ni sale en el registro.
+const http = require("http");
+const CHAT_DIR = process.env.RANDOMCHAT_DIR || "E:\\A RdeRandom\\RandomChat";
+const CHAT_PORT = 7470;
+const CHAT_LOG = () => path.join(CHAT_DIR, "logs", "servidor.log");
+
+function chatKey() {
+  try { return fs.readFileSync(path.join(CHAT_DIR, "studio.key"), "utf8").trim(); } catch (e) { return ""; }
+}
+
+// Petición al servidor del chat con la clave de Studio. { status, data } o { apagado: true }
+function chatPeticion(method, ruta, body) {
+  return new Promise(resolve => {
+    const txt = body ? JSON.stringify(body) : null;
+    const req = http.request({ host: "127.0.0.1", port: CHAT_PORT, path: ruta, method, timeout: 3000,
+      headers: { "x-studio-key": chatKey(), ...(txt ? { "content-type": "application/json", "content-length": Buffer.byteLength(txt) } : {}) } }, res => {
+      let d = ""; res.on("data", c => d += c);
+      res.on("end", () => { let data = null; try { data = JSON.parse(d); } catch (e) {} resolve({ status: res.statusCode, data }); });
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", e => resolve(e.code === "ECONNREFUSED" ? { apagado: true } : { error: e.message }));
+    if (txt) req.write(txt);
+    req.end();
+  });
+}
+
+async function chatEstado() {
+  const r = await chatPeticion("GET", "/studio/estado");
+  if (r.apagado) return { encendido: false };
+  if (r.status === 200 && r.data) return { encendido: true, nuestro: true, ...r.data };
+  // Responde pero sin aceptar la clave: una versión antigua del chat (sin rutas /studio)
+  return { encendido: true, nuestro: false, error: r.error };
+}
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+ipcMain.handle("chat-estado", async () => {
+  if (!fs.existsSync(path.join(CHAT_DIR, "src", "server.js"))) return { encendido: false, falta: CHAT_DIR };
+  return await chatEstado();
+});
+
+ipcMain.handle("chat-encender", async () => {
+  if ((await chatEstado()).encendido) return { ok: true };
+  const cmd = path.join(CHAT_DIR, "arrancar.cmd");
+  if (!fs.existsSync(cmd)) return { error: "No encuentro " + cmd };
+  try {
+    // El mismo arranque que el lanzador de OBS; desacoplado de Studio (sigue si se cierra Studio)
+    const p = spawn("cmd.exe", ["/d", "/c", ".\\arrancar.cmd"], { cwd: CHAT_DIR, detached: true, windowsHide: true, stdio: "ignore" });
+    let fallo = null;
+    p.on("error", e => { fallo = e; });
+    p.unref();
+    for (let i = 0; i < 40; i++) {
+      await esperar(300);
+      if (fallo) return { error: fallo.message };
+      if ((await chatEstado()).encendido) return { ok: true };
+    }
+    return { error: "No arranca: mira el registro del servidor" };
+  } catch (e) { return { error: e.message }; }
+});
+
+// Apaga el servidor: se lo pide por /studio/apagar (cierra también su "node --watch"); si no responde,
+// mata el proceso que escucha en el puerto 7470, solo si es el server.js del chat.
+function matarArbol(pid) { return new Promise(r => { const k = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true }); k.on("close", r); k.on("error", r); }); }
+function powershell(cmd) {
+  return new Promise(resolve => {
+    const p = spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", cmd], { windowsHide: true });
+    let out = ""; p.stdout.on("data", d => out += d); p.on("close", () => resolve(out.trim())); p.on("error", () => resolve(""));
+  });
+}
+async function chatApagar() {
+  const e = await chatEstado();
+  if (!e.encendido) return { ok: true };
+  if (e.nuestro) {
+    await chatPeticion("POST", "/studio/apagar");
+    for (let i = 0; i < 20; i++) { await esperar(250); if (!(await chatEstado()).encendido) return { ok: true }; }
+  }
+  if ((await chatEstado()).encendido) {
+    const info = await powershell(`$c = Get-NetTCPConnection -LocalPort ${CHAT_PORT} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($c.OwningProcess)"; $q = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"; ConvertTo-Json -Compress @{ pid = $p.ProcessId; cmd = $p.CommandLine; padre = $q.ProcessId; cmdPadre = $q.CommandLine } }`);
+    let x = null; try { x = JSON.parse(info); } catch (er) {}
+    if (!x || !/server\.js/.test(x.cmd || "")) return { error: "No sé qué programa está usando el puerto " + CHAT_PORT };
+    await matarArbol(/server\.js/.test(x.cmdPadre || "") ? x.padre : x.pid);
+  }
+  for (let i = 0; i < 20; i++) { if (!(await chatEstado()).encendido) break; await esperar(250); }
+  return (await chatEstado()).encendido ? { error: "No se ha podido apagar" } : { ok: true };
+}
+ipcMain.handle("chat-apagar", async () => { try { return await chatApagar(); } catch (e) { return { error: e.message }; } });
+
+// Sesión de YouTube de Studio → al chat (en memoria). Solo a 127.0.0.1 y solo al backend de Studio.
+ipcMain.handle("chat-sesion", async (e, refreshToken, backend) => {
+  if (typeof refreshToken !== "string" || refreshToken.length < 10) return { error: "Sin sesión de YouTube" };
+  if (!/^https:\/\/[\w.-]+$/.test(String(backend || ""))) return { error: "Backend no válido" };
+  const r = await chatPeticion("POST", "/studio/youtube", { refreshToken, backend });
+  return r.status === 200 ? { ok: true } : { error: (r.data && r.data.error) || r.error || "El chat no ha aceptado la sesión" };
+});
+ipcMain.handle("chat-olvidar", async () => { await chatPeticion("POST", "/studio/olvidar"); return { ok: true }; });
+
+ipcMain.handle("chat-registro", async () => {
+  try {
+    const st = fs.statSync(CHAT_LOG());
+    const desde = Math.max(0, st.size - 40000);
+    const fd = fs.openSync(CHAT_LOG(), "r"); const b = Buffer.alloc(st.size - desde);
+    fs.readSync(fd, b, 0, b.length, desde); fs.closeSync(fd);
+    return { texto: b.toString("utf8").split(/\r?\n/).slice(-250).join("\n") };
+  } catch (e) { return { texto: "" }; }
+});
+
+ipcMain.handle("chat-abrir", async (e, que) => {
+  if (que === "panel") await shell.openExternal(`http://localhost:${CHAT_PORT}/panel`);
+  else if (que === "carpeta" && fs.existsSync(CHAT_DIR)) await shell.openPath(CHAT_DIR);
+  return { ok: true };
+});

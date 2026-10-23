@@ -48,6 +48,14 @@ contextBridge.exposeInMainWorld("studioFS", {
     ipcRenderer.on("yt-progreso", h);
     return () => ipcRenderer.removeListener("yt-progreso", h);
   },
+  // RandomChat dentro de Studio (v3.6): encender/apagar el chat de OBS y pasarle la sesión de YouTube
+  chatEstado: () => ipcRenderer.invoke("chat-estado"),
+  chatEncender: () => ipcRenderer.invoke("chat-encender"),
+  chatApagar: () => ipcRenderer.invoke("chat-apagar"),
+  chatSesion: (refreshToken, backend) => ipcRenderer.invoke("chat-sesion", refreshToken, backend),
+  chatOlvidar: () => ipcRenderer.invoke("chat-olvidar"),
+  chatRegistro: () => ipcRenderer.invoke("chat-registro"),
+  chatAbrir: (que) => ipcRenderer.invoke("chat-abrir", que),
   onUploadProgress: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("studio-upload-progress", h);

@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 
-export const APP_VERSION = "3.5.0";
+export const APP_VERSION = "3.6.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -120,6 +120,7 @@ export const Icons = {
   short: <Icon d={<><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M10.5 8.5l4 2.5-4 2.5z"/></>}/>,
   largo: <Icon d={<><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M10 9.5l5 2.5-5 2.5z"/></>}/>,
   live: <Icon d={<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none"/></>}/>,
+  chat: <Icon d={<><path d="M21 12a8 8 0 01-11.6 7.1L4 20.5l1.4-4.7A8 8 0 1121 12z"/><path d="M8.5 11h.01M12 11h.01M15.5 11h.01" strokeWidth="2.6"/></>}/>,
   gear: <Icon d={<><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></>}/>,
   trash: <Icon d={<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>} size={16}/>,
   edit: <Icon d={<><path d="M17 3a2.85 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></>} size={14}/>,
