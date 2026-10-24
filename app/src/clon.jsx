@@ -63,7 +63,51 @@ export function useTarea(onFin) {
   return [tarea, lanzar, ()=>setTarea(null)];
 }
 
-const NOMBRE_TAREA = { preparar:"Preparando", clipear:"Clipeando", montar:"Montando", mejorar:"Mejorando" };
+const NOMBRE_TAREA = { preparar:"Preparando", clipear:"Clipeando", montar:"Montando", mejorar:"Mejorando", criba:"Puntuando los clips", revoz:"Poniendo las voces" };
+
+/* 24/10: la voz del título es la de CapCut DE VERDAD ("Vivo Paladín"), por tandas:
+   los Shorts salen esperando su voz; aquí se prepara la tanda, él (o el clon) la genera en
+   CapCut y se recoge y se rehacen los Shorts */
+function VocesCapcut({ toast, lanzar, ocupado, tarea }) {
+  const [v, setV] = useState(null);
+  const [trabajando, setTrabajando] = useState(false);
+  const leer = async () => { try { const ev = await consultar(["voces"]); setV(ev.find(e=>e.evento==="voces")); } catch(e){} };
+  useEffect(()=>{ leer(); },[]);
+  // el montaje por fases se para a esperar las voces: el panel se pone al día solo
+  const esperando = !!(tarea && !tarea.cerrada && tarea.eventos.some(e=>e.evento==="esperando_voces"));
+  useEffect(()=>{ if(esperando) leer(); },[esperando]);
+  if(!v || !v.pendientes || !v.pendientes.length) return null;
+  const orden = async (que) => {
+    setTrabajando(true);
+    try {
+      const ev = await consultar(["voces", que]);
+      const h = ev.find(e=>e.evento==="hecho") || {};
+      if(que==="preparar") toast && toast(`Timeline «VOCES IA» listo en CapCut con ${h.titulos} título(s)`);
+      else {
+        toast && toast(`${h.recogidas} voz(es) recogidas${h.aviso ? " · "+h.aviso : ""}`);
+        // si el montaje está esperando, él sigue solo; si no, se rehacen los Shorts que la esperaban
+        if(h.recogidas && !ocupado) await lanzar(["revoz"]);
+      }
+      leer();
+    } catch(e){ toast && toast(e.message); }
+    finally { setTrabajando(false); }
+  };
+  return (
+    <div style={{border:"1px solid var(--gold)",borderRadius:12,padding:"12px 14px",background:"var(--bg-2)",display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{fontWeight:700,fontSize:14}}>🎙️ {v.pendientes.length} título{v.pendientes.length!==1?"s":""} esperando la voz de CapCut (Vivo Paladín){esperando ? " · el montaje está esperando" : ""}</div>
+      <div style={{fontSize:12.5,color:"var(--text-2)"}}>{v.pendientes.slice(0,6).map(t=>"«"+t+"»").join(" · ")}{v.pendientes.length>6?" …":""}</div>
+      <ol style={{fontSize:12.5,color:"var(--text-2)",margin:"0 0 0 18px",padding:0,lineHeight:1.6}}>
+        <li>Cierra CapCut y pulsa <b>Preparar en CapCut</b>.</li>
+        <li>Abre CapCut → proyecto <b>Clips RIVALS</b> → pestaña <b>VOCES IA</b> → selecciona todos los textos → <b>Texto a voz</b> → <b>Vivo Paladín</b>.</li>
+        <li>Cierra CapCut y pulsa <b>Recoger y rehacer los Shorts</b>.</li>
+      </ol>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button disabled={trabajando||(ocupado&&!esperando)} onClick={()=>orden("preparar")} style={boton(false)}>{v.capcut_abierto ? "Preparar en CapCut (ciérralo antes)" : "Preparar en CapCut"}</button>
+        <button disabled={trabajando||(ocupado&&!esperando)} onClick={()=>orden("recoger")} style={boton(true)}>{esperando ? "Recoger (el montaje sigue solo)" : "Recoger y rehacer los Shorts"}</button>
+        <button onClick={leer} style={boton(false)}>Actualizar</button>
+      </div>
+    </div>);
+}
 
 export function PanelTarea({ tarea, onCerrar }) {
   const [verLog, setVerLog] = useState(false);
@@ -200,7 +244,7 @@ export function DirectosView({ toast }) {
         {vods && !vods.length && <div style={{padding:"40px 20px",textAlign:"center",color:"var(--text-3)",border:"1px dashed var(--border)",borderRadius:14,fontSize:13}}>
           No hay vídeos (.mp4, .mov, .mkv) en esta carpeta.</div>}
       </div>
-      <p style={{fontSize:12,color:"var(--text-3)"}}>Un directo de 3 h tarda 20-40 min en transcribirse y unos minutos más en clipearse. Si un VOD aún se está copiando, el clon espera a que termine. Los que ya estén clipeados se vuelven a clipear (el plan anterior se guarda).</p>
+      <p style={{fontSize:12,color:"var(--text-3)"}}>Un directo de 3 h tarda 20-40 min en transcribirse y unos minutos más en clipearse. Si un VOD aún se está copiando, el clon espera a que termine. Los que ya estén clipeados se vuelven a clipear (el plan anterior se guarda). Al acabar, el clon puntúa cada clip nuevo (criba previa) para que en Clips veas primero lo de más potencial.</p>
     </div>
   );
 }
@@ -211,7 +255,37 @@ const COLOR_EST = { nuevo:"var(--text-3)", aprobado:"#4ade80", montado:"var(--go
 
 const archivoDe = x => x.split(/[\\/]/).pop();
 
-function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, ocupado }) {
+// 24/10: los edits de recopilación (él elige uno por clip; si no, el que recomienda la criba)
+const EDITS = [["clasico","Clásico de humor"],["core_negro","Core · empieza en negro"],["core_clip","Core · empieza en el clip"],
+  ["pov","Tendencia · POV con rótulo-meme"],["ahora_vs_antes","Tendencia · Ahora vs antes"],["top3","Tendencia · Top 3 de broma"]];
+const nombreEdit = k => (EDITS.find(e=>e[0]===k)||[0,k||"—"])[1];
+const colorPot = p => p>=8 ? "#4ade80" : p>=7 ? "var(--gold)" : p>=5 ? "var(--text-2)" : "var(--red)";
+
+function Criba({ c, onRecribir, ocupado }) {
+  const k = c.criba;
+  if(!k) return (
+    <div style={{fontSize:12.5,color:"var(--text-3)",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+      El clon aún no lo ha puntuado.
+      {onRecribir && <button onClick={()=>onRecribir([c])} disabled={ocupado} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Puntuarlo</button>}
+    </div>);
+  return (
+    <div style={{border:"1px solid var(--border)",borderRadius:10,padding:"9px 11px",background:"var(--bg)"}}>
+      <div style={{display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap"}}>
+        <span style={{fontSize:22,fontWeight:800,color:colorPot(k.potencial)}}>{Number(k.potencial).toFixed(1)}</span>
+        <span style={{fontSize:12,color:"var(--text-2)"}}>potencial · {k.tipo==="recopilacion" ? "recopilación · "+nombreEdit(k.edit) : "historia"}</span>
+        {k.recomendado && <span style={{fontSize:11,fontWeight:800,color:"#4ade80"}}>★ RECOMENDADO</span>}
+        {onRecribir && <button onClick={()=>onRecribir([c])} disabled={ocupado} style={{marginLeft:"auto",fontSize:11.5,color:"var(--text-3)"}}>Volver a puntuar</button>}
+      </div>
+      <div style={{fontSize:13,color:"var(--text-2)",marginTop:4,overflowWrap:"anywhere"}}>{k.por_que}</div>
+      {(k.inicio||k.desenlace) && <div style={{fontSize:12,color:"var(--text-3)",marginTop:6,display:"grid",gap:2}}>
+        {[["Inicio",k.inicio],["Nudo",k.nudo],["Desenlace",k.desenlace]].filter(x=>x[1]).map(([a,b])=><div key={a}><b style={{color:"var(--text-2)"}}>{a}:</b> {b}</div>)}
+      </div>}
+      {k.titulo && <div style={{fontSize:12,color:"var(--text-3)",marginTop:6}}>Título que le pondría: <b style={{color:"var(--text-2)"}}>{k.titulo}</b></div>}
+      {k.aviso && <div style={{fontSize:12,color:"var(--red)",marginTop:6}}>⚠ {k.aviso}</div>}
+    </div>);
+}
+
+function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
   const [nota, setNota] = useState(c.nota_suya||"");
@@ -246,6 +320,15 @@ function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMont
             title="El nombre de la carpeta es el título del Short" style={{flex:1,minWidth:0,fontSize:14,fontWeight:650,padding:"7px 10px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>
           {nombre.trim() && nombre!==c.nombre && <button onClick={()=>onRenombrar(c, nombre)} style={{...boton(true),padding:"6px 11px",fontSize:12}}>Guardar nombre</button>}
         </div>
+        <Criba c={c} onRecribir={editable ? onRecribir : null} ocupado={ocupado}/>
+        {(c.videos.length>1 || (c.criba && c.criba.tipo==="recopilacion")) && <div>
+          <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>Edit de la recopilación</div>
+          <select value={c.edit||"auto"} disabled={!editable||ocupado} onChange={e=>onEdit(c, e.target.value)}
+            style={{marginTop:4,fontSize:13,padding:"7px 10px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",maxWidth:"100%"}}>
+            <option value="auto">Automático{c.criba && c.criba.edit ? " (recomienda: "+nombreEdit(c.criba.edit)+")" : " (lo decide el clon)"}</option>
+            {EDITS.map(([k,l])=><option key={k} value={k}>{l}</option>)}
+          </select>
+        </div>}
         {[["Título propuesto",c.titulo],["De qué va",c.de_que_va],["Por qué",c.por_que],["Con quién",c.con_quien],["Directo",c.directo && c.directo+(c.tramo?" · "+c.tramo:"")]].filter(x=>x[1]).map(([k,t])=>(
           <div key={k}><div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>{k}</div><div style={{fontSize:13,color:"var(--text-2)",overflowWrap:"anywhere"}}>{t}</div></div>
         ))}
@@ -278,6 +361,9 @@ export function ClipsView({ toast }) {
   const [error, setError] = useState("");
   const [aCapcut, setACapcut] = useState(()=>ls("rds_clon_capcut","1")==="1");
   const [conNota, setConNota] = useState(()=>ls("rds_clon_nota","1")==="1");
+  const [orden, setOrden] = useState(()=>ls("rds_clon_orden","numero"));     // 24/10: o por potencial
+  const [soloRec, setSoloRec] = useState(false);
+  useEffect(()=>lsSet("rds_clon_orden",orden),[orden]);
   useEffect(()=>lsSet("rds_clon_filtro",filtro),[filtro]);
   useEffect(()=>lsSet("rds_clon_capcut",aCapcut?"1":"0"),[aCapcut]);
   useEffect(()=>lsSet("rds_clon_nota",conNota?"1":"0"),[conNota]);
@@ -285,7 +371,8 @@ export function ClipsView({ toast }) {
     try { const ev = await consultar(["clips","--descartados"]); setClips(ev.find(e=>e.evento==="clips").clips); setError(""); }
     catch(e){ setError(e.message); }
   };
-  const [tarea, lanzar, cerrarTarea] = useTarea(ev=>{ cargar(); if(!ev.codigo) toast && toast("Shorts montados: están en Shorts Listos"); });
+  const [tarea, lanzar, cerrarTarea] = useTarea(ev=>{ cargar(); if(!ev.codigo) toast && toast(
+    ev.tarea==="criba" ? "Criba del clon hecha: ordena por potencial" : "Shorts montados: están en Shorts Listos"); });
   // v3.2: un clic a la vez por clip, y el reproductor se cierra ANTES de mover la
   // carpeta (18/10: con el vídeo abierto Windows no la deja mover y se duplicaba)
   const [ocupados, setOcupados] = useState({});
@@ -335,8 +422,12 @@ export function ClipsView({ toast }) {
     finally { setOcupados(o=>{ const n={...o}; delete n[c.carpeta]; return n; }); }
   };
   const cuenta = k => (clips||[]).filter(c=>k==="todos"||c.estado===k).length;
-  const lista = (clips||[]).filter(c=>(filtro==="todos"||c.estado===filtro) &&
-    (!q.trim() || String(c.n)===q.trim() || (c.carpeta+" "+(c.titulo||"")+" "+(c.de_que_va||"")).toLowerCase().includes(q.trim().toLowerCase())));
+  const pot = c => c.criba ? Number(c.criba.potencial) : -1;
+  const lista = (clips||[]).filter(c=>(filtro==="todos"||c.estado===filtro) && (!soloRec || (c.criba && c.criba.recomendado)) &&
+    (!q.trim() || String(c.n)===q.trim() || (c.carpeta+" "+(c.titulo||"")+" "+(c.de_que_va||"")).toLowerCase().includes(q.trim().toLowerCase())))
+    .sort((a,b)=> orden==="potencial" ? (pot(b)-pot(a) || a.n-b.n) : a.n-b.n);
+  const sinPuntuar = (clips||[]).filter(c=>(c.estado==="nuevo"||c.estado==="aprobado") && !c.criba);
+  const recomendados = (clips||[]).filter(c=>c.estado===filtro || filtro==="todos").filter(c=>c.criba && c.criba.recomendado).length;
   const aprobados = (clips||[]).filter(c=>c.estado==="aprobado");
   const elegidos = aprobados.filter(c=>sel.has(c.carpeta));
   const ocupado = tarea && !tarea.cerrada;
@@ -345,7 +436,7 @@ export function ClipsView({ toast }) {
     if(!cuales.length) return;
     try {
       await lanzar(["montar", ...cuales.map(c=>c.carpeta), "--modelo", ls("rds_clon_modelo_montar","claude-opus-5-5"),
-        ...(aCapcut?[]:["--sin-capcut"]), ...(conNota?[]:["--sin-ranking"])]);
+        "--esperar-voces", ...(aCapcut?[]:["--sin-capcut"]), ...(conNota?[]:["--sin-ranking"])]);
       setSel(new Set());
     } catch(e){ toast && toast(e.message); }
   };
@@ -365,6 +456,13 @@ export function ClipsView({ toast }) {
   const guardarNota = (c, texto) => conClip(c, ["nota", c.carpeta, texto.trim()], h=>({nota_suya:h.nota||""}),
     texto.trim() ? "Nota guardada: se tendrá en cuenta al montarlo" : "Nota quitada");
   const excluir = (c, archivo, quitar) => conClip(c, ["excluir", c.carpeta, archivo, quitar?"si":"no"], h=>({fuera:h.fuera||[]}));
+  // 24/10: el tipo de edit de una recopilación, y la criba previa del clon
+  const ponerEdit = (c, valor) => conClip(c, ["edit", c.carpeta, valor], h=>({edit:h.edit||null}),
+    valor==="auto" ? "Edit automático (el recomendado)" : "Edit: "+nombreEdit(valor));
+  const recribir = async (cuales) => {
+    try { await lanzar(["criba", ...cuales.map(c=>c.carpeta), "--modelo", ls("rds_clon_modelo_montar","claude-opus-5-5")]); }
+    catch(e){ toast && toast(e.message); }
+  };
   const det = clips && abierto && clips.find(c=>c.carpeta===abierto);
   return (
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -374,10 +472,13 @@ export function ClipsView({ toast }) {
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
             Los Clips Recortados. Míralos, aprueba los que quieras como Short y descarta el resto (van a _Descartados, no se borran).
             Al pulsar Montar, el clon escribe el guion de cada aprobado, lo monta con la fórmula elixir y lo exporta él mismo, sin CapCut, a Shorts Listos con su miniatura.
+            Antes de tu criba, el clon puntúa el potencial de cada clip (★ los recomendados) y propone el edit de las recopilaciones; ordena por potencial para ver lo mejor primero.
           </p>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <SelectorModelo clave="rds_clon_modelo_montar"/>
+          {sinPuntuar.length>0 && <button disabled={ocupado} onClick={()=>recribir(sinPuntuar)} title="El clon puntúa el potencial viral de cada clip para que tú solo elijas entre lo mejor (no descarta nada)"
+            style={{...boton(false),opacity:ocupado?.5:1}}>{`Criba del clon (${sinPuntuar.length} sin puntuar)`}</button>}
           {elegidos.length>0 && <button disabled={ocupado} onClick={()=>montar(elegidos)} style={{...boton(!ocupado),opacity:ocupado?.5:1}}>
             {`Montar ${elegidos.length} elegido${elegidos.length!==1?"s":""}`}
           </button>}
@@ -391,11 +492,16 @@ export function ClipsView({ toast }) {
         <label style={{display:"flex",gap:6,alignItems:"center",cursor:"pointer"}}><input type="checkbox" checked={conNota} onChange={e=>setConNota(e.target.checked)}/> Ponerle su nota del Ranking</label>
       </div>
       <Estado/>
+      <VocesCapcut toast={toast} lanzar={lanzar} ocupado={ocupado} tarea={tarea}/>
       <PanelTarea tarea={tarea} onCerrar={cerrarTarea}/>
       {error && <div style={{padding:"14px 16px",border:"1px solid rgba(248,113,113,0.35)",borderRadius:12,color:"var(--red)",fontSize:13}}>{error}</div>}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por número, nombre o de qué va" style={{flex:"1 1 220px",minWidth:0,fontSize:13,padding:"9px 12px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg-2)",color:"var(--text)"}}/>
         {ESTADOS.map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={boton(filtro===k)}>{l} · {cuenta(k)}</button>)}
+        <button onClick={()=>setSoloRec(x=>!x)} title="Los que el clon ve con más potencial (7 o más, sin avisos)" style={boton(soloRec)}>★ Recomendados · {recomendados}</button>
+        <select value={orden} onChange={e=>setOrden(e.target.value)} style={{fontSize:13,padding:"8px 10px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg-2)",color:"var(--text)"}}>
+          <option value="numero">Orden: número</option><option value="potencial">Orden: potencial</option>
+        </select>
         <button onClick={cargar} style={boton(false)}>Actualizar</button>
       </div>
       {aprobados.length>0 && <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",fontSize:12.5,color:"var(--text-2)"}}>
@@ -404,7 +510,8 @@ export function ClipsView({ toast }) {
         {elegidos.length>0 && <button onClick={()=>setSel(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Quitar selección</button>}
       </div>}
       {det && <Detalle c={det} onCribar={cribar} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
-        onNota={guardarNota} onExcluir={excluir} onMontar={montar} ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
+        onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir}
+        ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
         {lista.map(c=>(
           <div key={c.carpeta} style={{position:"relative",border:"1px solid "+(abierto===c.carpeta?"var(--gold)":sel.has(c.carpeta)&&c.estado==="aprobado"?"#4ade80":"var(--border)"),borderRadius:12,background:"var(--bg-2)",overflow:"hidden",display:"flex",flexDirection:"column"}}>
@@ -417,6 +524,7 @@ export function ClipsView({ toast }) {
                 <span style={{position:"absolute",right:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{mmss(c.duracion)}</span>
                 {c.videos.length>1 && <span style={{position:"absolute",left:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{(c.fuera||[]).length ? `${c.videos.length-c.fuera.length} de ${c.videos.length}` : c.videos.length} momentos</span>}
                 {c.nota_suya && <span title={c.nota_suya} style={{position:"absolute",right:6,top:c.estado==="aprobado"?34:6,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"var(--gold)"}}>nota</span>}
+                {c.criba && <span title={c.criba.por_que} style={{position:"absolute",left:6,top:30,fontSize:12,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.8)",color:colorPot(c.criba.potencial)}}>{c.criba.recomendado?"★ ":""}{Number(c.criba.potencial).toFixed(1)}</span>}
                 <span style={{position:"absolute",left:6,top:6,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:COLOR_EST[c.estado]}}>{(ESTADOS.find(e=>e[0]===c.estado)||[0,c.estado])[1].replace("Por cribar","nuevo")}</span>
               </div>
               <div style={{padding:"8px 10px 4px"}}>

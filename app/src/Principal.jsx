@@ -764,7 +764,7 @@ export function App() {
     {id:"directos", label:"Directos", icon:Icons.live, primary:true},
     {id:"clips", label:"Clips", icon:Icons.scissors, primary:true},
     {id:"ranking", label:"Ranking", icon:Icons.chart, primary:true},
-    {id:"convertidor", label:"Convertidor YT", icon:Icons.download},
+    {id:"convertidor", label:"Convertidor", icon:Icons.download, primary:true},
     {id:"randomchat", label:"RandomChat", icon:Icons.chat},
     {id:"agent", label:"Agente", icon:Icons.sparkles},
     {id:"stats", label:"Estadísticas", icon:Icons.chart},

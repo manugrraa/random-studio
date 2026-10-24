@@ -216,7 +216,7 @@ let rankingProc = null;
 
 function correrPython(args) {
   return new Promise((resolve, reject) => {
-    const p = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+    const p = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
     let out = "", err = "";
     p.stdout.on("data", d => out += d); p.stderr.on("data", d => err += d);
     p.on("error", reject);
@@ -266,7 +266,7 @@ ipcMain.handle("ranking-analizar", async (e, opts) => {
   if (o.todo) args.push("--todo");
   if (["claude-opus-5-5", "claude-sonnet-5-5"].includes(o.modelo)) args.push("--modelo", o.modelo);
   const wc = e.sender;
-  rankingProc = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+  rankingProc = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
   let resto = "";
   rankingProc.stdout.on("data", d => {
     resto += d; const lineas = resto.split("\n"); resto = lineas.pop();
@@ -296,8 +296,8 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "retencion", "aprender"]);
-const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "retencion", "aprender"]);
+const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
 function leerEventos(texto) {
@@ -310,7 +310,7 @@ ipcMain.handle("clon-consultar", async (e, args) => {
   if (!Array.isArray(args) || !CONSULTAS.has(args[0]) || !args.every(a => typeof a === "string")) return { error: "Orden no válida" };
   if (!fs.existsSync(CLON_PY())) return { error: "No encuentro " + CLON_PY() };
   return await new Promise(resolve => {
-    const p = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+    const p = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
     let out = "", err = "";
     p.stdout.on("data", d => out += d); p.stderr.on("data", d => err += d);
     p.on("error", x => resolve({ error: x.message }));
@@ -326,7 +326,7 @@ ipcMain.handle("clon-tarea", async (e, args) => {
   if (tarea) return { error: "Ya hay una tarea del clon en marcha: " + tarea.args.slice(0, 2).join(" ") };
   if (!Array.isArray(args) || !TAREAS.has(args[0]) || !args.every(a => typeof a === "string")) return { error: "Tarea no válida" };
   const wc = e.sender;
-  const proc = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+  const proc = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
   tarea = { proc, args, eventos: [], inicio: Date.now() };
   const enviar = ev => { tarea && (tarea.eventos.push(ev), tarea.eventos.length > 400 && tarea.eventos.shift()); try { wc.send("clon-progreso", ev); } catch (x) {} };
   let resto = "", err = "";
@@ -344,7 +344,7 @@ ipcMain.handle("clon-tarea-estado", async () => tarea ? { activa: true, args: ta
 
 ipcMain.handle("clon-cancelar", async () => {
   // el clon lanza ffmpeg, Whisper y Claude: se mata el árbol entero
-  if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"]); } catch (x) {} }
+  if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
   return { ok: true };
 });
 
@@ -376,7 +376,7 @@ ipcMain.handle("yt-descargar", async (e, o) => {
     "--altura", String(parseInt(o.altura) || 1080), "--kbps", String(parseInt(o.kbps) || 192)];
   if (o.destino && String(o.destino).startsWith(RAIZ_RDR)) args.push("--destino", o.destino);
   const wc = e.sender;
-  ytProc = spawn("python", args, { cwd: CONVERTIDOR_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+  ytProc = spawn("python", args, { cwd: CONVERTIDOR_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
   let resto = "";
   ytProc.stdout.on("data", d => { resto += d; const ls = resto.split("\n"); resto = ls.pop();
     leerEventos(ls.join("\n")).forEach(ev => { try { wc.send("yt-progreso", ev); } catch (x) {} }); });
@@ -388,7 +388,7 @@ ipcMain.handle("yt-descargar", async (e, o) => {
 });
 
 ipcMain.handle("yt-cancelar", async () => {
-  if (ytProc) { try { spawn("taskkill", ["/PID", String(ytProc.pid), "/T", "/F"]); } catch (x) {} }
+  if (ytProc) { try { spawn("taskkill", ["/PID", String(ytProc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
   return { ok: true };
 });
 
@@ -522,8 +522,13 @@ ipcMain.handle("chat-encender", async () => {
   const cmd = path.join(CHAT_DIR, "arrancar.cmd");
   if (!fs.existsSync(cmd)) return { error: "No encuentro " + cmd };
   try {
-    // El mismo arranque que el lanzador de OBS; desacoplado de Studio (sigue si se cierra Studio)
-    const p = spawn("cmd.exe", ["/d", "/c", ".\\arrancar.cmd"], { cwd: CHAT_DIR, detached: true, windowsHide: true, stdio: "ignore" });
+    // El mismo arranque que el lanzador de OBS; desacoplado de Studio (sigue si se cierra Studio).
+    // 24/10, él: "integra u oculta la consola del RandomChat, molesta tener la pestaña abierta".
+    // Con `detached: true` Node IGNORA windowsHide en Windows y la consola acababa como pestaña de
+    // Terminal: ahora lo lanza un PowerShell oculto con Start-Process -WindowStyle Hidden (sin
+    // ventana ni pestaña, y fuera del árbol de Studio, así que sigue vivo al cerrarlo)
+    const ps = `Start-Process -FilePath 'cmd.exe' -ArgumentList '/d','/c','.\\arrancar.cmd' -WorkingDirectory '${CHAT_DIR.replace(/'/g, "''")}' -WindowStyle Hidden`;
+    const p = spawn("powershell", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps], { windowsHide: true, stdio: "ignore" });
     let fallo = null;
     p.on("error", e => { fallo = e; });
     p.unref();
