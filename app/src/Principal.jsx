@@ -4,7 +4,7 @@ import { AgentView } from "./agente";
 import { RankingView } from "./ranking";
 import { DirectosView, ClipsView } from "./clon";
 import { ConvertidorView } from "./convertidor";
-import { RandomChatView } from "./randomchat";
+import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { APP_VERSION, DEFAULT_FORMATS, Icons, SEED, STATUSES, clone, dnd, makeVideo, setIdBase, uid, useToast } from "./base";
 import { DEFAULT_TASK_LISTS, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudFecha, cloudLoad, cloudSave, cloudSaveUrgente, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
@@ -128,6 +128,7 @@ export function App() {
   },[]);
   const [syncCode, setSyncCodeState] = useState(()=>getSyncCode());
   const [toast, toastNode] = useToast();
+  useSesionChat(toast);   // v3.8.2: la sesión de YouTube llega al RandomChat esté donde esté
 
   const lastSyncedRef = useRef(null); // huella de los últimos datos sincronizados (para ignorar ecos)
   const lastRemoteTsRef = useRef(0);  // fecha de la última versión de la nube que hemos integrado

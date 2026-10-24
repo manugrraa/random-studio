@@ -23,6 +23,26 @@ const desde = ms => { const s = Math.round((Date.now()-ms)/1000); const h=Math.f
 const mmss = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
 const tarjeta = {padding:"14px 16px",border:"1px solid var(--border)",borderRadius:12,background:"var(--bg-2)",display:"flex",flexDirection:"column",gap:10};
 
+/* La sesión de YouTube de Studio pasa al chat (solo en su memoria) cuando el chat está encendido y no la tiene.
+   Una vez por servidor (pid): si el chat la rechaza (caducada) no se insiste hasta que se reinicie. */
+let sesionEnviadaA = 0;
+function pasarSesion(e, toast) {
+  if(!e || !e.encendido || !e.nuestro || e.sesionYoutube || sesionEnviadaA===e.pid) return;
+  const t = ytGetTokens();
+  if(!t || !t.refresh_token) return;
+  sesionEnviadaA = e.pid;
+  window.studioFS.chatSesion(t.refresh_token, YT_BACKEND).then(r=>{ if(r.error) toast && toast("RandomChat: "+r.error); });
+}
+/* v3.8.2: se llama desde Principal (siempre montado), así el chat recibe la sesión aunque no se abra este
+   apartado (antes solo se pasaba con RandomChat abierto y los suscriptores no se leían). */
+export function useSesionChat(toast) {
+  useEffect(()=>{
+    if(!(window.studioFS && window.studioFS.chatEstado)) return;
+    const mirar = () => window.studioFS.chatEstado().then(e=>pasarSesion(e, toast)).catch(()=>{});
+    mirar(); const t = setInterval(mirar, 20000); return ()=>clearInterval(t);
+  },[]);
+}
+
 export function RandomChatView({ toast }) {
   const enPC = !!(window.studioFS && window.studioFS.chatEstado);
   const [e, setE] = useState(null);
@@ -30,9 +50,8 @@ export function RandomChatView({ toast }) {
   const [verPanel, setVerPanel] = useState(()=>ls("rds_chat_panel","1")==="1");
   const [verLog, setVerLog] = useState(false);
   const [log, setLog] = useState("");
-  const enviada = useRef(0);       // servidor (pid) al que ya se le pasó la sesión de YouTube
 
-  const refrescar = async () => { const x = await window.studioFS.chatEstado(); setE(x); return x; };
+  const refrescar = async () => { const x = await window.studioFS.chatEstado(); setE(x); pasarSesion(x, toast); return x; };
   useEffect(()=>{ if(!enPC) return; refrescar(); const t = setInterval(refrescar, 3000); return ()=>clearInterval(t); },[]);
   useEffect(()=>{ lsSet("rds_chat_panel", verPanel?"1":"0"); },[verPanel]);
   useEffect(()=>{
@@ -40,16 +59,6 @@ export function RandomChatView({ toast }) {
     const leer = ()=>window.studioFS.chatRegistro().then(r=>setLog(r.texto||""));
     leer(); const t = setInterval(leer, 3000); return ()=>clearInterval(t);
   },[verLog]);
-
-  // La sesión de YouTube de Studio pasa al chat (solo en su memoria) cuando el chat está encendido y no la tiene.
-  // Una vez por servidor: si el chat la rechaza (caducada) no se insiste hasta que se reinicie.
-  useEffect(()=>{
-    if(!e || !e.encendido || !e.nuestro || e.sesionYoutube || enviada.current===e.pid) return;
-    const t = ytGetTokens();
-    if(!t || !t.refresh_token) return;
-    enviada.current = e.pid;
-    window.studioFS.chatSesion(t.refresh_token, YT_BACKEND).then(r=>{ if(r.error) toast && toast("RandomChat: "+r.error); });
-  },[e]);
 
   const accion = async (que, fn, ok) => {
     setOcupado(que);
