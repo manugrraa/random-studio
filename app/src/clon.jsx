@@ -285,7 +285,7 @@ function Criba({ c, onRecribir, ocupado }) {
     </div>);
 }
 
-function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, ocupado }) {
+function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
   const [tit, setTit] = useState(c.titulo_suyo||"");
@@ -295,15 +295,26 @@ function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMont
   useEffect(()=>{ setNota(c.nota_suya||""); },[c.nota_suya]);
   const editable = c.estado!=="montado" && c.estado!=="descartado";
   const fuera = new Set(c.fuera||[]);
+  // 25/10: el orden de los momentos que elige él (si no, el de la carpeta)
+  const ordenados = (c.orden && c.orden.length)
+    ? [...c.orden.map(a=>c.videos.find(x=>archivoDe(x)===a)).filter(Boolean), ...c.videos.filter(x=>!c.orden.includes(archivoDe(x)))]
+    : c.videos;
+  const mover = (i, d) => { const l = ordenados.map(archivoDe); const j = i + d; if(j<0||j>=l.length) return; [l[i], l[j]] = [l[j], l[i]]; onOrden(c, l); };
   return (
     <div style={{border:"1px solid var(--gold)",borderRadius:14,background:"var(--bg-2)",padding:14,display:"grid",gridTemplateColumns:"minmax(0,300px) minmax(0,1fr)",gap:16}}>
       <div>
         <video key={c.videos[v]} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>
         {c.videos.length>1 && <>
-          <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4,marginTop:10}}>Momentos de la recopilación · {c.videos.length-fuera.size} de {c.videos.length} entran</div>
+          <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4,marginTop:10}}>Momentos de la recopilación · {c.videos.length-fuera.size} de {c.videos.length} entran{c.orden && c.orden.length ? " · orden tuyo" : ""}</div>
           <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>
-            {c.videos.map((x,i)=>{ const a = archivoDe(x), dentro = !fuera.has(a); return (
+            {ordenados.map((x,k)=>{ const a = archivoDe(x), dentro = !fuera.has(a), i = c.videos.indexOf(x); return (
               <div key={x} style={{display:"flex",gap:6,alignItems:"center"}}>
+                {editable && <span style={{display:"flex",gap:3}}>
+                  <button onClick={()=>mover(k,-1)} disabled={ocupado||k===0} title="Subirlo (sale antes)"
+                    style={{...boton(false),padding:"3px 7px",fontSize:12,opacity:k===0?.3:1}}>↑</button>
+                  <button onClick={()=>mover(k,1)} disabled={ocupado||k===ordenados.length-1} title="Bajarlo (sale después)"
+                    style={{...boton(false),padding:"3px 7px",fontSize:12,opacity:k===ordenados.length-1?.3:1}}>↓</button>
+                </span>}
                 <button onClick={()=>setV(i)} style={{...boton(i===v),flex:1,minWidth:0,padding:"4px 9px",fontSize:11.5,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:dentro?"none":"line-through"}}>{a.replace(/\.mp4$/i,"")}</button>
                 {editable && <button onClick={()=>onExcluir(c, a, dentro)} disabled={ocupado} title={dentro?"Quitarlo de la recopilación (el archivo no se borra)":"Volver a meterlo en la recopilación"}
                   style={{...boton(false,dentro),padding:"4px 8px",fontSize:11.5,whiteSpace:"nowrap"}}>{dentro?"Quitar":"Meter"}</button>}
@@ -470,6 +481,7 @@ export function ClipsView({ toast }) {
     texto.trim() ? "Nota guardada: se tendrá en cuenta al montarlo" : "Nota quitada");
   const excluir = (c, archivo, quitar) => conClip(c, ["excluir", c.carpeta, archivo, quitar?"si":"no"], h=>({fuera:h.fuera||[]}));
   // 24/10: el tipo de edit de una recopilación, y la criba previa del clon
+  const ponerOrden = (c, lista) => conClip(c, ["orden", c.carpeta, lista.join("|")], h=>({orden:h.orden||[]}));
   const ponerTitulo = (c, texto) => conClip(c, ["titulo", c.carpeta, texto.trim()], h=>({titulo_suyo:h.titulo||""}),
     texto.trim() ? "Título guardado: el Short llevará ese" : "El título lo elegirá el clon");
   const ponerEdit = (c, valor) => conClip(c, ["edit", c.carpeta, valor], h=>({edit:h.edit||null}),
@@ -525,7 +537,7 @@ export function ClipsView({ toast }) {
         {elegidos.length>0 && <button onClick={()=>setSel(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Quitar selección</button>}
       </div>}
       {det && <Detalle c={det} onCribar={cribar} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
-        onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo}
+        onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
         {lista.map(c=>(
