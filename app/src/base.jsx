@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 
-export const APP_VERSION = "3.7.0";
+export const APP_VERSION = "3.8.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -11,7 +11,7 @@ export const DEFAULT_FORMATS = {
   combates:  { label: "Combates",             color: "#ef4444", score: 95, ideal: ["Lun","Mie","Vie","Dom"] },
   jugadas:   { label: "Jugadas y momentos",   color: "#60a5fa", score: 90, ideal: ["Mar","Jue","Sab"] },
   cajas:     { label: "Cajas y regalos",      color: "#a78bfa", score: 92, ideal: ["Mar","Jue","Sab"] },
-  retos:     { label: "Retos y dinámicas",    color: "#4ade80", score: 88, ideal: ["Lun","Mie","Sab"] },
+  retos:     { label: "Retos y dinÃ¡micas",    color: "#4ade80", score: 88, ideal: ["Lun","Mie","Sab"] },
   comunidad: { label: "Comunidad y preguntas", color: "#f472b6", score: 86, ideal: ["Mar","Jue","Dom"] },
   ropa:      { label: "Ropa y equipaciones",  color: "#22d3ee", score: 82, ideal: ["Mar","Vie"] },
   novedades: { label: "Novedades y eventos",  color: "#fb923c", score: 84, ideal: ["Lun","Sab","Dom"] },
@@ -20,7 +20,7 @@ export const DEFAULT_FORMATS = {
 export const PALETTE = [
   // Rojos / corales
   "#ef4444","#f87171","#fb7185","#e11d48",
-  // Naranjas / ámbar
+  // Naranjas / Ã¡mbar
   "#f97316","#fb923c","#fdba74","#ea580c",
   // Amarillos / dorados
   "#facc15","#fde047","#eab308","#D4AF37",
@@ -30,7 +30,7 @@ export const PALETTE = [
   "#10b981","#2dd4bf","#14b8a6","#22d3ee","#06b6d4",
   // Azules
   "#38bdf8","#60a5fa","#3b82f6","#2563eb","#1d4ed8",
-  // Índigos / violetas
+  // Ãndigos / violetas
   "#818cf8","#6366f1","#a78bfa","#8b5cf6","#7c3aed",
   // Morados / fucsias / rosas
   "#c084fc","#a855f7","#d946ef","#e879f9","#f472b6","#ec4899",
@@ -47,21 +47,21 @@ export const STATUSES = {
 };
 export const CHECKLIST_TEMPLATE = [
   { id:"guion", label:"Guion / Gancho", done:false },
-  { id:"grabacion", label:"Grabación", done:false },
-  { id:"edicion", label:"Edición", done:false },
-  { id:"miniatura", label:"Miniatura / Título", done:false },
-  { id:"descripcion", label:"Descripción / Tags", done:false },
+  { id:"grabacion", label:"GrabaciÃ³n", done:false },
+  { id:"edicion", label:"EdiciÃ³n", done:false },
+  { id:"miniatura", label:"Miniatura / TÃ­tulo", done:false },
+  { id:"descripcion", label:"DescripciÃ³n / Tags", done:false },
 ];
 export const DAYS = ["Lun","Mar","Mie","Jue","Vie","Sab","Dom"];
-export const DAY_FULL = { Lun:"Lunes", Mar:"Martes", Mie:"Miércoles", Jue:"Jueves", Vie:"Viernes", Sab:"Sábado", Dom:"Domingo" };
+export const DAY_FULL = { Lun:"Lunes", Mar:"Martes", Mie:"MiÃ©rcoles", Jue:"Jueves", Vie:"Viernes", Sab:"SÃ¡bado", Dom:"Domingo" };
 
 export let _id = 100;
 export const uid = () => "v" + (++_id);
-// el contador de ids vive aquí: los demás módulos lo cambian con estas dos
+// el contador de ids vive aquÃ­: los demÃ¡s mÃ³dulos lo cambian con estas dos
 export const setIdBase = n => { _id = n; };
 export const getIdBase = () => _id;
 export const clone = o => JSON.parse(JSON.stringify(o));
-// Devuelve los pares [clave, formato] ordenados alfabéticamente por su etiqueta
+// Devuelve los pares [clave, formato] ordenados alfabÃ©ticamente por su etiqueta
 export const sortedFormats = (formats) => Object.entries(formats).sort((a,b)=>a[1].label.localeCompare(b[1].label, "es", {sensitivity:"base"}));
 
 export function makeVideo(opts={}, formats) {
@@ -93,13 +93,13 @@ export const Y = todayObj.getFullYear(), M = todayObj.getMonth();
 export const iso = (y,m,d) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
 export const SEED = [
-  makeVideo({title:"1v1 vs el suscriptor más nuevo", format:"competitivo", status:"programado", date:iso(Y,M,todayObj.getDate()), type:"short"}),
-  makeVideo({title:"Abrí 10 bolsas doradas en 1 minuto", format:"cajas", status:"edicion", date:iso(Y,M,todayObj.getDate()+1), type:"short"}),
+  makeVideo({title:"1v1 vs el suscriptor mÃ¡s nuevo", format:"competitivo", status:"programado", date:iso(Y,M,todayObj.getDate()), type:"short"}),
+  makeVideo({title:"AbrÃ­ 10 bolsas doradas en 1 minuto", format:"cajas", status:"edicion", date:iso(Y,M,todayObj.getDate()+1), type:"short"}),
   makeVideo({title:"Reto: no puedes hablar antes de ganar", format:"retos", status:"grabacion", date:iso(Y,M,todayObj.getDate()+2), type:"short"}),
-  makeVideo({title:"Mundial de equipaciones — capítulo 4", format:"competitivo", status:"idea", type:"largo"}),
+  makeVideo({title:"Mundial de equipaciones â€” capÃ­tulo 4", format:"competitivo", status:"idea", type:"largo"}),
   makeVideo({title:"Reacciono a los mejores clips de Rivals", format:"reacciones", status:"idea", type:"short"}),
-  makeVideo({title:"¿Para qué sirve esta skin escondida?", format:"educativo", status:"idea", type:"short"}),
-  makeVideo({title:"1 like = 1 caja (camino al millón)", format:"retos", status:"idea", type:"short"}),
+  makeVideo({title:"Â¿Para quÃ© sirve esta skin escondida?", format:"educativo", status:"idea", type:"short"}),
+  makeVideo({title:"1 like = 1 caja (camino al millÃ³n)", format:"retos", status:"idea", type:"short"}),
 ];
 
 /* ============================ ICONOS ============================ */
@@ -186,7 +186,7 @@ export const FormatPill = ({fmt, small}) => {
       display:"inline-flex", alignItems:"center", gap:6, fontSize: small?10.5:11.5, fontWeight:600,
       color:fmt.color, background:`${fmt.color}14`, border:`1px solid ${fmt.color}33`,
       padding: small?"2px 7px":"3px 9px", borderRadius:7, whiteSpace:"nowrap",
-      minWidth:0, maxWidth:"100%" // puede encogerse: el nombre se corta con … si no cabe
+      minWidth:0, maxWidth:"100%" // puede encogerse: el nombre se corta con â€¦ si no cabe
     }}>
       <span style={{width:6, height:6, borderRadius:"50%", background:fmt.color, flexShrink:0}}/>
       <span style={{overflow:"hidden", textOverflow:"ellipsis"}}>{fmt.label}</span>
@@ -201,7 +201,7 @@ export const StatusDot = ({status}) => {
 };
 
 /* ============================ VIDEO CARD ============================ */
-/* ============================ ARRASTRE TÁCTIL (iPhone/Android) ============================ */
+/* ============================ ARRASTRE TÃCTIL (iPhone/Android) ============================ */
 // Puente entre las tarjetas y las acciones de mover de App.
 export const dnd = { moveToDate:null, moveToStatus:null, moveToUnassign:null, suppressClickUntil:0 };
 
@@ -209,12 +209,12 @@ export const touchDrag = {
   active:false, id:null, ghost:null, lastZone:null, lpTimer:null,
   startX:0, startY:0, moved:false, cardEl:null, scrollDir:0, scrollRAF:null, lastY:0,
 
-  // Desplaza la página cuando el dedo se acerca a los bordes (para poder arrastrar lejos)
+  // Desplaza la pÃ¡gina cuando el dedo se acerca a los bordes (para poder arrastrar lejos)
   autoScroll(){
     if(!touchDrag.active){ touchDrag.scrollRAF=null; return; }
     if(touchDrag.scrollDir!==0){
       window.scrollBy(0, touchDrag.scrollDir);
-      // La página se mueve bajo el dedo: recalcular la zona bajo el dedo
+      // La pÃ¡gina se mueve bajo el dedo: recalcular la zona bajo el dedo
       touchDrag.updateZone(touchDrag.lastX, touchDrag.lastY);
     }
     touchDrag.scrollRAF = requestAnimationFrame(touchDrag.autoScroll);
@@ -235,11 +235,11 @@ export const touchDrag = {
     this.id = v.id; this.startX = t.clientX; this.startY = t.clientY;
     this.moved = false; this.cardEl = cardEl;
     clearTimeout(this.lpTimer);
-    // Mantén pulsado ~300ms (sin mover) para "levantar" la tarjeta
+    // MantÃ©n pulsado ~300ms (sin mover) para "levantar" la tarjeta
     this.lpTimer = setTimeout(()=>this.begin(t.clientX, t.clientY), 300);
   },
   onMovePre(e){
-    // Antes de levantar: si el dedo se desplaza, es un scroll → cancelamos el "levantar"
+    // Antes de levantar: si el dedo se desplaza, es un scroll â†’ cancelamos el "levantar"
     if(this.active) return;
     const t = e.touches[0]; if(!t) return;
     if(Math.abs(t.clientX-this.startX)>10 || Math.abs(t.clientY-this.startY)>10){
@@ -275,7 +275,7 @@ export const touchDrag = {
     touchDrag.moved = true;
     touchDrag.lastX = t.clientX; touchDrag.lastY = t.clientY;
     touchDrag.moveGhost(t.clientX, t.clientY);
-    // Cerca del borde superior/inferior → desplazar la página
+    // Cerca del borde superior/inferior â†’ desplazar la pÃ¡gina
     const h = window.innerHeight;
     if(t.clientY < 110) touchDrag.scrollDir = -Math.ceil((110 - t.clientY)/8);
     else if(t.clientY > h-110) touchDrag.scrollDir = Math.ceil((t.clientY-(h-110))/8);
@@ -310,4 +310,4 @@ export const touchDrag = {
   }
 };
 
-/* Estado global de tarjetas (contraídas/expandidas); cada tarjeta puede ajustarse aparte */
+/* Estado global de tarjetas (contraÃ­das/expandidas); cada tarjeta puede ajustarse aparte */

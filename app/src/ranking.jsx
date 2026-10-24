@@ -63,6 +63,19 @@ function Curva({ puntos, dur, caidas }) {
   );
 }
 
+// la curva de retención de YouTube -> el clon la analiza (caídas, por qué, lecciones)
+export async function analizarRetencion(x, modelo) {
+  const hoy = new Date(); const p=n=>String(n).padStart(2,"0");
+  const fin = `${hoy.getFullYear()}-${p(hoy.getMonth()+1)}-${p(hoy.getDate())}`;
+  const d = await ytAnalyticsQuery({ startDate:"2025-01-01", endDate:fin, dimensions:"elapsedVideoTimeRatio",
+    metrics:"audienceWatchRatio,relativeRetentionPerformance", filters:"video=="+x.subido.id });
+  const filas = (d.rows||[]).map(f=>[Number(f[0]), Number(f[1])]);
+  if(filas.length<5) throw new Error("YouTube aún no tiene la curva de este Short (tarda 1-2 días en aparecer)");
+  const ev = await window.studioFS.clonConsultar(["retencion", String(x.n), JSON.stringify(filas), "--modelo", modelo,
+    ...(x.subido.visitas!=null ? ["--visitas", String(x.subido.visitas)] : [])]);
+  if(ev.error) throw new Error(ev.error);
+}
+
 function Retencion({ x, toast, modelo, onHecho }) {
   const [cargando, setCargando] = useState(false);
   const [aprobadas, setAprobadas] = useState({});
@@ -70,15 +83,7 @@ function Retencion({ x, toast, modelo, onHecho }) {
   const analizar = async () => {
     setCargando(true);
     try {
-      const hoy = new Date(); const p=n=>String(n).padStart(2,"0");
-      const fin = `${hoy.getFullYear()}-${p(hoy.getMonth()+1)}-${p(hoy.getDate())}`;
-      const d = await ytAnalyticsQuery({ startDate:"2025-01-01", endDate:fin, dimensions:"elapsedVideoTimeRatio",
-        metrics:"audienceWatchRatio,relativeRetentionPerformance", filters:"video=="+x.subido.id });
-      const filas = (d.rows||[]).map(f=>[Number(f[0]), Number(f[1])]);
-      if(filas.length<5) throw new Error("YouTube aún no tiene la curva de este Short (tarda 1-2 días en aparecer)");
-      const ev = await window.studioFS.clonConsultar(["retencion", String(x.n), JSON.stringify(filas), "--modelo", modelo,
-        ...(x.subido.visitas!=null ? ["--visitas", String(x.subido.visitas)] : [])]);
-      if(ev.error) throw new Error(ev.error);
+      await analizarRetencion(x, modelo);
       toast && toast("Retención analizada"); onHecho && onHecho();
     } catch(e){
       const m = String(e.message||e);
@@ -123,13 +128,90 @@ function Retencion({ x, toast, modelo, onHecho }) {
   );
 }
 
+// 25/10, él: "que se puedan ver las estadísticas que necesitamos saber de cada Short". De YouTube
+// Analytics con su Google: lo que dice si un Short funciona (visitas, cuánto se ve, interacción,
+// suscriptores) y lo que se calcula de ahí. Se guarda en este equipo y se actualiza a mano.
+const STATS = [
+  ["views","Visualizaciones"],["engagedViews","Vistas con interacción"],["averageViewPercentage","% visto de media"],
+  ["averageViewDuration","Duración media vista"],["estimatedMinutesWatched","Minutos vistos"],["likes","Me gusta"],
+  ["comments","Comentarios"],["shares","Compartidos"],["subscribersGained","Suscriptores ganados"],["subscribersLost","Suscriptores perdidos"]];
+function fmtStat(k, v) {
+  if(v==null || isNaN(v)) return "—";
+  if(k==="averageViewPercentage") return Number(v).toFixed(1)+" %";
+  if(k==="averageViewDuration") return Number(v).toFixed(1)+" s";
+  return Number(v).toLocaleString("es-ES");
+}
+function Estadisticas({ x, toast }) {
+  const clave = "rds_stats_"+x.subido.id;
+  const [st, setSt] = useState(()=>{ try { return JSON.parse(localStorage.getItem(clave)||"null"); } catch(e){ return null; } });
+  const [cargando, setCargando] = useState(false);
+  const leer = async () => {
+    setCargando(true);
+    try {
+      const hoy = new Date(); const p=n=>String(n).padStart(2,"0");
+      const fin = `${hoy.getFullYear()}-${p(hoy.getMonth()+1)}-${p(hoy.getDate())}`;
+      let d, metricas = STATS.map(s=>s[0]);
+      try { d = await ytAnalyticsQuery({ startDate:"2025-01-01", endDate:fin, metrics:metricas.join(","), filters:"video=="+x.subido.id }); }
+      catch(e){   // si la cuenta aún no tiene "engagedViews", sin ella
+        metricas = metricas.filter(m=>m!=="engagedViews");
+        d = await ytAnalyticsQuery({ startDate:"2025-01-01", endDate:fin, metrics:metricas.join(","), filters:"video=="+x.subido.id });
+      }
+      const fila = (d.rows||[])[0] || [];
+      const v = {}; metricas.forEach((m,i)=>{ v[m] = fila[i]!=null ? Number(fila[i]) : null; });
+      v._fecha = Date.now();
+      setSt(v); try { localStorage.setItem(clave, JSON.stringify(v)); } catch(e){}
+    } catch(e){
+      const m = String(e.message||e);
+      toast && toast(/ANALYTICS_PERMISOS|ytEnsure|token/i.test(m) ? "Conecta Google (arriba) para ver las estadísticas" : m.slice(0,160));
+    }
+    setCargando(false);
+  };
+  useEffect(()=>{ if(!st && window.studioFS) leer(); },[x.subido.id]);
+  const v = st || {};
+  const vistas = v.views || 0;
+  const derivadas = vistas ? [
+    ["Me gusta por cada 100", ((v.likes||0)/vistas*100).toFixed(2)],
+    ["Suscriptores por cada 1.000", (((v.subscribersGained||0)-(v.subscribersLost||0))/vistas*1000).toFixed(2)],
+    ...(x.retencion && x.retencion.a_los_3s!=null ? [["Siguen a los 3 s", x.retencion.a_los_3s+" %"]] : []),
+  ] : [];
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:8,borderTop:"1px solid var(--border)",paddingTop:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <b style={{fontSize:13}}>Estadísticas en YouTube</b>
+        {st && st._fecha && <span style={{fontSize:11.5,color:"var(--text-3)"}}>del {new Date(st._fecha).toLocaleString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</span>}
+        <button disabled={cargando} onClick={leer} style={{marginLeft:"auto",fontSize:12,fontWeight:600,color:"var(--gold)",border:"1px solid var(--gold)",borderRadius:8,padding:"5px 10px",opacity:cargando?.5:1}}>{cargando?"Leyendo…":"Actualizar"}</button>
+      </div>
+      {st && <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:"8px 14px"}}>
+        {[...STATS.filter(([k])=>k in v).map(([k,l])=>[l, fmtStat(k, v[k])]), ...derivadas].map(([l,t])=>(
+          <div key={l} style={{fontSize:12,color:"var(--text-3)"}}>{l}<div style={{fontSize:16,fontWeight:750,color:"var(--text)"}}>{t}</div></div>))}
+      </div>}
+      {!st && !cargando && <div style={{fontSize:12,color:"var(--text-3)"}}>Conecta Google y pulsa Actualizar.</div>}
+    </div>);
+}
+
+// 25/10, él: "que yo pueda seleccionar el título que se ponga en cada Short": se rehace solo
+function CambiarTitulo({ x, onRetitular, ocupado }) {
+  const [t, setT] = useState(x.titulo_pantalla||"");
+  useEffect(()=>{ setT(x.titulo_pantalla||""); },[x.titulo_pantalla]);
+  if(!x.remontable || !onRetitular) return null;
+  return (
+    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+      <span style={{fontSize:12,color:"var(--text-3)"}}>Título en pantalla</span>
+      <input value={t} onChange={e=>setT(e.target.value)} maxLength={60}
+        style={{flex:"1 1 200px",minWidth:0,fontSize:13,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>
+      {t.trim() && t.trim()!==(x.titulo_pantalla||"") && <button disabled={ocupado} onClick={()=>onRetitular(x, t.trim())}
+        style={{fontSize:12,fontWeight:600,color:"var(--gold)",border:"1px solid var(--gold)",borderRadius:8,padding:"5px 10px",opacity:ocupado?.5:1}}>Cambiar y rehacer</button>}
+      {x.voz_pendiente && <span style={{fontSize:11.5,color:"#fbbf24"}}>🎙️ esperando su voz de CapCut</span>}
+    </div>);
+}
+
 // suelta el vídeo de los reproductores antes de mover la carpeta (Windows no deja moverla abierta)
 async function soltarVideos() {
   document.querySelectorAll("video").forEach(v=>{ try { v.pause(); v.removeAttribute("src"); v.load(); } catch(e){} });
   await new Promise(r=>setTimeout(r,400));
 }
 
-function Fila({ x, abierto, onToggle, onSubido, onMejorar, ocupado, onEliminar, toast, modelo, onRecargar }) {
+function Fila({ x, abierto, onToggle, onSubido, onMejorar, onRetitular, ocupado, onEliminar, toast, modelo, onRecargar }) {
   const sub = x.subido;
   const mej = x.mejorado;
   return (
@@ -188,6 +270,8 @@ function Fila({ x, abierto, onToggle, onSubido, onMejorar, ocupado, onEliminar, 
                 style={{fontSize:12,fontWeight:600,color:"var(--red)",border:"1px solid rgba(248,113,113,0.45)",borderRadius:8,padding:"5px 10px"}}>Eliminar</button>}
             </span>
           </div>
+          {!sub && <CambiarTitulo x={x} onRetitular={onRetitular} ocupado={ocupado}/>}
+          {sub && sub.id && <Estadisticas x={x} toast={toast}/>}
           {sub && sub.id && window.studioFS?.clonConsultar && <Retencion x={x} toast={toast} modelo={modelo} onHecho={onRecargar}/>}
         </div>
         </div>
@@ -269,7 +353,30 @@ export function RankingView({ toast }) {
 
   // v3.3: MEJORAR (él, 18/10): el clon remonta los Shorts con más potencial atacando
   // lo que flojea; el original no se toca y los dos se puntúan con el mismo juez
-  const [tarea, lanzarTarea, cerrarTarea] = useTarea(ev=>{ cargar(); if(!ev.codigo) toast && toast("Mejorados: están junto al original en su carpeta"); });
+  const [tarea, lanzarTarea, cerrarTarea] = useTarea(ev=>{ cargar(); if(!ev.codigo) toast && toast(
+    ev.tarea==="retitular" ? "Short rehecho con su título nuevo" : "Mejorados: están junto al original en su carpeta"); });
+  // 25/10: la retención real de TODOS los subidos que aún no la tienen, de una vez
+  const [retProg, setRetProg] = useState(null);
+  const retencionTodos = async () => {
+    const pend = (datos?.ranking||[]).filter(x=>x.subido && x.subido.id && !x.retencion);
+    if(!pend.length){ toast && toast("Todos los subidos ya tienen su retención analizada"); return; }
+    let hechos = 0, sinCurva = 0;
+    for(const [i,x] of pend.entries()){
+      setRetProg(`${i+1}/${pend.length}`);
+      try { await analizarRetencion(x, modelo); hechos++; }
+      catch(e){
+        const m = String(e.message||e);
+        if(/ANALYTICS_PERMISOS|ytEnsure|token/i.test(m)){ toast && toast("Conecta Google (arriba) para leer la retención"); break; }
+        sinCurva++;
+      }
+    }
+    setRetProg(null); cargar();
+    toast && toast(`Retención: ${hechos} analizados${sinCurva ? `, ${sinCurva} aún sin curva en YouTube` : ""}`);
+  };
+  const retitular = async (x, texto) => {
+    try { await soltarVideos(); await lanzarTarea(["retitular", String(x.n), texto]); }
+    catch(e){ toast && toast(e.message); }
+  };
   const ocupado = !!(tarea && !tarea.cerrada);
   const mejorar = async (nums) => {
     try { await lanzarTarea(["mejorar", ...nums.map(String), "--modelo", modelo]); }
@@ -360,6 +467,9 @@ export function RankingView({ toast }) {
             <button key={k} onClick={()=>setVerSubidos(k)} style={boton(verSubidos===k)}>{l} · {k==="todos"?datos.ranking.length:datos.ranking.filter(x=>k==="subidos"?!!x.subido:!x.subido).length}</button>
           ))}
           {(datos.eliminados||[]).length>0 && <button onClick={()=>setVerSubidos("eliminados")} style={boton(verSubidos==="eliminados")}>Eliminados · {datos.eliminados.length}</button>}
+          {verSubidos==="subidos" && window.studioFS?.clonConsultar && <button disabled={!!retProg} onClick={retencionTodos}
+            title="Lee de YouTube la curva de cada Short subido y el clon analiza dónde se va la gente (las lecciones las apruebas tú)"
+            style={{...boton(false),opacity:retProg?.6:1}}>{retProg ? `Analizando retención ${retProg}…` : "Analizar la retención de todos"}</button>}
           <span style={{width:1,height:24,background:"var(--border)"}}/>
           {[["todos","Todos"],["nuevo","Formato nuevo"],["antiguo","Antiguo"]].map(([k,l])=>(
             <button key={k} onClick={()=>setFiltro(k)} style={boton(filtro===k)}>{l}</button>
@@ -376,7 +486,7 @@ export function RankingView({ toast }) {
             <span style={{flex:1,minWidth:0,fontWeight:650,fontSize:14,overflowWrap:"anywhere"}}>{x.n} · {x.titulo}</span>
             <button onClick={()=>recuperar(x)} style={{fontSize:12,fontWeight:600,color:"#4ade80",border:"1px solid var(--border)",borderRadius:8,padding:"5px 10px"}}>Recuperar</button>
           </div>))
-        : lista.map(x=><Fila key={x.carpeta} x={x} abierto={abierto===x.carpeta} onToggle={()=>setAbierto(a=>a===x.carpeta?null:x.carpeta)} onSubido={marcarSubido} onMejorar={window.studioFS?.clonTarea ? mejorar : null} ocupado={ocupado} onEliminar={window.studioFS?.rankingEliminar ? eliminar : null} toast={toast} modelo={modelo} onRecargar={cargar}/>)}
+        : lista.map(x=><Fila key={x.carpeta} x={x} abierto={abierto===x.carpeta} onToggle={()=>setAbierto(a=>a===x.carpeta?null:x.carpeta)} onSubido={marcarSubido} onMejorar={window.studioFS?.clonTarea ? mejorar : null} onRetitular={window.studioFS?.clonTarea ? retitular : null} ocupado={ocupado} onEliminar={window.studioFS?.rankingEliminar ? eliminar : null} toast={toast} modelo={modelo} onRecargar={cargar}/>)}
         {datos && verSubidos!=="eliminados" && !lista.length && !prog && (
           <div style={{padding:"40px 20px",textAlign:"center",color:"var(--text-3)",border:"1px dashed var(--border)",borderRadius:14,fontSize:13}}>
             {datos.ranking.length ? "Ningún Short coincide con la búsqueda." : "Todavía no hay ningún Short analizado: pulsa «Analizar» para empezar."}

@@ -285,9 +285,11 @@ function Criba({ c, onRecribir, ocupado }) {
     </div>);
 }
 
-function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, ocupado }) {
+function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
+  const [tit, setTit] = useState(c.titulo_suyo||"");
+  useEffect(()=>{ setTit(c.titulo_suyo||""); },[c.carpeta, c.titulo_suyo]);
   const [nota, setNota] = useState(c.nota_suya||"");
   useEffect(()=>{ setNombre(c.nombre); setNota(c.nota_suya||""); setV(0); },[c.carpeta]);
   useEffect(()=>{ setNota(c.nota_suya||""); },[c.nota_suya]);
@@ -321,6 +323,17 @@ function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMont
           {nombre.trim() && nombre!==c.nombre && <button onClick={()=>onRenombrar(c, nombre)} style={{...boton(true),padding:"6px 11px",fontSize:12}}>Guardar nombre</button>}
         </div>
         <Criba c={c} onRecribir={editable ? onRecribir : null} ocupado={ocupado}/>
+        <div>
+          <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>Título en pantalla del Short</div>
+          <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}}>
+            <input value={tit} onChange={e=>setTit(e.target.value)} disabled={!editable} maxLength={60}
+              placeholder="Vacío = lo elige el clon"
+              style={{flex:"1 1 220px",minWidth:0,fontSize:13.5,padding:"7px 10px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>
+            {editable && tit.trim()!==(c.titulo_suyo||"") && <button onClick={()=>onTitulo(c, tit)} disabled={ocupado} style={{...boton(true),padding:"6px 11px",fontSize:12}}>{tit.trim()?"Usar este título":"Que lo elija el clon"}</button>}
+          </div>
+          {editable && c.criba && c.criba.titulo && c.criba.titulo!==tit && <div style={{fontSize:12,color:"var(--text-3)",marginTop:4}}>
+            Propuesta del clon: <button onClick={()=>setTit(c.criba.titulo)} style={{color:"var(--gold)",fontWeight:600,fontSize:12}}>«{c.criba.titulo}»</button></div>}
+        </div>
         {(c.videos.length>1 || (c.criba && c.criba.tipo==="recopilacion")) && <div>
           <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>Edit de la recopilación</div>
           <select value={c.edit||"auto"} disabled={!editable||ocupado} onChange={e=>onEdit(c, e.target.value)}
@@ -457,6 +470,8 @@ export function ClipsView({ toast }) {
     texto.trim() ? "Nota guardada: se tendrá en cuenta al montarlo" : "Nota quitada");
   const excluir = (c, archivo, quitar) => conClip(c, ["excluir", c.carpeta, archivo, quitar?"si":"no"], h=>({fuera:h.fuera||[]}));
   // 24/10: el tipo de edit de una recopilación, y la criba previa del clon
+  const ponerTitulo = (c, texto) => conClip(c, ["titulo", c.carpeta, texto.trim()], h=>({titulo_suyo:h.titulo||""}),
+    texto.trim() ? "Título guardado: el Short llevará ese" : "El título lo elegirá el clon");
   const ponerEdit = (c, valor) => conClip(c, ["edit", c.carpeta, valor], h=>({edit:h.edit||null}),
     valor==="auto" ? "Edit automático (el recomendado)" : "Edit: "+nombreEdit(valor));
   const recribir = async (cuales) => {
@@ -510,7 +525,7 @@ export function ClipsView({ toast }) {
         {elegidos.length>0 && <button onClick={()=>setSel(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Quitar selección</button>}
       </div>}
       {det && <Detalle c={det} onCribar={cribar} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
-        onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir}
+        onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
         {lista.map(c=>(
