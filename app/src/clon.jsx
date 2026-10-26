@@ -295,41 +295,43 @@ function Criba({ c, onRecribir, ocupado }) {
     </div>);
 }
 
-// v3.10 (26/10), él: "que se puedan añadir clips recortados a recopilaciones, y en las notas poner
-// el momento del clip que quiero que salga". Se recorta ese momento (el clip original no se toca)
-// y entra como un momento más; si no se escribe, vale el que diga la nota de ese clip
+// v3.12 (27/10), él: "quiero poder crear una carpeta donde añadir los clips y que cada carpeta sea una
+// recopilación... en la pestaña de cada clip debe poner «Añadir a recopilación» con un desplegable de las
+// recopilaciones, y la primera opción, crear una nueva". El momento: el escrito aquí, si no el de su
+// nota, y si no tiene tiempos, el clip entero (el original no se toca)
 const TIENE_TIEMPO = /\d+:\d{1,2}|\d+\s*(a|al|-|hasta)\s*\d+/;
-function Anadir({ c, todos, onAnadir, ocupado }) {
-  const [origen, setOrigen] = useState("");
-  const [archivo, setArchivo] = useState("");
-  const [momento, setMomento] = useState("");
-  const o = todos.find(x=>x.carpeta===origen);
-  useEffect(()=>{ setArchivo(o && o.videos.length===1 ? archivoDe(o.videos[0]) : "");
-    setMomento(o && TIENE_TIEMPO.test(o.nota_suya||"") ? (o.nota_suya.match(/[\d:.,]+\s*(?:-|a|al|hasta)\s*[\d:.,]+/)||[""])[0] : ""); },[origen]);
-  const opciones = todos.filter(x=>x.carpeta!==c.carpeta && x.estado!=="descartado");
-  const listo = o && archivo && !ocupado;
+const momentoDeNota = n => TIENE_TIEMPO.test(n||"") ? ((n.match(/[\d:.,]+\s*(?:-|a|al|hasta)\s*[\d:.,]+/)||[""])[0]) : "";
+function AnadirARecopilacion({ c, recops, onAnadir, onCrear, ocupado }) {
+  const [destino, setDestino] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [archivo, setArchivo] = useState(c.videos.length===1 ? archivoDe(c.videos[0]) : "");
+  const [momento, setMomento] = useState(momentoDeNota(c.nota_suya));
+  useEffect(()=>{ setDestino(""); setNombre(""); setArchivo(c.videos.length===1 ? archivoDe(c.videos[0]) : ""); setMomento(momentoDeNota(c.nota_suya)); },[c.carpeta]);
+  const crear = destino==="__nueva";
+  const listo = destino && archivo && !ocupado && (!crear || nombre.trim());
+  const ya = (c.en_recopilaciones||[]).filter(r=>recops.some(x=>x.carpeta===r));
+  const inp = {fontSize:12.5,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",minWidth:0};
   return (
     <div style={{marginTop:12,padding:"10px 10px 12px",border:"1px dashed var(--border)",borderRadius:10,display:"flex",flexDirection:"column",gap:6}}>
-      <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>Añadir un clip recortado{c.videos.length>1?" a la recopilación":""}</div>
-      <select value={origen} onChange={e=>setOrigen(e.target.value)} disabled={ocupado}
-        style={{fontSize:12.5,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}>
-        <option value="">Elige el clip…</option>
-        {opciones.map(x=><option key={x.carpeta} value={x.carpeta}>{x.n} · {x.nombre}{x.estado==="montado"?" (montado)":""}</option>)}
+      <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>Añadir a recopilación</div>
+      {ya.length>0 && <div style={{fontSize:11.5,color:"#4ade80"}}>Ya está en: {ya.map(r=>r.replace(/^\d+ - /,"")).join(", ")}</div>}
+      <select value={destino} onChange={e=>setDestino(e.target.value)} disabled={ocupado} style={inp}>
+        <option value="">Elige la recopilación…</option>
+        <option value="__nueva">＋ Crear recopilación nueva</option>
+        {recops.map(r=><option key={r.carpeta} value={r.carpeta}>{r.nombre} · {r.videos.length} momento{r.videos.length!==1?"s":""}</option>)}
       </select>
-      {o && o.videos.length>1 && <select value={archivo} onChange={e=>setArchivo(e.target.value)}
-        style={{fontSize:12.5,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}>
-        <option value="">¿Qué momento de ese clip?</option>
-        {o.videos.map(v=><option key={v} value={archivoDe(v)}>{archivoDe(v).replace(/\.mp4$/i,"")}</option>)}
+      {crear && <input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Nombre de la recopilación (será el título)" maxLength={60} style={inp}/>}
+      {destino && c.videos.length>1 && <select value={archivo} onChange={e=>setArchivo(e.target.value)} style={inp}>
+        <option value="">¿Qué momento de este clip?</option>
+        {c.videos.map(v=><option key={v} value={archivoDe(v)}>{archivoDe(v).replace(/\.mp4$/i,"")}</option>)}
       </select>}
-      {o && <input value={momento} onChange={e=>setMomento(e.target.value)} placeholder="Momento: 0:12-0:25 (vacío = el de su nota, o el clip entero)"
-        style={{fontSize:12.5,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>}
-      {o && o.nota_suya && <div style={{fontSize:11.5,color:"var(--text-3)"}}>Su nota: «{o.nota_suya.slice(0,140)}»</div>}
-      {o && <button disabled={!listo} onClick={()=>{ onAnadir(c, origen, archivo, momento); setOrigen(""); }}
-        style={{...boton(true),padding:"6px 11px",fontSize:12,opacity:listo?1:.5}}>Añadir {momento.trim()?"ese momento":"el clip"}</button>}
+      {destino && <input value={momento} onChange={e=>setMomento(e.target.value)} placeholder="Trozo (opcional): 0:12-0:25 · vacío = el clip entero" style={inp}/>}
+      {destino && <button disabled={!listo} onClick={()=>{ crear ? onCrear(c, nombre.trim(), archivo, momento) : onAnadir(destino, c, archivo, momento); setDestino(""); }}
+        style={{...boton(true),padding:"6px 11px",fontSize:12,opacity:listo?1:.5}}>{crear ? "Crear y añadir" : "Añadir"}</button>}
     </div>);
 }
 
-function Detalle({ c, todos, onEditar, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, ocupado }) {
+function Detalle({ c, recops, onEditar, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, onCrearRecop, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
   const [tit, setTit] = useState(c.titulo_suyo||"");
@@ -347,10 +349,12 @@ function Detalle({ c, todos, onEditar, onCribar, onRenombrar, onCerrar, onNota, 
   return (
     <div style={{border:"1px solid var(--gold)",borderRadius:14,background:"var(--bg-2)",padding:14,display:"grid",gridTemplateColumns:"minmax(0,300px) minmax(0,1fr)",gap:16}}>
       <div>
-        <video key={c.videos[v]+(c.editados&&c.editados[archivoDe(c.videos[v])]?"e":"")} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>
-        {c.estado!=="montado" && onEditar && <button onClick={()=>onEditar(c, c.videos[v])} disabled={ocupado} title="Recórtalo o quítale trozos (E)"
+        {!c.videos.length && <div style={{aspectRatio:"9/16",borderRadius:10,border:"1px dashed var(--border)",display:"flex",alignItems:"center",justifyContent:"center",
+          textAlign:"center",padding:20,color:"var(--text-3)",fontSize:13}}>📁 Recopilación vacía<br/>Añádele clips desde cada clip: «Añadir a recopilación»</div>}
+        {c.videos.length>0 && <video key={c.videos[v]+(c.editados&&c.editados[archivoDe(c.videos[v])]?"e":"")} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>}
+        {c.estado!=="montado" && onEditar && c.videos.length>0 && <button onClick={()=>onEditar(c, c.videos[v])} disabled={ocupado} title="Recórtalo o quítale trozos (E)"
           style={{...boton(false),width:"100%",marginTop:8,padding:"8px 0",fontSize:12.5}}>✂ Editar {c.videos.length>1?"este momento":"el clip"}{c.editados&&c.editados[archivoDe(c.videos[v])]?" · ya editado":""}</button>}
-        {c.videos.length>1 && <>
+        {(c.videos.length>1 || (c.recopilacion_suya && c.videos.length>0)) && <>
           <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4,marginTop:10}}>Momentos de la recopilación · {c.videos.length-fuera.size} de {c.videos.length} entran{c.orden && c.orden.length ? " · orden tuyo" : ""}</div>
           <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>
             {ordenados.map((x,k)=>{ const a = archivoDe(x), dentro = !fuera.has(a), i = c.videos.indexOf(x); return (
@@ -367,7 +371,7 @@ function Detalle({ c, todos, onEditar, onCribar, onRenombrar, onCerrar, onNota, 
               </div>); })}
           </div>
         </>}
-        {editable && onAnadir && <Anadir c={c} todos={todos||[]} onAnadir={onAnadir} ocupado={ocupado}/>}
+        {editable && onAnadir && !c.recopilacion_suya && c.videos.length>0 && <AnadirARecopilacion c={c} recops={recops||[]} onAnadir={onAnadir} onCrear={onCrearRecop} ocupado={ocupado}/>}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10,minWidth:0}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
@@ -450,7 +454,7 @@ export function ClipsView({ toast }) {
   const [sel, setSel] = useState(()=>new Set());    // 19/10: los aprobados que él elige montar
   // v3.11 (26/10): el mini editor y las recopilaciones nuevas
   const [editor, setEditor] = useState(null);       // {carpeta, archivo, ruta}
-  const [recop, setRecop] = useState(null);         // {nombre, sel:[carpetas en el orden elegido]}
+  const [nuevaRecop, setNuevaRecop] = useState(null);   // nombre de la recopilación que se está creando (vacía)
   const teclas = useRef(null);
   useEffect(()=>{ const h = e => teclas.current && teclas.current(e); window.addEventListener("keydown", h); return ()=>window.removeEventListener("keydown", h); },[]);
   useEffect(()=>{ if(enPC()) cargar(); },[]);
@@ -506,7 +510,7 @@ export function ClipsView({ toast }) {
   };
   const cuenta = k => (clips||[]).filter(c=>k==="todos"||c.estado===k).length;
   const pot = c => c.criba ? Number(c.criba.potencial) : -1;
-  const lista = (clips||[]).filter(c=>(filtro==="todos"||c.estado===filtro) && (!soloRec || (c.criba && c.criba.recomendado)) &&
+  const lista = (clips||[]).filter(c=>(filtro==="todos"||c.estado===filtro||(filtro==="recop" && c.recopilacion_suya && c.estado!=="descartado")) && (!soloRec || (c.criba && c.criba.recomendado)) &&
     (!q.trim() || String(c.n)===q.trim() || (c.carpeta+" "+(c.titulo||"")+" "+(c.de_que_va||"")).toLowerCase().includes(q.trim().toLowerCase())))
     .sort((a,b)=> orden==="potencial" ? (pot(b)-pot(a) || a.n-b.n) : a.n-b.n);
   const sinPuntuar = (clips||[]).filter(c=>(c.estado==="nuevo"||c.estado==="aprobado") && !c.criba);
@@ -556,7 +560,7 @@ export function ClipsView({ toast }) {
   const det = clips && abierto && clips.find(c=>c.carpeta===abierto);
   // v3.11: atajos con un clip abierto: ←/→ el anterior/siguiente, A aprobar, E editar el momento
   teclas.current = e => {
-    if(editor || recop || !det || e.ctrlKey || e.metaKey || e.altKey) return;
+    if(editor || nuevaRecop!==null || !det || e.ctrlKey || e.metaKey || e.altKey) return;
     if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||"")) return;
     const i = lista.findIndex(c=>c.carpeta===det.carpeta);
     if(e.key==="ArrowRight" && i<lista.length-1){ e.preventDefault(); setAbierto(lista[i+1].carpeta); }
@@ -565,13 +569,22 @@ export function ClipsView({ toast }) {
     else if((e.key==="e"||e.key==="E") && det.estado!=="montado"){ e.preventDefault(); const r = det.videos[0]; setEditor({carpeta:det.carpeta, archivo:archivoDe(r), ruta:r}); }
     else if(e.key==="Escape"){ setAbierto(null); }
   };
-  const crearRecop = async () => {
-    if(!recop || recop.sel.length<2 || !recop.nombre.trim()) return;
+  // las recopilaciones suyas (carpetas que él va llenando)
+  const recops = (clips||[]).filter(c=>c.recopilacion_suya && c.estado!=="montado" && c.estado!=="descartado");
+  const anadirA = async (destino, c, archivo, momento) => {
     try {
-      const ev = await consultar(["nuevarecop", recop.nombre.trim(), recop.sel.join("|")]);
+      await consultar(["anadir", destino, c.carpeta, archivo||"-", (momento||"").trim()]);
+      toast && toast(`Añadido a «${destino.replace(/^\d+ - /,"")}»`);
+      await cargar();
+    } catch(e){ toast && toast(e.message); }
+  };
+  const crearRecop = async (nombre, c, archivo, momento) => {
+    try {
+      const ev = await consultar(["nuevarecop", nombre, ...(c ? [c.carpeta, archivo||"-", (momento||"").trim()] : [])]);
       const h = ev.find(e=>e.evento==="hecho") || {};
-      toast && toast(`Recopilación «${h.carpeta}» creada con ${h.momentos} momentos (aprobada): ordénalos o recórtalos si quieres`);
-      setRecop(null); setFiltro("aprobado"); await cargar(); setAbierto(h.carpeta);
+      toast && toast(c ? `Recopilación «${nombre}» creada con este clip` : `Recopilación «${nombre}» creada: añádele clips desde cada clip`);
+      setNuevaRecop(null); await cargar();
+      if(!c){ setFiltro("recop"); setAbierto(h.carpeta); }
     } catch(e){ toast && toast(e.message); }
   };
   return (
@@ -608,13 +621,20 @@ export function ClipsView({ toast }) {
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar por número, nombre o de qué va" style={{flex:"1 1 220px",minWidth:0,fontSize:13,padding:"9px 12px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg-2)",color:"var(--text)"}}/>
         {ESTADOS.map(([k,l])=><button key={k} onClick={()=>setFiltro(k)} style={boton(filtro===k)}>{l} · {cuenta(k)}</button>)}
+        <button onClick={()=>setFiltro("recop")} title="Tus recopilaciones (las carpetas que vas llenando)" style={boton(filtro==="recop")}>📁 Recopilaciones · {(clips||[]).filter(c=>c.recopilacion_suya && c.estado!=="descartado").length}</button>
         <button onClick={()=>setSoloRec(x=>!x)} title="Los que el clon ve con más potencial (7 o más, sin avisos)" style={boton(soloRec)}>★ Recomendados · {recomendados}</button>
         <select value={orden} onChange={e=>setOrden(e.target.value)} style={{fontSize:13,padding:"8px 10px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg-2)",color:"var(--text)"}}>
           <option value="numero">Orden: número</option><option value="potencial">Orden: potencial</option>
         </select>
         <button onClick={cargar} style={boton(false)}>Actualizar</button>
-        <button onClick={()=>{ setRecop(r=>r?null:{nombre:"",sel:[]}); setAbierto(null); }} title="Junta varios clips recortados en una recopilación nueva"
-          style={boton(!!recop)}>＋ Nueva recopilación</button>
+        {nuevaRecop===null
+          ? <button onClick={()=>setNuevaRecop("")} title="Crea una recopilación vacía y ve añadiéndole clips desde cada clip" style={boton(false)}>＋ Recopilación</button>
+          : <span style={{display:"flex",gap:6}}>
+              <input autoFocus value={nuevaRecop} onChange={e=>setNuevaRecop(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter" && nuevaRecop.trim()) crearRecop(nuevaRecop.trim()); if(e.key==="Escape") setNuevaRecop(null); }}
+                placeholder="Nombre de la recopilación" maxLength={60} style={{fontSize:13,padding:"8px 10px",borderRadius:10,border:"1px solid var(--gold)",background:"var(--bg-2)",color:"var(--text)"}}/>
+              <button onClick={()=>nuevaRecop.trim() && crearRecop(nuevaRecop.trim())} style={boton(!!nuevaRecop.trim())}>Crear</button>
+              <button onClick={()=>setNuevaRecop(null)} style={boton(false)}>✕</button>
+            </span>}
       </div>
       {aprobados.length>0 && <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",fontSize:12.5,color:"var(--text-2)"}}>
         <span>Marca la casilla de los aprobados que quieras montar ahora{elegidos.length ? ` · ${elegidos.length} elegido${elegidos.length!==1?"s":""}` : ""}.</span>
@@ -622,17 +642,9 @@ export function ClipsView({ toast }) {
         {elegidos.length>0 && <button onClick={()=>setSel(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Quitar selección</button>}
       </div>}
       {editor && <EditorVideo {...editor} toast={toast} onCerrar={()=>setEditor(null)} onGuardado={cargar}/>}
-      {recop && <div style={{position:"sticky",top:70,zIndex:20,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"10px 12px",border:"1px solid var(--gold)",borderRadius:12,background:"var(--bg-2)",boxShadow:"0 8px 24px rgba(0,0,0,0.35)"}}>
-        <b style={{fontSize:13}}>Nueva recopilación</b>
-        <span style={{fontSize:12.5,color:"var(--text-2)"}}>Toca los clips en el orden en que quieres que salgan ({recop.sel.length} elegido{recop.sel.length!==1?"s":""})</span>
-        <input value={recop.nombre} onChange={e=>setRecop(r=>({...r,nombre:e.target.value}))} placeholder="Nombre (será el título)" maxLength={60}
-          style={{flex:"1 1 200px",minWidth:0,fontSize:13,padding:"7px 10px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>
-        <button onClick={crearRecop} disabled={recop.sel.length<2||!recop.nombre.trim()} style={{...boton(recop.sel.length>=2&&!!recop.nombre.trim()),opacity:recop.sel.length>=2&&recop.nombre.trim()?1:.5}}>Crear con {recop.sel.length}</button>
-        <button onClick={()=>setRecop(null)} style={boton(false)}>Cancelar</button>
-      </div>}
       {det && <Detalle c={det} onCribar={cribar} onEditar={(c, ruta)=>setEditor({carpeta:c.carpeta, archivo:archivoDe(ruta), ruta})} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
         onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
-        todos={clips||[]} onAnadir={anadir}
+        recops={recops.filter(r=>r.carpeta!==det.carpeta)} onAnadir={anadirA} onCrearRecop={(c, nombre, archivo, momento)=>crearRecop(nombre, c, archivo, momento)}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
         {lista.map(c=>(
@@ -640,14 +652,12 @@ export function ClipsView({ toast }) {
             {c.estado==="aprobado" && <label title="Elegirlo para montar" onClick={e=>e.stopPropagation()} style={{position:"absolute",right:6,top:6,zIndex:2,width:24,height:24,borderRadius:6,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
               <input type="checkbox" checked={sel.has(c.carpeta)} onChange={()=>elegir(c)} style={{cursor:"pointer",accentColor:"#4ade80"}}/>
             </label>}
-            <button onClick={()=>recop
-                ? setRecop(r=>({...r, sel: r.sel.includes(c.carpeta) ? r.sel.filter(x=>x!==c.carpeta) : [...r.sel, c.carpeta]}))
-                : setAbierto(a=>a===c.carpeta?null:c.carpeta)} style={{textAlign:"left",display:"block",width:"100%"}}>
-              {recop && recop.sel.includes(c.carpeta) && <span style={{position:"absolute",inset:0,zIndex:3,border:"3px solid var(--gold)",borderRadius:12,pointerEvents:"none",
-                display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:"40%"}}>
-                <span style={{width:44,height:44,borderRadius:22,background:"var(--gold)",color:"#000",fontSize:20,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{recop.sel.indexOf(c.carpeta)+1}</span></span>}
+            <button onClick={()=>setAbierto(a=>a===c.carpeta?null:c.carpeta)} style={{textAlign:"left",display:"block",width:"100%"}}>
               <div style={{position:"relative",aspectRatio:"9/16",background:"#111"}}>
                 {c.miniatura && <img src={fileUrl(c.miniatura)} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}
+                {!c.miniatura && c.recopilacion_suya && <span style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:44}}>📁</span>}
+                {c.recopilacion_suya && <span style={{position:"absolute",right:6,bottom:30,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(212,175,55,0.9)",color:"#000"}}>RECOPILACIÓN</span>}
+                {(c.en_recopilaciones||[]).length>0 && <span title={"En: "+c.en_recopilaciones.join(", ")} style={{position:"absolute",left:6,top:54,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.8)",color:"#4ade80"}}>📁 {c.en_recopilaciones.length}</span>}
                 <span style={{position:"absolute",right:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{mmss(c.duracion)}</span>
                 {c.videos.length>1 && <span style={{position:"absolute",left:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{(c.fuera||[]).length ? `${c.videos.length-c.fuera.length} de ${c.videos.length}` : c.videos.length} momentos</span>}
                 {c.nota_suya && <span title={c.nota_suya} style={{position:"absolute",right:6,top:c.estado==="aprobado"?34:6,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"var(--gold)"}}>nota</span>}
