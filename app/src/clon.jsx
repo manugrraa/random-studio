@@ -285,7 +285,41 @@ function Criba({ c, onRecribir, ocupado }) {
     </div>);
 }
 
-function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, ocupado }) {
+// v3.10 (26/10), él: "que se puedan añadir clips recortados a recopilaciones, y en las notas poner
+// el momento del clip que quiero que salga". Se recorta ese momento (el clip original no se toca)
+// y entra como un momento más; si no se escribe, vale el que diga la nota de ese clip
+const TIENE_TIEMPO = /\d+:\d{1,2}|\d+\s*(a|al|-|hasta)\s*\d+/;
+function Anadir({ c, todos, onAnadir, ocupado }) {
+  const [origen, setOrigen] = useState("");
+  const [archivo, setArchivo] = useState("");
+  const [momento, setMomento] = useState("");
+  const o = todos.find(x=>x.carpeta===origen);
+  useEffect(()=>{ setArchivo(o && o.videos.length===1 ? archivoDe(o.videos[0]) : "");
+    setMomento(o && TIENE_TIEMPO.test(o.nota_suya||"") ? (o.nota_suya.match(/[\d:.,]+\s*(?:-|a|al|hasta)\s*[\d:.,]+/)||[""])[0] : ""); },[origen]);
+  const opciones = todos.filter(x=>x.carpeta!==c.carpeta && x.estado!=="descartado");
+  const listo = o && archivo && !ocupado;
+  return (
+    <div style={{marginTop:12,padding:"10px 10px 12px",border:"1px dashed var(--border)",borderRadius:10,display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4}}>Añadir un clip recortado{c.videos.length>1?" a la recopilación":""}</div>
+      <select value={origen} onChange={e=>setOrigen(e.target.value)} disabled={ocupado}
+        style={{fontSize:12.5,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}>
+        <option value="">Elige el clip…</option>
+        {opciones.map(x=><option key={x.carpeta} value={x.carpeta}>{x.n} · {x.nombre}{x.estado==="montado"?" (montado)":""}</option>)}
+      </select>
+      {o && o.videos.length>1 && <select value={archivo} onChange={e=>setArchivo(e.target.value)}
+        style={{fontSize:12.5,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}>
+        <option value="">¿Qué momento de ese clip?</option>
+        {o.videos.map(v=><option key={v} value={archivoDe(v)}>{archivoDe(v).replace(/\.mp4$/i,"")}</option>)}
+      </select>}
+      {o && <input value={momento} onChange={e=>setMomento(e.target.value)} placeholder="Momento: 0:12-0:25 (vacío = el de su nota, o el clip entero)"
+        style={{fontSize:12.5,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>}
+      {o && o.nota_suya && <div style={{fontSize:11.5,color:"var(--text-3)"}}>Su nota: «{o.nota_suya.slice(0,140)}»</div>}
+      {o && <button disabled={!listo} onClick={()=>{ onAnadir(c, origen, archivo, momento); setOrigen(""); }}
+        style={{...boton(true),padding:"6px 11px",fontSize:12,opacity:listo?1:.5}}>Añadir {momento.trim()?"ese momento":"el clip"}</button>}
+    </div>);
+}
+
+function Detalle({ c, todos, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
   const [tit, setTit] = useState(c.titulo_suyo||"");
@@ -321,6 +355,7 @@ function Detalle({ c, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMont
               </div>); })}
           </div>
         </>}
+        {editable && onAnadir && <Anadir c={c} todos={todos||[]} onAnadir={onAnadir} ocupado={ocupado}/>}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10,minWidth:0}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
@@ -481,6 +516,10 @@ export function ClipsView({ toast }) {
     texto.trim() ? "Nota guardada: se tendrá en cuenta al montarlo" : "Nota quitada");
   const excluir = (c, archivo, quitar) => conClip(c, ["excluir", c.carpeta, archivo, quitar?"si":"no"], h=>({fuera:h.fuera||[]}));
   // 24/10: el tipo de edit de una recopilación, y la criba previa del clon
+  const anadir = (c, origen, archivo, momento) => conClip(c, ["anadir", c.carpeta, origen, archivo||"-", (momento||"").trim()],
+    h=>({videos:h.videos||c.videos, anadidos:[...(c.anadidos||[]), {archivo:h.archivo, origen, desde:h.desde, hasta:h.hasta}],
+         orden:(c.orden&&c.orden.length) ? [...c.orden, h.archivo] : c.orden}),
+    "Añadido a la recopilación: se montará con los demás momentos");
   const ponerOrden = (c, lista) => conClip(c, ["orden", c.carpeta, lista.join("|")], h=>({orden:h.orden||[]}));
   const ponerTitulo = (c, texto) => conClip(c, ["titulo", c.carpeta, texto.trim()], h=>({titulo_suyo:h.titulo||""}),
     texto.trim() ? "Título guardado: el Short llevará ese" : "El título lo elegirá el clon");
@@ -538,6 +577,7 @@ export function ClipsView({ toast }) {
       </div>}
       {det && <Detalle c={det} onCribar={cribar} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
         onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
+        todos={clips||[]} onAnadir={anadir}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
         {lista.map(c=>(
