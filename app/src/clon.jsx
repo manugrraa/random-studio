@@ -1,4 +1,6 @@
 import React from "react";
+import { EditorVideo } from "./editor_video";
+import { fireNotification } from "./datos";
 const { useState, useEffect, useMemo, useRef } = React;
 
 /* ============================ EL CLON EN STUDIO (v3.1) ============================
@@ -52,7 +54,15 @@ export function useTarea(onFin) {
         const base = t || {args:[ev.tarea||"?"], eventos:[], inicio:Date.now()};
         return {...base, eventos:[...base.eventos.slice(-399), ev], cerrada: ev.evento==="cerrado"};
       });
-      if(ev.evento==="cerrado") fin.current && fin.current(ev);
+      if(ev.evento==="cerrado"){
+        fin.current && fin.current(ev);
+        // v3.11: si estás en otra ventana, aviso del sistema al acabar una tarea larga del clon
+        if(document.hidden || !document.hasFocus()){
+          try { fireNotification(ev.codigo ? "⚠️ El clon ha parado" : "✅ El clon ha terminado",
+            ({preparar:"La preparación del directo", clipear:"El clipeo", montar:"El montaje", mejorar:"La mejora", criba:"La criba", revoz:"Las voces", retitular:"El cambio de título"}[ev.tarea]||"La tarea")
+              + (ev.codigo ? " no ha podido acabar: míralo en RandomStudio" : " ha terminado")); } catch(e){}
+        }
+      }
     });
   },[]);
   const lanzar = async (args) => {
@@ -164,7 +174,7 @@ export function PanelTarea({ tarea, onCerrar }) {
 
 function SinPC({ que }) {
   return <div style={{padding:"18px 20px",border:"1px dashed var(--border)",borderRadius:14,color:"var(--text-2)",fontSize:13.5}}>
-    {que} se hace en el PC, que es donde están los vídeos y tu Claude. Ábrelo desde RDeRandom Studio de escritorio.
+    {que} se hace en el PC, que es donde están los vídeos y tu Claude. Ábrelo desde RandomStudio de escritorio.
   </div>;
 }
 
@@ -194,7 +204,7 @@ export function DirectosView({ toast }) {
   const [tarea, lanzar, cerrarTarea] = useTarea(ev=>{ cargar(); if(!ev.codigo) toast && toast("El clon ha terminado"); });
   useEffect(()=>{ if(enPC()) cargar(); },[carpeta]);
   useEffect(()=>{ if(carpeta) lsSet("rds_clon_vods", carpeta); },[carpeta]);
-  if(!enPC()) return <div className="fade-in"><h2 style={{fontSize:20,fontWeight:700,marginBottom:12}}>Directos</h2><SinPC que="El clipeo"/></div>;
+  if(!enPC()) return <div className="fade-in"><h2 className="titulo-vista" style={{fontSize:20,fontWeight:700,marginBottom:12}}>Directos</h2><SinPC que="El clipeo"/></div>;
   const elegidos = (vods||[]).filter(v=>sel[v.ruta]);
   const ocupado = tarea && !tarea.cerrada;
   const lanzarCon = async (orden) => {
@@ -205,11 +215,11 @@ export function DirectosView({ toast }) {
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
         <div style={{maxWidth:680}}>
-          <h2 style={{fontSize:20,fontWeight:700}}>Directos</h2>
-          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
+          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Directos</h2>
+          <details className="ayuda"><summary>¿Cómo funciona?</summary><p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
             Marca los VODs y pulsa Clipear: el clon los transcribe, detecta los combates y Claude lee el directo entero para cortar
             todos los clips con algo dentro (combates enteros, historias, recopilatorios de graciosos y fails) en Clips Recortados. Luego los cribas tú.
-          </p>
+          </p></details>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <SelectorModelo clave="rds_clon_modelo_clip"/>
@@ -319,7 +329,7 @@ function Anadir({ c, todos, onAnadir, ocupado }) {
     </div>);
 }
 
-function Detalle({ c, todos, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, ocupado }) {
+function Detalle({ c, todos, onEditar, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
   const [tit, setTit] = useState(c.titulo_suyo||"");
@@ -337,7 +347,9 @@ function Detalle({ c, todos, onCribar, onRenombrar, onCerrar, onNota, onExcluir,
   return (
     <div style={{border:"1px solid var(--gold)",borderRadius:14,background:"var(--bg-2)",padding:14,display:"grid",gridTemplateColumns:"minmax(0,300px) minmax(0,1fr)",gap:16}}>
       <div>
-        <video key={c.videos[v]} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>
+        <video key={c.videos[v]+(c.editados&&c.editados[archivoDe(c.videos[v])]?"e":"")} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>
+        {c.estado!=="montado" && onEditar && <button onClick={()=>onEditar(c, c.videos[v])} disabled={ocupado} title="Recórtalo o quítale trozos (E)"
+          style={{...boton(false),width:"100%",marginTop:8,padding:"8px 0",fontSize:12.5}}>✂ Editar {c.videos.length>1?"este momento":"el clip"}{c.editados&&c.editados[archivoDe(c.videos[v])]?" · ya editado":""}</button>}
         {c.videos.length>1 && <>
           <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4,marginTop:10}}>Momentos de la recopilación · {c.videos.length-fuera.size} de {c.videos.length} entran{c.orden && c.orden.length ? " · orden tuyo" : ""}</div>
           <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>
@@ -436,8 +448,20 @@ export function ClipsView({ toast }) {
   // carpeta (18/10: con el vídeo abierto Windows no la deja mover y se duplicaba)
   const [ocupados, setOcupados] = useState({});
   const [sel, setSel] = useState(()=>new Set());    // 19/10: los aprobados que él elige montar
+  // v3.11 (26/10): el mini editor y las recopilaciones nuevas
+  const [editor, setEditor] = useState(null);       // {carpeta, archivo, ruta}
+  const [recop, setRecop] = useState(null);         // {nombre, sel:[carpetas en el orden elegido]}
+  const teclas = useRef(null);
+  useEffect(()=>{ const h = e => teclas.current && teclas.current(e); window.addEventListener("keydown", h); return ()=>window.removeEventListener("keydown", h); },[]);
   useEffect(()=>{ if(enPC()) cargar(); },[]);
-  if(!enPC()) return <div className="fade-in"><h2 style={{fontSize:20,fontWeight:700,marginBottom:12}}>Clips</h2><SinPC que="La criba y el montaje"/></div>;
+  // v3.11: al volver a la ventana, los clips al día (el clon puede haber cortado más mientras tanto)
+  const ultimaCarga = useRef(Date.now());
+  useEffect(()=>{
+    const h = () => { if(enPC() && Date.now()-ultimaCarga.current > 30000){ ultimaCarga.current = Date.now(); cargar(); } };
+    window.addEventListener("focus", h);
+    return ()=>window.removeEventListener("focus", h);
+  },[]);
+  if(!enPC()) return <div className="fade-in"><h2 className="titulo-vista" style={{fontSize:20,fontWeight:700,marginBottom:12}}>Clips</h2><SinPC que="La criba y el montaje"/></div>;
 
   const cribar = async (c, accion) => {
     if(ocupados[c.carpeta]) return;
@@ -530,16 +554,36 @@ export function ClipsView({ toast }) {
     catch(e){ toast && toast(e.message); }
   };
   const det = clips && abierto && clips.find(c=>c.carpeta===abierto);
+  // v3.11: atajos con un clip abierto: ←/→ el anterior/siguiente, A aprobar, E editar el momento
+  teclas.current = e => {
+    if(editor || recop || !det || e.ctrlKey || e.metaKey || e.altKey) return;
+    if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||"")) return;
+    const i = lista.findIndex(c=>c.carpeta===det.carpeta);
+    if(e.key==="ArrowRight" && i<lista.length-1){ e.preventDefault(); setAbierto(lista[i+1].carpeta); }
+    else if(e.key==="ArrowLeft" && i>0){ e.preventDefault(); setAbierto(lista[i-1].carpeta); }
+    else if((e.key==="a"||e.key==="A") && det.estado!=="montado" && det.estado!=="descartado"){ e.preventDefault(); cribar(det, det.estado==="aprobado"?"nuevo":"aprobar"); }
+    else if((e.key==="e"||e.key==="E") && det.estado!=="montado"){ e.preventDefault(); const r = det.videos[0]; setEditor({carpeta:det.carpeta, archivo:archivoDe(r), ruta:r}); }
+    else if(e.key==="Escape"){ setAbierto(null); }
+  };
+  const crearRecop = async () => {
+    if(!recop || recop.sel.length<2 || !recop.nombre.trim()) return;
+    try {
+      const ev = await consultar(["nuevarecop", recop.nombre.trim(), recop.sel.join("|")]);
+      const h = ev.find(e=>e.evento==="hecho") || {};
+      toast && toast(`Recopilación «${h.carpeta}» creada con ${h.momentos} momentos (aprobada): ordénalos o recórtalos si quieres`);
+      setRecop(null); setFiltro("aprobado"); await cargar(); setAbierto(h.carpeta);
+    } catch(e){ toast && toast(e.message); }
+  };
   return (
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
         <div style={{maxWidth:680}}>
-          <h2 style={{fontSize:20,fontWeight:700}}>Clips</h2>
-          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
+          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Clips</h2>
+          <details className="ayuda"><summary>¿Cómo funciona?</summary><p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
             Los Clips Recortados. Míralos, aprueba los que quieras como Short y descarta el resto (van a _Descartados, no se borran).
             Al pulsar Montar, el clon escribe el guion de cada aprobado, lo monta con la fórmula elixir y lo exporta él mismo, sin CapCut, a Shorts Listos con su miniatura.
             Antes de tu criba, el clon puntúa el potencial de cada clip (★ los recomendados) y propone el edit de las recopilaciones; ordena por potencial para ver lo mejor primero.
-          </p>
+          </p></details>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <SelectorModelo clave="rds_clon_modelo_montar"/>
@@ -569,13 +613,24 @@ export function ClipsView({ toast }) {
           <option value="numero">Orden: número</option><option value="potencial">Orden: potencial</option>
         </select>
         <button onClick={cargar} style={boton(false)}>Actualizar</button>
+        <button onClick={()=>{ setRecop(r=>r?null:{nombre:"",sel:[]}); setAbierto(null); }} title="Junta varios clips recortados en una recopilación nueva"
+          style={boton(!!recop)}>＋ Nueva recopilación</button>
       </div>
       {aprobados.length>0 && <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",fontSize:12.5,color:"var(--text-2)"}}>
         <span>Marca la casilla de los aprobados que quieras montar ahora{elegidos.length ? ` · ${elegidos.length} elegido${elegidos.length!==1?"s":""}` : ""}.</span>
         {elegidos.length<aprobados.length && <button onClick={()=>setSel(new Set(aprobados.map(c=>c.carpeta)))} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Elegir todos</button>}
         {elegidos.length>0 && <button onClick={()=>setSel(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Quitar selección</button>}
       </div>}
-      {det && <Detalle c={det} onCribar={cribar} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
+      {editor && <EditorVideo {...editor} toast={toast} onCerrar={()=>setEditor(null)} onGuardado={cargar}/>}
+      {recop && <div style={{position:"sticky",top:70,zIndex:20,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"10px 12px",border:"1px solid var(--gold)",borderRadius:12,background:"var(--bg-2)",boxShadow:"0 8px 24px rgba(0,0,0,0.35)"}}>
+        <b style={{fontSize:13}}>Nueva recopilación</b>
+        <span style={{fontSize:12.5,color:"var(--text-2)"}}>Toca los clips en el orden en que quieres que salgan ({recop.sel.length} elegido{recop.sel.length!==1?"s":""})</span>
+        <input value={recop.nombre} onChange={e=>setRecop(r=>({...r,nombre:e.target.value}))} placeholder="Nombre (será el título)" maxLength={60}
+          style={{flex:"1 1 200px",minWidth:0,fontSize:13,padding:"7px 10px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>
+        <button onClick={crearRecop} disabled={recop.sel.length<2||!recop.nombre.trim()} style={{...boton(recop.sel.length>=2&&!!recop.nombre.trim()),opacity:recop.sel.length>=2&&recop.nombre.trim()?1:.5}}>Crear con {recop.sel.length}</button>
+        <button onClick={()=>setRecop(null)} style={boton(false)}>Cancelar</button>
+      </div>}
+      {det && <Detalle c={det} onCribar={cribar} onEditar={(c, ruta)=>setEditor({carpeta:c.carpeta, archivo:archivoDe(ruta), ruta})} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
         onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
         todos={clips||[]} onAnadir={anadir}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
@@ -585,7 +640,12 @@ export function ClipsView({ toast }) {
             {c.estado==="aprobado" && <label title="Elegirlo para montar" onClick={e=>e.stopPropagation()} style={{position:"absolute",right:6,top:6,zIndex:2,width:24,height:24,borderRadius:6,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
               <input type="checkbox" checked={sel.has(c.carpeta)} onChange={()=>elegir(c)} style={{cursor:"pointer",accentColor:"#4ade80"}}/>
             </label>}
-            <button onClick={()=>setAbierto(a=>a===c.carpeta?null:c.carpeta)} style={{textAlign:"left",display:"block",width:"100%"}}>
+            <button onClick={()=>recop
+                ? setRecop(r=>({...r, sel: r.sel.includes(c.carpeta) ? r.sel.filter(x=>x!==c.carpeta) : [...r.sel, c.carpeta]}))
+                : setAbierto(a=>a===c.carpeta?null:c.carpeta)} style={{textAlign:"left",display:"block",width:"100%"}}>
+              {recop && recop.sel.includes(c.carpeta) && <span style={{position:"absolute",inset:0,zIndex:3,border:"3px solid var(--gold)",borderRadius:12,pointerEvents:"none",
+                display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:"40%"}}>
+                <span style={{width:44,height:44,borderRadius:22,background:"var(--gold)",color:"#000",fontSize:20,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>{recop.sel.indexOf(c.carpeta)+1}</span></span>}
               <div style={{position:"relative",aspectRatio:"9/16",background:"#111"}}>
                 {c.miniatura && <img src={fileUrl(c.miniatura)} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}
                 <span style={{position:"absolute",right:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{mmss(c.duracion)}</span>

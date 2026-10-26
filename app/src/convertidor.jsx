@@ -65,14 +65,14 @@ export function ConvertidorView({ toast }) {
     if(!activa){ setActiva(true); setTimeout(siguiente, 50); }
   };
 
-  if(!enPC) return <div className="fade-in"><h2 style={{fontSize:20,fontWeight:700,marginBottom:12}}>Convertidor YT</h2>
-    <div style={{padding:"18px 20px",border:"1px dashed var(--border)",borderRadius:14,color:"var(--text-2)",fontSize:13.5}}>El convertidor funciona en el PC: ábrelo desde RDeRandom Studio de escritorio.</div></div>;
+  if(!enPC) return <div className="fade-in"><h2 className="titulo-vista" style={{fontSize:20,fontWeight:700,marginBottom:12}}>Convertidor YT</h2>
+    <div style={{padding:"18px 20px",border:"1px dashed var(--border)",borderRadius:14,color:"var(--text-2)",fontSize:13.5}}>El convertidor funciona en el PC: ábrelo desde RandomStudio de escritorio.</div></div>;
 
   const sel = {fontSize:13,padding:"8px 10px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg-2)",color:"var(--text)"};
   return (
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{maxWidth:680}}>
-        <h2 style={{fontSize:20,fontWeight:700}}>Convertidor YT</h2>
+        <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Convertidor YT</h2>
         <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
           Pega enlaces de YouTube (uno por línea) y bájalos en MP4 o MP3. Es tu Convertidor YT con su mismo motor rápido.
           Para la música de los Shorts, guárdala en la Música de la biblioteca (y que sea sin copyright).

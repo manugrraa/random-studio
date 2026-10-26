@@ -559,7 +559,7 @@ export function TasksView({ taskLists, setTaskLists, dailyArchive, toast, askCon
     <div className="fade-in">
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
         <div>
-          <h2 style={{fontSize:20,fontWeight:700}}>Tareas</h2>
+          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Tareas</h2>
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Organiza en listas, programa recordatorios y repite tus rutinas diarias</p>
         </div>
         {notifState!=="granted" && notifState!=="unsupported" && (
@@ -617,4 +617,4 @@ export function TasksView({ taskLists, setTaskLists, dailyArchive, toast, askCon
   );
 }
 
-/* ============================ ESTADÍSTICAS ============================ */
+/* ============================ ESTADÍSTICAS ============================ */

@@ -450,11 +450,11 @@ export function RankingView({ toast }) {
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:12}}>
         <div style={{maxWidth:640}}>
-          <h2 style={{fontSize:20,fontWeight:700}}>Ranking de Shorts</h2>
-          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
+          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Ranking de Shorts</h2>
+          <details className="ayuda"><summary>¿Cómo funciona?</summary><p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
             Los Shorts Listos ordenados por su posibilidad de hacerse virales: sube primero los de arriba.
             Claude (Opus o Sonnet, tú eliges) valora la historia y la emoción; lo demás se mide en cada vídeo con los datos reales de tu canal.
-          </p>
+          </p></details>
         </div>
         {enPC && (
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -481,7 +481,7 @@ export function RankingView({ toast }) {
 
       {!enPC && (
         <div style={{padding:"18px 20px",border:"1px dashed var(--border)",borderRadius:14,color:"var(--text-2)",fontSize:13.5}}>
-          El ranking se calcula en el PC, que es donde están los Shorts Listos y tu Claude. Ábrelo desde RDeRandom Studio de escritorio.
+          El ranking se calcula en el PC, que es donde están los Shorts Listos y tu Claude. Ábrelo desde RandomStudio de escritorio.
         </div>
       )}
       {error && <div style={{padding:"14px 16px",border:"1px solid rgba(248,113,113,0.35)",borderRadius:12,color:"var(--red)",fontSize:13}}>{error}</div>}

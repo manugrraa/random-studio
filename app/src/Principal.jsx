@@ -6,6 +6,8 @@ import { DirectosView, ClipsView } from "./clon";
 import { ConvertidorView } from "./convertidor";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
+import { BarraLateral } from "./navegacion";
+import { RandomEditorView } from "./random_editor";
 import { APP_VERSION, DEFAULT_FORMATS, Icons, SEED, STATUSES, clone, dnd, makeVideo, setIdBase, uid, useToast } from "./base";
 import { DEFAULT_TASK_LISTS, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudFecha, cloudLoad, cloudSave, cloudSaveUrgente, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
 import { ConfirmDialog, SyncModal } from "./dialogos";
@@ -53,7 +55,11 @@ export function App() {
   const [promptTemplates, setPromptTemplates] = useState(()=> (_initial && Array.isArray(_initial.promptTemplates)) ? _initial.promptTemplates : []);
   // Objetivos (dinero → visitas), RPM real e historial diario de visitas/ingresos (se sincroniza)
   const [goals, setGoals] = useState(()=> (_initial && _initial.goals && typeof _initial.goals==="object") ? _initial.goals : null);
-  const [view, setView] = useState("calendar");
+  // v3.11: se abre donde lo dejaste
+  const [view, setView] = useState(()=>{ try { return localStorage.getItem("rds_vista")||"calendar"; } catch(e){ return "calendar"; } });
+  useEffect(()=>{ try { localStorage.setItem("rds_vista", view); } catch(e){} },[view]);
+  const [plegada, setPlegada] = useState(()=>{ try { return localStorage.getItem("rds_barra_plegada")==="1"; } catch(e){ return false; } });
+  useEffect(()=>{ try { localStorage.setItem("rds_barra_plegada", plegada?"1":"0"); } catch(e){} },[plegada]);
   // Tarjetas contraídas (false) o expandidas (true) en todos los apartados
   const [cardsExpanded, setCardsExpanded] = useState(()=>{ try { return localStorage.getItem("rds_cards_exp")==="1"; } catch(e){ return false; } });
   useEffect(()=>{ try { localStorage.setItem("rds_cards_exp", cardsExpanded?"1":"0"); } catch(e){} },[cardsExpanded]);
@@ -83,6 +89,8 @@ export function App() {
   useEffect(()=>{
     document.documentElement.setAttribute("data-theme", theme);
     try { localStorage.setItem("rds_theme", theme); } catch(e){}
+    // v3.11: la barra de título de Windows (y el fondo de la ventana) con el mismo tema
+    try { window.studioFS?.temaVentana?.(theme); } catch(e){}
   },[theme]);
 
   // HISTORIAL: deshacer/rehacer los últimos 10 cambios locales
@@ -460,7 +468,7 @@ export function App() {
   // Vincular este dispositivo a otro código de sincronización
   // Exportar todos los datos a un archivo JSON descargable
   const exportData = () => {
-    const payload = { app:"RDeRandom Studio", version:2, exportedAt:new Date().toISOString(), videos, formats, trash, taskLists, tombstones };
+    const payload = { app:"RandomStudio", version:2, exportedAt:new Date().toISOString(), videos, formats, trash, taskLists, tombstones };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -483,7 +491,7 @@ export function App() {
       const inFormats = (parsed?.formats && typeof parsed.formats==="object" && !Array.isArray(parsed.formats)) ? parsed.formats : null;
       const inTrash = Array.isArray(parsed?.trash) ? parsed.trash : [];
       const inTasks = Array.isArray(parsed?.taskLists) ? parsed.taskLists : null;
-      if(!inVideos || !inFormats){ toast("El archivo no tiene el formato esperado de RDeRandom Studio"); return; }
+      if(!inVideos || !inFormats){ toast("El archivo no tiene el formato esperado de RandomStudio"); return; }
       setConfirm({
         title: "Importar datos",
         message: `Se importarán ${inVideos.length} vídeo${inVideos.length!==1?"s":""}, ${Object.keys(inFormats).length} formato${Object.keys(inFormats).length!==1?"s":""} y ${inTrash.length} elemento${inTrash.length!==1?"s":""} de la papelera. Esto reemplazará TODOS los datos actuales de este organizador (y se sincronizará a la nube). ¿Continuar?`,
@@ -751,9 +759,9 @@ export function App() {
   };
 
   const tabs = [
-    {id:"calendar", label:"Calendario", icon:Icons.calendar, primary:true},
-    {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban, primary:true},
-    {id:"tasks", label:"Tareas", icon:Icons.tasks, badge: taskLists.reduce((a,l)=>{
+    {id:"calendar", label:"Calendario", icon:Icons.calendar, primary:true, grupo:"plan"},
+    {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban, primary:true, grupo:"plan"},
+    {id:"tasks", label:"Tareas", icon:Icons.tasks, grupo:"plan", badge: taskLists.reduce((a,l)=>{
       if(l.fixed){
         // Diarias: vencidas si no se hicieron hoy y pasó su hora límite
         const tk = (()=>{ const d=new Date();const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; })();
@@ -761,17 +769,32 @@ export function App() {
       }
       return a + l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length;
     },0)},
-    {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true},
-    {id:"directos", label:"Directos", icon:Icons.live, primary:true},
-    {id:"clips", label:"Clips", icon:Icons.scissors, primary:true},
-    {id:"ranking", label:"Ranking", icon:Icons.chart, primary:true},
-    {id:"convertidor", label:"Convertidor", icon:Icons.download, primary:true},
-    {id:"randomchat", label:"RandomChat", icon:Icons.chat},
-    {id:"agent", label:"Agente", icon:Icons.sparkles},
-    {id:"stats", label:"Estadísticas", icon:Icons.chart},
-    {id:"config", label:"Configuración", icon:Icons.gear},
-    {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length},
+    {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true, grupo:"canal"},
+    {id:"stats", label:"Estadísticas", icon:Icons.chart, grupo:"canal"},
+    {id:"directos", label:"Directos", icon:Icons.live, primary:true, grupo:"produccion", pc:true},
+    {id:"clips", label:"Clips", icon:Icons.scissors, primary:true, grupo:"produccion", pc:true},
+    {id:"editor", label:"RandomEditor", icon:Icons.edit, grupo:"produccion", pc:true},
+    {id:"ranking", label:"Ranking de Shorts", icon:Icons.chart, primary:true, grupo:"produccion", pc:true},
+    {id:"convertidor", label:"Convertidor", icon:Icons.download, primary:true, grupo:"produccion", pc:true},
+    {id:"randomchat", label:"RandomChat", icon:Icons.chat, grupo:"produccion", pc:true},
+    {id:"agent", label:"Agente", icon:Icons.sparkles, grupo:"asistente"},
+    {id:"config", label:"Configuración", icon:Icons.gear, grupo:"abajo"},
+    {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length, grupo:"abajo"},
   ];
+  // v3.11: Ctrl+1…9 salta a cada apartado (en el orden de la barra)
+  tabs.filter(t=>t.grupo!=="abajo").forEach((t,i)=>{ if(i<9) t.atajo = i+1; });
+  const vistaActual = tabs.find(t=>t.id===view) || tabs[0];
+  const tabsRef = useRef(tabs); tabsRef.current = tabs;
+  useEffect(()=>{
+    const h = e => {
+      if((e.ctrlKey||e.metaKey) && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)){
+        const t = tabsRef.current.find(x=>x.atajo===Number(e.key));
+        if(t){ e.preventDefault(); setView(t.id); }
+      }
+    };
+    window.addEventListener("keydown", h);
+    return ()=>window.removeEventListener("keydown", h);
+  },[]);
   // v3: arriba van las principales y, si estás en otra, también esa (resaltada),
   // para que siempre se vea dónde estás
   const primaryTabs = tabs.filter(t=>t.primary || t.id===view);
@@ -1016,44 +1039,27 @@ export function App() {
   },[]);
 
   return (
-    <div style={{minHeight:"100vh",background:"radial-gradient(1200px 600px at 80% -10%, rgba(212,175,55,0.06), transparent), var(--bg)"}}>
+    <div className="app-shell" style={{display:"flex",minHeight:"100vh",background:"radial-gradient(1200px 600px at 80% -10%, rgba(212,175,55,0.06), transparent), var(--bg)"}}>
+      <BarraLateral tabs={tabs} view={view} setView={setView} plegada={plegada} setPlegada={setPlegada}/>
+      <div className="app-col" style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
       {/* HEADER */}
       <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(12px)",background:"var(--header-bg)"}}>
         <div className="app-header" style={{maxWidth:1500,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
           <div style={{display:"flex",alignItems:"center",gap:13}}>
-            <button onClick={()=>setMenuOpen(true)} title="Abrir menú" style={{
-              display:"flex",alignItems:"center",justifyContent:"center",width:40,height:40,borderRadius:11,
+            <button onClick={()=>setMenuOpen(true)} title="Abrir menú" className="menu-btn" style={{
+              display:"none",alignItems:"center",justifyContent:"center",width:40,height:40,borderRadius:11,
               color:"var(--text)",border:"1px solid var(--border)",flexShrink:0
             }}>{Icons.menu}</button>
-            <div className="grad-gold gold-glow" style={{width:40,height:40,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",color:"#000"}}>
-              <span style={{fontFamily:"'Sora'",fontWeight:800,fontSize:19}}>R</span>
-            </div>
-            <div className="brand-text">
-              <div style={{fontFamily:"'Sora'",fontWeight:700,fontSize:17,letterSpacing:"-.01em"}}>RDeRandom <span className="gold-text">Studio</span></div>
-              <div style={{fontSize:10.5,color:"var(--text-3)",letterSpacing:".04em"}}>Gestor de contenido</div>
+            {/* v3.11: arriba, dónde estás (la navegación va en la barra lateral) */}
+            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+              <span style={{display:"flex",color:"var(--gold)"}}>{vistaActual.icon}</span>
+              <h1 style={{fontFamily:"'Sora'",fontSize:18,fontWeight:700,letterSpacing:"-.01em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{vistaActual.label}</h1>
             </div>
           </div>
 
-          <nav className="top-nav" style={{display:"flex",gap:4,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:4}}>
-            {primaryTabs.map(tb=>(
-              <button key={tb.id} onClick={()=>setView(tb.id)} style={{
-                display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,padding:"9px 15px",borderRadius:9,transition:"all .18s",position:"relative",
-                ...(view===tb.id
-                  ? {background:"linear-gradient(135deg,rgba(212,175,55,0.18),rgba(212,175,55,0.08))",color:"var(--gold)",boxShadow:"0 0 0 1px rgba(212,175,55,0.25)"}
-                  : {color:"var(--text-2)"})
-              }}>{tb.icon}<span className="tab-label">{tb.label}</span>
-                {tb.badge>0 && <span style={{
-                  fontSize:10,fontWeight:700,minWidth:17,height:17,padding:"0 5px",borderRadius:9,
-                  background:"var(--red)",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center"
-                }}>{tb.badge}</span>}
-              </button>
-            ))}
-          </nav>
-
-
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             {/* Buscador global: encuentra cualquier vídeo y abre su ventana */}
-            <GlobalSearch videos={videos} formats={formats} onOpen={setEditing}/>
+            <GlobalSearch videos={videos} formats={formats} onOpen={setEditing} secciones={tabs} onIr={setView}/>
 
             {/* Grupo edición: deshacer / rehacer (oculto en móvil, va al menú lateral) */}
             <div className="undo-group" style={{display:"flex",gap:2,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:11,padding:3}}>
@@ -1147,7 +1153,7 @@ export function App() {
                 <span style={{fontFamily:"'Sora'",fontWeight:800,fontSize:16}}>R</span>
               </div>
               <div>
-                <div style={{fontFamily:"'Sora'",fontWeight:700,fontSize:14.5}}>RDeRandom <span className="gold-text">Studio</span></div>
+                <div style={{fontFamily:"'Sora'",fontWeight:700,fontSize:14.5}}>Random<span className="gold-text">Studio</span></div>
                 <div style={{fontSize:10,color:"var(--text-3)"}}>Gestor de contenido</div>
               </div>
               <button onClick={()=>setMenuOpen(false)} style={{marginLeft:"auto",color:"var(--text-2)",display:"flex",padding:5}}>{Icons.x}</button>
@@ -1192,7 +1198,7 @@ export function App() {
       )}
 
       {/* MAIN */}
-      <main className="app-main" style={{maxWidth:1500,margin:"0 auto",padding:"26px 24px 60px"}}>
+      <main className="app-main" style={{maxWidth:1500,width:"100%",boxSizing:"border-box",margin:"0 auto",padding:"26px 24px 60px"}}>
         <ExpandCtx.Provider value={cardsExpanded}>
         {(view==="calendar" || view==="kanban" || view==="scheduled") && (
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
@@ -1220,6 +1226,7 @@ export function App() {
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="directos" && <DirectosView toast={toast}/>}
         {view==="clips" && <ClipsView toast={toast}/>}
+        {view==="editor" && <RandomEditorView toast={toast}/>}
         {view==="ranking" && <RankingView toast={toast}/>}
         {view==="convertidor" && <ConvertidorView toast={toast}/>}
         {view==="randomchat" && <RandomChatView toast={toast}/>}
@@ -1240,7 +1247,7 @@ export function App() {
             </button>
           </div>
           <div style={{textAlign:"center",fontSize:11.5,color:"var(--text-3)",paddingTop:6,borderTop:"1px solid var(--border)"}}>
-            <span style={{fontFamily:"'Sora'",fontWeight:700}}>RDeRandom <span className="gold-text">Studio</span></span>
+            <span style={{fontFamily:"'Sora'",fontWeight:700}}>Random<span className="gold-text">Studio</span></span>
             <span style={{margin:"0 8px",opacity:.5}}>·</span>
             <span>v{APP_VERSION}</span>
             <span style={{margin:"0 8px",opacity:.5}}>·</span>
@@ -1249,6 +1256,7 @@ export function App() {
         </footer>
         </ExpandCtx.Provider>
       </main>
+      </div>
 
       {editing && <VideoModal v={editing} allVideos={videos} goals={goals} onClose={()=>setEditing(null)} onSave={saveVideo} onDelete={deleteVideo} onDuplicate={duplicateVideo} onUploadYouTube={(draft)=>{ setEditing(null); setYtUpload(draft); }} promptTemplates={promptTemplates} toast={toast} formats={formats}/>}
       {ytUpload && <YouTubeUploadModal video={ytUpload} allVideos={videos} tagTemplates={tagTemplates} setTagTemplates={setTagTemplates} onClose={()=>setYtUpload(null)} onDone={(yt)=>{ setVideos(vs=>vs.map(v=>v.id===ytUpload.id?completarChecklist({...v, ...yt, updatedAt:Date.now()}):v)); }} toast={toast}/>}
@@ -1324,6 +1332,12 @@ export function App() {
         @media (max-width: 1100px) {
           .stat-grid { grid-template-columns: repeat(3,1fr) !important; }
         }
+        /* v3.11: el título de cada apartado ya va arriba; las explicaciones largas, plegadas */
+        .titulo-vista { display:none !important; }
+        details.ayuda > summary { cursor:pointer; font-size:12.5px; color:var(--text-3); list-style:none; display:inline-flex; gap:6px; align-items:center; }
+        details.ayuda > summary::before { content:"ⓘ"; color:var(--gold); }
+        details.ayuda[open] > summary { color:var(--text-2); margin-bottom:4px; }
+        .side-btn:not(.activo):hover { background: var(--bg-3, rgba(255,255,255,0.04)); color: var(--text) !important; }
         @media (max-width: 920px) {
           .tab-label { display:none; }
           .brand-text { display:none; }
@@ -1340,8 +1354,8 @@ export function App() {
           .hint-touch { display:inline; }
           .app-header { padding: 0 14px !important; height: 58px !important; gap: 10px !important; }
           .app-main { padding: 16px 14px 80px !important; }
-          /* En móvil: menú lateral en vez de pestañas superiores */
-          .top-nav { display:none !important; }
+          /* En móvil: menú lateral (cajón) en vez de la barra lateral fija */
+          .side-nav { display:none !important; }
           .menu-btn { display:flex !important; }
           .cal-month-grid > div { min-height: 62px !important; padding: 4px !important; }
           .tasks-grid { grid-template-columns: 1fr !important; }

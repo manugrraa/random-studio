@@ -67,10 +67,10 @@ export function RandomChatView({ toast }) {
   };
   const copiar = txt => { try { navigator.clipboard.writeText(txt); toast && toast("Copiado"); } catch(x){} };
 
-  const titulo = <h2 style={{fontSize:20,fontWeight:700,marginBottom:4}}>RandomChat</h2>;
+  const titulo = <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700,marginBottom:4}}>RandomChat</h2>;
   if(!enPC) return <div className="fade-in">{titulo}
     <div style={{padding:"18px 20px",border:"1px dashed var(--border)",borderRadius:14,color:"var(--text-2)",fontSize:13.5}}>
-      El chat de los directos funciona en el PC. Ábrelo desde RDeRandom Studio de escritorio.
+      El chat de los directos funciona en el PC. Ábrelo desde RandomStudio de escritorio.
     </div></div>;
 
   const on = !!(e && e.encendido);

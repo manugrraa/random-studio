@@ -1,8 +1,8 @@
 {
   "name": "rderandom-studio",
-  "productName": "RDeRandom Studio",
-  "version": "3.10.0",
-  "description": "RDeRandom Studio â€” Gestor de contenido (escritorio + web)",
+  "productName": "RandomStudio",
+  "version": "3.11.0",
+  "description": "RandomStudio: gestor de contenido de RDeRandom (escritorio + web)",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {
@@ -29,7 +29,7 @@
   },
   "build": {
     "appId": "com.rderandom.studio",
-    "productName": "RDeRandom Studio",
+    "productName": "RandomStudio",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -44,7 +44,7 @@
       "icon": "build/icon.png"
     },
     "portable": {
-      "artifactName": "RDeRandom-Studio-${version}.exe"
+      "artifactName": "RandomStudio-${version}.exe"
     }
   }
 }

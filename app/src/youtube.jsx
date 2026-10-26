@@ -845,7 +845,7 @@ export function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAdd
       <ChannelHeroCard subHistory={subHistory} onRecordSubs={onRecordSubs} onConnect={onConnect} toast={toast}/>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
         <div>
-          <h2 style={{fontSize:20,fontWeight:700}}>Vídeos en YouTube</h2>
+          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Vídeos en YouTube</h2>
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Controla los vídeos que has subido o programado y gestiónalos sin salir de la app</p>
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -1177,7 +1177,7 @@ export function StatsView({ videos, goals, onConnect }) {
     <div className="fade-in">
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:16}}>
         <div>
-          <h2 style={{fontSize:20,fontWeight:700}}>Estadísticas del canal</h2>
+          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Estadísticas del canal</h2>
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
             {datos ? `Últimos 28 días cerrados (${new Date(datos.desde+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})} – ${new Date(datos.hasta+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}) comparados con los 28 anteriores` : "Análisis real de tu canal con la API de YouTube"}
           </p>
@@ -1334,7 +1334,7 @@ export function TrashView({trash, onRestore, onDeleteForever, onEmpty, formats})
     <div className="fade-in">
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
         <div>
-          <h2 style={{fontSize:20,fontWeight:700}}>Papelera</h2>
+          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Papelera</h2>
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
             {trash.length===0 ? "No hay vídeos en la papelera" : `${trash.length} vídeo${trash.length!==1?"s":""} · restaura los que necesites o vacíala para borrarlos definitivamente`}
           </p>

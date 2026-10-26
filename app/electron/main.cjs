@@ -1,12 +1,16 @@
-/* RDeRandom Studio — proceso principal de Electron.
+/* RandomStudio — proceso principal de Electron.
    Guarda los datos en un archivo local (con copia diaria) y gestiona el
    login de Google en una ventana propia, sin depender de la web. */
-const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeTheme } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
 
 app.setAppUserModelId("com.rderandom.studio");
+// v3.11 (26/10): la app se llama RandomStudio, pero sus datos (datos.json, sesión de Google, ajustes)
+// siguen en la carpeta de siempre: cambiar el nombre los habría dejado atrás
+app.setName("RandomStudio");
+if (!process.env.STUDIO_CAPTURA) app.setPath("userData", path.join(app.getPath("appData"), "RDeRandom Studio"));
 
 // Con STUDIO_DEBUG=1, los mensajes de consola de la app salen por la terminal
 if (process.env.STUDIO_DEBUG) {
@@ -307,8 +311,8 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "retencion", "aprender"]);
-const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "retencion", "aprender"]);
+const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
 function leerEventos(texto) {
@@ -415,24 +419,80 @@ ipcMain.handle("yt-elegir-carpeta", async () => {
   return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
 });
 
+// v3.11: RandomEditor. Los proyectos son JSON en el clon (_trabajo/random_editor/proyectos)
+const RED_DIR = () => path.join(CLON_DIR, "_trabajo", "random_editor", "proyectos");
+const redNombre = n => String(n || "").replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+ipcMain.handle("red-guardar", async (e, proyecto) => {
+  try {
+    const n = redNombre(proyecto && proyecto.nombre);
+    if (!n) return { error: "Ponle un nombre al proyecto" };
+    fs.mkdirSync(RED_DIR(), { recursive: true });
+    const p = { ...proyecto, nombre: n, guardado: new Date().toISOString() };
+    const f = path.join(RED_DIR(), n + ".json");
+    fs.writeFileSync(f + ".tmp", JSON.stringify(p, null, 1), "utf8"); fs.renameSync(f + ".tmp", f);
+    return { ok: true, ruta: f, nombre: n };
+  } catch (x) { return { error: x.message }; }
+});
+ipcMain.handle("red-abrir", async (e, nombre) => {
+  try { return { proyecto: JSON.parse(fs.readFileSync(path.join(RED_DIR(), redNombre(nombre) + ".json"), "utf8")) }; }
+  catch (x) { return { error: x.message }; }
+});
+ipcMain.handle("red-lista", async () => {
+  try {
+    if (!fs.existsSync(RED_DIR())) return { lista: [] };
+    const l = fs.readdirSync(RED_DIR()).filter(f => f.endsWith(".json")).map(f => {
+      const st = fs.statSync(path.join(RED_DIR(), f)); return { nombre: f.slice(0, -5), fecha: st.mtimeMs };
+    }).sort((a, b) => b.fecha - a.fecha);
+    return { lista: l };
+  } catch (x) { return { error: x.message }; }
+});
+ipcMain.handle("red-elegir-archivos", async () => {
+  const r = await dialog.showOpenDialog(mainWindow || undefined, { properties: ["openFile", "multiSelections"], title: "Meter archivos en el RandomEditor",
+    filters: [{ name: "Vídeo y audio", extensions: ["mp4", "mov", "mkv", "webm", "mp3", "wav", "m4a", "ogg", "flac", "aac"] }] });
+  return (r.canceled || !r.filePaths.length) ? [] : r.filePaths;
+});
+
 ipcMain.handle("clon-elegir-carpeta", async () => {
   const r = await dialog.showOpenDialog(mainWindow || undefined, { properties: ["openDirectory"], title: "Carpeta de los VODs",
     defaultPath: path.join(CLON_DIR, "VODs") });
   return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
 });
 
+// v3.11: la ventana recuerda su tamaño y si estaba maximizada
+const ventanaFile = () => path.join(dataDir(), "ventana.json");
+function leerVentana() { try { return JSON.parse(fs.readFileSync(ventanaFile(), "utf8")); } catch (e) { return {}; } }
+function guardarVentana() {
+  if (!mainWindow || process.env.STUDIO_CAPTURA) return;
+  try { fs.writeFileSync(ventanaFile(), JSON.stringify({ ...mainWindow.getNormalBounds(), max: mainWindow.isMaximized() })); } catch (e) {}
+}
+
+// v3.11, él: "que cuando está en modo oscuro la ventana se ponga oscura también, no que se quede
+// blanco el borde": la barra de título de Windows sigue al tema de la app
+ipcMain.handle("tema-ventana", (e, tema) => {
+  nativeTheme.themeSource = tema === "light" ? "light" : "dark";
+  if (mainWindow) mainWindow.setBackgroundColor(tema === "light" ? "#f6f5f2" : "#000000");
+  return true;
+});
+
 function createWindow() {
+  nativeTheme.themeSource = "dark";   // hasta que la app diga su tema (por defecto oscuro): sin destello blanco
+  const v = leerVentana();
   mainWindow = new BrowserWindow({
-    width: 1440, height: 900,
+    width: v.width || 1440, height: v.height || 900, x: v.x, y: v.y,
     minWidth: 900, minHeight: 600,
     backgroundColor: "#000000",
+    title: "RandomStudio",
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // en las capturas de prueba la ventana suele quedar detrás: sin esto no se repinta y la foto sale vieja
+      backgroundThrottling: !process.env.STUDIO_CAPTURA
     }
   });
+  if (v.max) mainWindow.maximize();
+  mainWindow.on("close", guardarVentana);
   mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   // Los enlaces externos (YouTube Studio, etc.) se abren en el navegador normal
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -453,6 +513,20 @@ function createWindow() {
     mainWindow.webContents.once("did-finish-load", async () => {
       await esperar(5000);
       for (const p of pestanas) {
+        // "!Tecla+mod*N" = pulsa una tecla (p. ej. "!B+control", "!Right+shift*10"): prueba atajos
+        if (p.startsWith("!")) {
+          const [cuerpo, veces] = p.slice(1).split("*");
+          const [tecla, ...mods] = cuerpo.split("+");
+          for (let k = 0; k < Number(veces || 1); k++) {
+            mainWindow.webContents.sendInputEvent({ type: "keyDown", keyCode: tecla, modifiers: mods });
+            if (tecla.length === 1 && !mods.length) mainWindow.webContents.sendInputEvent({ type: "char", keyCode: tecla });
+            mainWindow.webContents.sendInputEvent({ type: "keyUp", keyCode: tecla, modifiers: mods });
+            await esperar(60);
+          }
+          await esperar(Number(process.env.STUDIO_ESPERA_TECLA || 1200));
+          console.log("[captura]", p);
+          continue;
+        }
         // "~texto" = el primer botón que CONTIENE ese texto (una tarjeta de clip)
         // "#selector" = el primer elemento que case con ese selector CSS (el botón del menú)
         const contiene = p.startsWith("~"), css = p.startsWith("#"), txt = (contiene || css) ? p.slice(1) : p;
@@ -463,6 +537,8 @@ function createWindow() {
         const txt0 = await Promise.race([mainWindow.webContents.executeJavaScript(`document.body.innerText.length+" | "+(document.querySelector("h2")||{}).textContent`),
           esperar(5000).then(() => "LA PÁGINA NO RESPONDE")]);
         console.log("[captura]", p, "->", txt0);
+        if (process.env.STUDIO_DEBUG) console.log("[captura-dom]", await mainWindow.webContents.executeJavaScript(`(()=>{const W=document.documentElement.clientWidth;const out=[];document.querySelectorAll("body *").forEach(el=>{const r=el.getBoundingClientRect();if(r.right>W+2&&r.width>0){let p=el.parentElement,d=0,anc="";while(p){const o=getComputedStyle(p).overflowX;if(o!=="visible"){anc=p.tagName+"."+(p.className||"")+":"+o;break;}p=p.parentElement;d++;}out.push([Math.round(r.width),el.tagName+"."+(String(el.className||"")).slice(0,20)+" anc="+anc]);}});out.sort((a,b)=>b[0]-a[0]);return JSON.stringify({scrollW:document.documentElement.scrollWidth,W,fuera:out.filter(x=>x[1].includes("anc=BODY")||x[1].includes("anc=HTML")||x[1].endsWith("anc=")).slice(0,12)});})()`));
+        mainWindow.webContents.invalidate(); await esperar(400);
         const img = await mainWindow.webContents.capturePage();
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, "studio_" + txt.replace(/[^\w]+/g, "_") + ".png"), img.toPNG());

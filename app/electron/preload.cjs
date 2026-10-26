@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld("studioFS", {
   rankingAbrir: (carpeta) => ipcRenderer.invoke("ranking-abrir", carpeta),
   rankingVerificar: () => ipcRenderer.invoke("ranking-verificar"),
   rankingCalibrar: () => ipcRenderer.invoke("ranking-calibrar"),
+  temaVentana: (tema) => ipcRenderer.invoke("tema-ventana", tema),
+  redGuardar: (p) => ipcRenderer.invoke("red-guardar", p),
+  redAbrir: (n) => ipcRenderer.invoke("red-abrir", n),
+  redLista: () => ipcRenderer.invoke("red-lista"),
+  redElegirArchivos: () => ipcRenderer.invoke("red-elegir-archivos"),
   rankingSubido: (n, si) => ipcRenderer.invoke("ranking-subido", n, si),
   rankingEliminar: (n, recuperar) => ipcRenderer.invoke("ranking-eliminar", n, !!recuperar),
   onRankingProgreso: (cb) => {

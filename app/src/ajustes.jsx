@@ -1,9 +1,19 @@
 import React from "react";
+import { ATAJOS_EDITOR } from "./random_editor";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { Icons, STATUSES } from "./base";
 import { geminiGetKey, geminiSaveKey, ytClearTokens, ytIsConnected } from "./datos";
 import { Field, inputStyle } from "./videos";
 import { ingresosEstimadosActivos } from "./youtube";
+
+const GUIA_ATAJOS = [
+  ["En todo RandomStudio", [["Ctrl+1 … Ctrl+9", "Ir a cada apartado (en el orden de la barra)"], ["Ctrl+K", "Buscar vídeos y apartados"],
+    ["Ctrl+Z / Ctrl+Y", "Deshacer / rehacer (planificación)"]]],
+  ["RandomEditor", ATAJOS_EDITOR],
+  ["Clips (con un clip abierto)", [["← / →", "Clip anterior / siguiente"], ["A", "Aprobar / quitar el aprobado"], ["E", "Editar el clip (mini editor)"], ["Esc", "Cerrar el clip"]]],
+  ["Mini editor de clips", [["Espacio", "Reproducir / pausar"], ["S", "Cortar en el cabezal"], ["Supr", "Quitar / recuperar el tramo elegido (o doble clic)"],
+    ["I / O", "Empieza aquí / acaba aquí"], ["← / →", "Un fotograma (Shift: 1 s)"], ["Ctrl+Z", "Deshacer"], ["Esc", "Salir"]]],
+];
 
 export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, setCardsExpanded, onConnect, onExport, onImport, onReset, toast }) {
   const cfg = (goals && goals.cfg) || { targetEur:100, shortsPerDay:3, rpmManual:null };
@@ -47,9 +57,27 @@ export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, se
 
   return (
     <div className="fade-in">
-      <h2 style={{fontSize:20,fontWeight:700,marginBottom:4}}>Configuración</h2>
+      <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700,marginBottom:4}}>Configuración</h2>
       <p style={{fontSize:12.5,color:"var(--text-2)",marginBottom:18}}>Todo lo ajustable del Studio, en un solo sitio.</p>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:14,alignItems:"start"}}>
+
+        {/* v3.11, él: "que no se te olvide poner en la configuración una guía con todos los atajos" */}
+        <div style={{...caja, gridColumn:"1 / -1"}}>
+          <div style={tituloZona}>Atajos de teclado</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:"16px 28px"}}>
+            {GUIA_ATAJOS.map(([zona, lista])=>(
+              <div key={zona}>
+                <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>{zona}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                  {lista.map(([k,que])=>(
+                    <div key={k} style={{display:"flex",gap:10,alignItems:"baseline",fontSize:12.5}}>
+                      <kbd style={{flexShrink:0,minWidth:118,fontFamily:"monospace",fontSize:11.5,padding:"2px 7px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--gold)"}}>{k}</kbd>
+                      <span style={{color:"var(--text-2)"}}>{que}</span>
+                    </div>))}
+                </div>
+              </div>))}
+          </div>
+        </div>
 
         <div style={caja}>
           <div style={tituloZona}>Objetivos e ingresos</div>
@@ -129,10 +157,23 @@ export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, se
 }
 
 /* ============================ BUSCADOR GLOBAL (cabecera) ============================ */
-export function GlobalSearch({videos, formats, onOpen}) {
+// v3.11: también lleva a los apartados («clips», «ranking»…) y se abre con Ctrl+K
+const normal = t => (t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+export function GlobalSearch({videos, formats, onOpen, secciones=[], onIr}) {
   const [q, setQ] = useState("");
   const [focus, setFocus] = useState(false);
   const boxRef = useRef(null);
+  const inputRef = useRef(null);
+  useEffect(()=>{
+    const h = e => { if((e.ctrlKey||e.metaKey) && (e.key==="k"||e.key==="K")){ e.preventDefault(); inputRef.current && inputRef.current.focus(); } };
+    window.addEventListener("keydown", h);
+    return ()=>window.removeEventListener("keydown", h);
+  },[]);
+  const secs = useMemo(()=>{
+    const t = normal(q.trim());
+    if(t.length<2 || !onIr) return [];
+    return secciones.filter(x=>normal(x.label).includes(t)).slice(0,4);
+  },[q, secciones]);
   useEffect(()=>{
     const fn = (e)=>{ if(boxRef.current && !boxRef.current.contains(e.target)) setFocus(false); };
     document.addEventListener("mousedown", fn);
@@ -144,15 +185,17 @@ export function GlobalSearch({videos, formats, onOpen}) {
     return videos.filter(v=>(v.title||"").toLowerCase().includes(t)).slice(0,8);
   },[q, videos]);
   const abrir = (v)=>{ onOpen(v); setQ(""); setFocus(false); };
+  const ir = (x)=>{ onIr(x.id); setQ(""); setFocus(false); inputRef.current && inputRef.current.blur(); };
   return (
     <div ref={boxRef} className="global-search" style={{position:"relative"}}>
       <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"var(--text-3)",display:"flex",pointerEvents:"none"}}>{Icons.search}</span>
-      <input value={q} onChange={e=>setQ(e.target.value)} onFocus={()=>setFocus(true)}
+      <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} onFocus={()=>setFocus(true)}
         onKeyDown={e=>{
-          if(e.key==="Enter" && res[0]) abrir(res[0]);
+          if(e.key==="Enter" && secs[0]) ir(secs[0]);
+          else if(e.key==="Enter" && res[0]) abrir(res[0]);
           if(e.key==="Escape"){ setQ(""); setFocus(false); e.currentTarget.blur(); }
         }}
-        placeholder="Buscar vídeo…"
+        placeholder="Buscar… (Ctrl+K)"
         style={{
           width: focus?250:170, transition:"width .18s ease, border-color .15s",
           background:"var(--bg-2)", border:"1px solid "+(focus?"var(--border-gold)":"var(--border)"),
@@ -160,7 +203,13 @@ export function GlobalSearch({videos, formats, onOpen}) {
         }}/>
       {focus && q.trim().length>=2 && (
         <div className="fade-in" style={{position:"absolute",top:"calc(100% + 6px)",right:0,width:340,maxWidth:"90vw",background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:12,boxShadow:"0 14px 44px rgba(0,0,0,0.5)",overflow:"hidden",zIndex:300}}>
-          {res.length===0 ? (
+          {secs.map(x=>(
+            <button key={x.id} onClick={()=>ir(x)} style={{display:"flex",alignItems:"center",gap:9,width:"100%",textAlign:"left",padding:"9px 13px",borderBottom:"1px solid var(--border)"}}
+              onMouseEnter={e=>e.currentTarget.style.background="var(--card)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <span style={{color:"var(--gold)",display:"flex"}}>{x.icon}</span>
+              <span style={{fontSize:12.5,fontWeight:600}}>Ir a {x.label}</span>
+            </button>))}
+          {res.length===0 && !secs.length ? (
             <div style={{padding:"14px 16px",fontSize:12.5,color:"var(--text-3)"}}>Nada coincide con «{q.trim()}»</div>
           ) : res.map((v,i)=>{
             const f = formats[v.format];
@@ -189,4 +238,4 @@ export function GlobalSearch({videos, formats, onOpen}) {
     </div>
   );
 }
-
+
