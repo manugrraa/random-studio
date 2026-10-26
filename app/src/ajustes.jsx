@@ -10,9 +10,7 @@ const GUIA_ATAJOS = [
   ["En todo RandomStudio", [["Ctrl+1 … Ctrl+9", "Ir a cada apartado (en el orden de la barra)"], ["Ctrl+K", "Buscar vídeos y apartados"],
     ["Ctrl+Z / Ctrl+Y", "Deshacer / rehacer (planificación)"]]],
   ["RandomEditor", ATAJOS_EDITOR],
-  ["Clips (con un clip abierto)", [["← / →", "Clip anterior / siguiente"], ["A", "Aprobar / quitar el aprobado"], ["E", "Editar el clip (mini editor)"], ["Esc", "Cerrar el clip"]]],
-  ["Mini editor de clips", [["Espacio", "Reproducir / pausar"], ["S", "Cortar en el cabezal"], ["Supr", "Quitar / recuperar el tramo elegido (o doble clic)"],
-    ["I / O", "Empieza aquí / acaba aquí"], ["← / →", "Un fotograma (Shift: 1 s)"], ["Ctrl+Z", "Deshacer"], ["Esc", "Salir"]]],
+  ["Clips (con un clip abierto)", [["← / →", "Clip anterior / siguiente"], ["A", "Aprobar / quitar el aprobado"], ["E", "Editar el clip en el RandomEditor"], ["Esc", "Cerrar el clip"]]],
 ];
 
 export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, setCardsExpanded, onConnect, onExport, onImport, onReset, toast }) {

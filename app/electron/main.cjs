@@ -311,8 +311,8 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "retencion", "aprender"]);
-const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "retencion", "aprender"]);
+const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
 function leerEventos(texto) {
@@ -437,6 +437,16 @@ ipcMain.handle("red-abrir", async (e, nombre) => {
   try { return { proyecto: JSON.parse(fs.readFileSync(path.join(RED_DIR(), redNombre(nombre) + ".json"), "utf8")) }; }
   catch (x) { return { error: x.message }; }
 });
+// el proyecto de un clip, a un temporal para «Guardar cambios» (no entra en la lista de proyectos)
+ipcMain.handle("red-guardar-tmp", async (e, proyecto) => {
+  try {
+    const d = path.join(CLON_DIR, "_trabajo", "random_editor", "tmp");
+    fs.mkdirSync(d, { recursive: true });
+    const f = path.join(d, "clip_" + Date.now() + ".json");
+    fs.writeFileSync(f, JSON.stringify(proyecto), "utf8");
+    return { ruta: f };
+  } catch (x) { return { error: x.message }; }
+});
 ipcMain.handle("red-lista", async () => {
   try {
     if (!fs.existsSync(RED_DIR())) return { lista: [] };
@@ -537,6 +547,7 @@ function createWindow() {
         const txt0 = await Promise.race([mainWindow.webContents.executeJavaScript(`document.body.innerText.length+" | "+(document.querySelector("h2")||{}).textContent`),
           esperar(5000).then(() => "LA PÁGINA NO RESPONDE")]);
         console.log("[captura]", p, "->", txt0);
+        if (process.env.STUDIO_BUSCAR) console.log("[captura-busca]", JSON.stringify(await mainWindow.webContents.executeJavaScript(`${JSON.stringify(process.env.STUDIO_BUSCAR.split("|"))}.map(t=>[t, document.body.innerText.includes(t)])`)));
         if (process.env.STUDIO_DEBUG) console.log("[captura-dom]", await mainWindow.webContents.executeJavaScript(`(()=>{const W=document.documentElement.clientWidth;const out=[];document.querySelectorAll("body *").forEach(el=>{const r=el.getBoundingClientRect();if(r.right>W+2&&r.width>0){let p=el.parentElement,d=0,anc="";while(p){const o=getComputedStyle(p).overflowX;if(o!=="visible"){anc=p.tagName+"."+(p.className||"")+":"+o;break;}p=p.parentElement;d++;}out.push([Math.round(r.width),el.tagName+"."+(String(el.className||"")).slice(0,20)+" anc="+anc]);}});out.sort((a,b)=>b[0]-a[0]);return JSON.stringify({scrollW:document.documentElement.scrollWidth,W,fuera:out.filter(x=>x[1].includes("anc=BODY")||x[1].includes("anc=HTML")||x[1].endsWith("anc=")).slice(0,12)});})()`));
         mainWindow.webContents.invalidate(); await esperar(400);
         const img = await mainWindow.webContents.capturePage();

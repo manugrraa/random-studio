@@ -1,5 +1,5 @@
 import React from "react";
-import { EditorVideo } from "./editor_video";
+import { abrirEnEditor } from "./random_editor";
 import { fireNotification } from "./datos";
 const { useState, useEffect, useMemo, useRef } = React;
 
@@ -352,7 +352,7 @@ function Detalle({ c, recops, onEditar, onCribar, onRenombrar, onCerrar, onNota,
         {!c.videos.length && <div style={{aspectRatio:"9/16",borderRadius:10,border:"1px dashed var(--border)",display:"flex",alignItems:"center",justifyContent:"center",
           textAlign:"center",padding:20,color:"var(--text-3)",fontSize:13}}>📁 Recopilación vacía<br/>Añádele clips desde cada clip: «Añadir a recopilación»</div>}
         {c.videos.length>0 && <video key={c.videos[v]+(c.editados&&c.editados[archivoDe(c.videos[v])]?"e":"")} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>}
-        {c.estado!=="montado" && onEditar && c.videos.length>0 && <button onClick={()=>onEditar(c, c.videos[v])} disabled={ocupado} title="Recórtalo o quítale trozos (E)"
+        {c.estado!=="montado" && onEditar && c.videos.length>0 && <button onClick={()=>onEditar(c, c.videos[v])} disabled={ocupado} title="Ábrelo en el RandomEditor (E)"
           style={{...boton(false),width:"100%",marginTop:8,padding:"8px 0",fontSize:12.5}}>✂ Editar {c.videos.length>1?"este momento":"el clip"}{c.editados&&c.editados[archivoDe(c.videos[v])]?" · ya editado":""}</button>}
         {(c.videos.length>1 || (c.recopilacion_suya && c.videos.length>0)) && <>
           <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4,marginTop:10}}>Momentos de la recopilación · {c.videos.length-fuera.size} de {c.videos.length} entran{c.orden && c.orden.length ? " · orden tuyo" : ""}</div>
@@ -453,7 +453,6 @@ export function ClipsView({ toast }) {
   const [ocupados, setOcupados] = useState({});
   const [sel, setSel] = useState(()=>new Set());    // 19/10: los aprobados que él elige montar
   // v3.11 (26/10): el mini editor y las recopilaciones nuevas
-  const [editor, setEditor] = useState(null);       // {carpeta, archivo, ruta}
   const [nuevaRecop, setNuevaRecop] = useState(null);   // nombre de la recopilación que se está creando (vacía)
   const teclas = useRef(null);
   useEffect(()=>{ const h = e => teclas.current && teclas.current(e); window.addEventListener("keydown", h); return ()=>window.removeEventListener("keydown", h); },[]);
@@ -560,13 +559,13 @@ export function ClipsView({ toast }) {
   const det = clips && abierto && clips.find(c=>c.carpeta===abierto);
   // v3.11: atajos con un clip abierto: ←/→ el anterior/siguiente, A aprobar, E editar el momento
   teclas.current = e => {
-    if(editor || nuevaRecop!==null || !det || e.ctrlKey || e.metaKey || e.altKey) return;
+    if(nuevaRecop!==null || !det || e.ctrlKey || e.metaKey || e.altKey) return;
     if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||"")) return;
     const i = lista.findIndex(c=>c.carpeta===det.carpeta);
     if(e.key==="ArrowRight" && i<lista.length-1){ e.preventDefault(); setAbierto(lista[i+1].carpeta); }
     else if(e.key==="ArrowLeft" && i>0){ e.preventDefault(); setAbierto(lista[i-1].carpeta); }
     else if((e.key==="a"||e.key==="A") && det.estado!=="montado" && det.estado!=="descartado"){ e.preventDefault(); cribar(det, det.estado==="aprobado"?"nuevo":"aprobar"); }
-    else if((e.key==="e"||e.key==="E") && det.estado!=="montado"){ e.preventDefault(); const r = det.videos[0]; setEditor({carpeta:det.carpeta, archivo:archivoDe(r), ruta:r}); }
+    else if((e.key==="e"||e.key==="E") && det.estado!=="montado" && det.videos.length){ e.preventDefault(); soltarVideo().then(()=>abrirEnEditor({carpeta:det.carpeta, archivo:archivoDe(det.videos[0])})); }
     else if(e.key==="Escape"){ setAbierto(null); }
   };
   // las recopilaciones suyas (carpetas que él va llenando)
@@ -641,8 +640,7 @@ export function ClipsView({ toast }) {
         {elegidos.length<aprobados.length && <button onClick={()=>setSel(new Set(aprobados.map(c=>c.carpeta)))} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Elegir todos</button>}
         {elegidos.length>0 && <button onClick={()=>setSel(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Quitar selección</button>}
       </div>}
-      {editor && <EditorVideo {...editor} toast={toast} onCerrar={()=>setEditor(null)} onGuardado={cargar}/>}
-      {det && <Detalle c={det} onCribar={cribar} onEditar={(c, ruta)=>setEditor({carpeta:c.carpeta, archivo:archivoDe(ruta), ruta})} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
+      {det && <Detalle c={det} onCribar={cribar} onEditar={async (c, ruta)=>{ await soltarVideo(); abrirEnEditor({carpeta:c.carpeta, archivo:archivoDe(ruta)}); }} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
         onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
         recops={recops.filter(r=>r.carpeta!==det.carpeta)} onAnadir={anadirA} onCrearRecop={(c, nombre, archivo, momento)=>crearRecop(nombre, c, archivo, momento)}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}

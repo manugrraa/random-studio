@@ -784,6 +784,7 @@ export function App() {
   // v3.11: Ctrl+1…9 salta a cada apartado (en el orden de la barra)
   tabs.filter(t=>t.grupo!=="abajo").forEach((t,i)=>{ if(i<9) t.atajo = i+1; });
   const vistaActual = tabs.find(t=>t.id===view) || tabs[0];
+  useEffect(()=>{ const h = () => setView("editor"); window.addEventListener("rds-ir-editor", h); return ()=>window.removeEventListener("rds-ir-editor", h); },[]);
   const tabsRef = useRef(tabs); tabsRef.current = tabs;
   useEffect(()=>{
     const h = e => {

@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   redGuardar: (p) => ipcRenderer.invoke("red-guardar", p),
   redAbrir: (n) => ipcRenderer.invoke("red-abrir", n),
   redLista: () => ipcRenderer.invoke("red-lista"),
+  redGuardarTmp: (p) => ipcRenderer.invoke("red-guardar-tmp", p),
   redElegirArchivos: () => ipcRenderer.invoke("red-elegir-archivos"),
   rankingSubido: (n, si) => ipcRenderer.invoke("ranking-subido", n, si),
   rankingEliminar: (n, recuperar) => ipcRenderer.invoke("ranking-eliminar", n, !!recuperar),

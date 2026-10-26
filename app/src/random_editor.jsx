@@ -14,6 +14,12 @@ const { useState, useEffect, useRef, useMemo } = React;
      escucha previa; se meten con ＋ o arrastrándolos a la línea de tiempo
    - exporta él mismo (clon.py exportar). Siguiente paso: textos y animaciones con Remotion */
 
+/* 27/10, él: "cuando le dé a «Editar el clip», que me lleve al RandomEditor y pueda guardar los cambios
+   del clip sin exportarlo: «Guardar cambios»". Clips llama a abrirEnEditor({carpeta, archivo}); el
+   editor se abre en MODO CLIP: edita sobre el original del clip y «Guardar cambios» lo rehace en su sitio. */
+let pendiente = null;
+export function abrirEnEditor(req) { pendiente = req; window.dispatchEvent(new Event("rds-ir-editor")); }
+
 export const ATAJOS_EDITOR = [
   ["Espacio", "Reproducir / pausar"],
   ["J / K / L", "Atrás / pausa / adelante (L otra vez: más rápido)"],
@@ -30,7 +36,7 @@ export const ATAJOS_EDITOR = [
   ["Shift+M", "Silenciar / devolver el sonido de lo elegido"],
   ["Ctrl++ / Ctrl+-", "Acercar / alejar la línea de tiempo (o Ctrl+rueda)"], ["Shift+Z", "Ver toda la línea de tiempo"],
   ["N", "Imán (encajar con el cabezal, los cortes y los marcadores)"],
-  ["Ctrl+I", "Meter archivos del disco"], ["Ctrl+S", "Guardar el proyecto (también se guarda solo)"], ["Ctrl+E", "Exportar"],
+  ["Ctrl+I", "Meter archivos del disco"], ["Ctrl+S", "Guardar el proyecto (también se guarda solo) · con un clip: Guardar cambios"], ["Ctrl+E", "Exportar"],
   ["Ctrl+Shift+F", "Previsualización a pantalla completa"],
   ["Clic / Shift+clic", "Elegir un clip / añadirlo a la selección"],
   ["Arrastrar un clip", "Moverlo (en la principal cambia el orden)"],
@@ -139,15 +145,24 @@ export function RandomEditorView({ toast }) {
   const [proyectos, setProyectos] = useState([]);
   const vid = useRef(null), auds = useRef({}), linea = useRef(null), reloj = useRef(null), oido = useRef(null), nombreRef = useRef(null);
   const est = useRef({}); est.current = { t, sel, jugando, zoom, iman, porta };
-  const [tarea, lanzar, cerrarTarea] = useTarea(ev=>{ if(!ev.codigo) toast && toast("Exportado: lo tienes en Shorts Listos/RandomEditor (o en Clips, si lo mandaste como clip)"); });
+  const [tarea, lanzar, cerrarTarea] = useTarea(ev=>{
+    if(guardandoClip.current){
+      guardandoClip.current = false;
+      if(!ev.codigo){ sucioRef.current = false; repintar(x=>x+1); toast && toast("Cambios guardados en el clip: el montaje del clon ya usa esta versión"); }
+      sincronizar(est.current.t, 0);
+      return;
+    }
+    if(!ev.codigo) toast && toast("Exportado: lo tienes en Shorts Listos/RandomEditor (o en Clips, si lo mandaste como clip)");
+  });
 
   useEffect(()=>{ if(!enPC) return;
     consultar(["redmedios"]).then(ev=>setMedios(ev.find(e=>e.evento==="hecho"))).catch(e=>toast && toast(e.message));
     consultar(["redbiblio"]).then(ev=>setBiblio(ev.find(e=>e.evento==="hecho"))).catch(e=>toast && toast(e.message));
     window.studioFS.redLista().then(r=>setProyectos(r.lista||[]));
+    if(pendiente){ const req = pendiente; pendiente = null; abrirClip(req.carpeta, req.archivo); }
   },[]);
   // guardado automático cada 45 s (si tiene nombre y hay cambios), como CapCut
-  useEffect(()=>{ const iv = setInterval(()=>{ if(sucioRef.current && pRef.current.nombre.trim()) guardar(true); }, 45000); return ()=>clearInterval(iv); },[]);
+  useEffect(()=>{ const iv = setInterval(()=>{ if(sucioRef.current && pRef.current.nombre.trim() && !pRef.current.clip) guardar(true); }, 45000); return ()=>clearInterval(iv); },[]);
   // las ondas de los audios de la línea de tiempo
   useEffect(()=>{
     p.pistas.filter(pi=>pi.tipo==="audio").flatMap(pi=>pi.clips).forEach(c=>{
@@ -339,7 +354,8 @@ export function RandomEditorView({ toast }) {
     if(!callado) toast && toast("Proyecto guardado");
     return r.ruta;
   };
-  const cargarProyecto = pr => { pRef.current = ordenar({...nuevoProyecto(), ...pr}); pasado.current = []; futuro.current = []; sucioRef.current = false; setSel(new Set()); setT(0); repintar(x=>x+1); };
+  const cargarProyecto = pr => { pRef.current = ordenar({...nuevoProyecto(), ...pr}); pasado.current = []; futuro.current = []; sucioRef.current = false; setSel(new Set()); setT(0); repintar(x=>x+1);
+    setTimeout(()=>sincronizar(0, 0), 80); };          // que se vea el primer fotograma nada más abrir
   const abrir = async nombre => {
     if(sucioRef.current && !window.confirm("Hay cambios sin guardar. ¿Abrir otro proyecto igualmente?")) return;
     const r = await window.studioFS.redAbrir(nombre);
@@ -352,6 +368,56 @@ export function RandomEditorView({ toast }) {
     const ruta = await guardar(); if(!ruta) return;
     try { await lanzar(["exportar", ruta, como, ...(como==="clip" ? [pRef.current.nombre] : [])]); } catch(e){ toast && toast(e.message); }
   };
+  // ---- modo clip
+  const soltarVideos = async () => {
+    [vid.current, ...Object.values(auds.current)].forEach(v=>{ try { v && v.pause(); if(v){ v.removeAttribute("src"); v.dataset.ruta = ""; v.load && v.load(); } } catch(x){} });
+    await new Promise(r=>setTimeout(r, 400));
+  };
+  const abrirClip = async (carpeta, archivo) => {
+    if(sucioRef.current && !window.confirm("Hay cambios sin guardar en lo que tienes abierto. ¿Abrir el clip igualmente?")) return;
+    try {
+      const ev = await consultar(["redabrirclip", carpeta, archivo]);
+      const h = ev.find(e=>e.evento==="hecho");
+      cargarProyecto(h.proyecto);
+      setTimeout(ajustar, 50);
+    } catch(e){ toast && toast(e.message); }
+  };
+  const guardarCambios = async () => {
+    const c = pRef.current.clip; if(!c) return;
+    if(!v1 || !v1.clips.length){ toast && toast("La pista principal está vacía: para quitarlo entero, descarta el clip en Clips"); return; }
+    setJugando(0); await soltarVideos();
+    const r = await window.studioFS.redGuardarTmp(pRef.current);
+    if(r.error){ toast && toast(r.error); return; }
+    guardandoClip.current = true;
+    try { await lanzar(["guardarclip", r.ruta, c.carpeta, c.archivo]); } catch(e){ guardandoClip.current = false; toast && toast(e.message); }
+  };
+  const volverAlOriginal = async () => {
+    const c = pRef.current.clip; if(!c) return;
+    if(!window.confirm("¿Volver al clip original? Se pierden los cambios guardados de este clip.")) return;
+    await soltarVideos();
+    try { await consultar(["original", c.carpeta, c.archivo]); sucioRef.current = false; toast && toast("Clip original recuperado"); await abrirClip(c.carpeta, c.archivo); }
+    catch(e){ toast && toast(e.message); }
+  };
+  // «Quitar el aire» (regla de oro: el aire se corta): fuera los silencios largos de la principal
+  const quitarAire = async () => {
+    const cs = v1 ? v1.clips : []; if(!cs.length) return;
+    const aires = {};
+    try { for(const r of [...new Set(cs.map(c=>c.ruta))]){ const ev = await consultar(["redaire", r]); aires[r] = (ev.find(e=>e.evento==="hecho")||{}).aire || []; } }
+    catch(e){ toast && toast(e.message); return; }
+    let quitados = 0;
+    cambiar(prev=>({...prev, pistas: prev.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips: pi.clips.flatMap(c=>{
+      let trozos = [[c.desde, c.hasta]];
+      (aires[c.ruta]||[]).forEach(([a,b])=>{
+        trozos = trozos.flatMap(([x,y])=> (b<=x || a>=y) ? [[x,y]] : [[x,Math.max(x,a)],[Math.min(y,b),y]].filter(([u,v])=>v-u>0.05));
+      });
+      quitados += trozos.length - 1;
+      let en = c.en;
+      return trozos.map(([x,y],k)=>{ const n = {...c, id:k ? uid() : c.id, desde:x, hasta:y, en}; en += y - x; return n; });
+    })})}));
+    toast && toast(quitados ? `Aire quitado en ${quitados} sitio${quitados!==1?"s":""} (Ctrl+Z para deshacer)` : "No hay silencios largos que quitar");
+  };
+  const guardandoClip = useRef(false);
+
   const formato = f => { const [w,h] = LIENZOS[f]; cambiar(prev=>({...prev, formato:f, ancho:w, alto:h})); };
 
   // ---- atajos (los de CapCut)
@@ -373,7 +439,7 @@ export function RandomEditorView({ toast }) {
       else if(ctrl && e.shiftKey && K==="z"){ ok(); rehacer(); }
       else if(ctrl && K==="y"){ ok(); rehacer(); }
       else if(ctrl && K==="z"){ ok(); deshacer(); }
-      else if(ctrl && K==="s"){ ok(); guardar(); }
+      else if(ctrl && K==="s"){ ok(); pRef.current.clip ? guardarCambios() : guardar(); }
       else if(ctrl && K==="e"){ ok(); exportar("listos"); }
       else if(ctrl && K==="i"){ ok(); meterArchivos(); }
       else if(ctrl && e.shiftKey && K==="f"){ ok(); setCompleta(x=>!x); }
@@ -397,7 +463,10 @@ export function RandomEditorView({ toast }) {
     window.addEventListener("keydown", h, true);
     return ()=>window.removeEventListener("keydown", h, true);
   });
-  const ajustar = () => { const w = linea.current ? linea.current.clientWidth - 60 : 900; setZoom(Math.max(ZMIN, Math.min(ZMAX, w / Math.max(5, total)))); };
+  const ajustar = () => {
+    const tot = Math.max(0, ...pRef.current.pistas.flatMap(pi=>pi.clips.map(fin)));      // (del proyecto de ahora, no del de la última pintada)
+    const w = linea.current ? linea.current.clientWidth - 60 : 900; setZoom(Math.max(ZMIN, Math.min(ZMAX, w / Math.max(5, tot))));
+  };
 
   // ---- línea de tiempo: arrastrar clips, bordes y el cabezal; soltar cosas de la biblioteca
   const encaje = (x, ignorar) => {
@@ -475,7 +544,8 @@ export function RandomEditorView({ toast }) {
   return (
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        <input ref={nombreRef} value={p.nombre} onChange={e=>{ pRef.current = {...pRef.current, nombre:e.target.value}; sucioRef.current = true; repintar(x=>x+1); }} placeholder="Nombre del proyecto"
+        {p.clip && <span style={{fontSize:12,fontWeight:700,padding:"5px 9px",borderRadius:8,background:"rgba(212,175,55,0.15)",color:"var(--gold)",whiteSpace:"nowrap"}}>✂ Clip</span>}
+        <input ref={nombreRef} readOnly={!!p.clip} title={p.clip ? "Estás editando este clip recortado" : undefined} value={p.nombre} onChange={e=>{ pRef.current = {...pRef.current, nombre:e.target.value}; sucioRef.current = true; repintar(x=>x+1); }} placeholder="Nombre del proyecto"
           style={{flex:"1 1 200px",minWidth:0,maxWidth:320,fontSize:13.5,fontWeight:650,padding:"8px 11px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg-2)",color:"var(--text)"}}/>
         <span style={{fontSize:11.5,color:sucioRef.current?"var(--gold)":"var(--text-3)"}}>{sucioRef.current ? "sin guardar" : (p.nombre ? "guardado" : "")}</span>
         <button onClick={nuevo} style={bt(false)}>Nuevo</button>
@@ -486,8 +556,15 @@ export function RandomEditorView({ toast }) {
         {sep}
         {Object.entries(LIENZOS).map(([k,[w,h,et]])=><button key={k} onClick={()=>formato(k)} style={bt(p.formato===k)}>{et}</button>)}
         <span style={{marginLeft:"auto"}}/>
-        <button onClick={()=>exportar("clip")} disabled={!!(tarea&&!tarea.cerrada)} style={bt(false)} title="Como clip recortado nuevo (aprobado) para montarlo con el clon">Exportar como clip</button>
-        <button onClick={()=>exportar("listos")} disabled={!!(tarea&&!tarea.cerrada)} style={bt(true)} title="Ctrl+E · a Shorts Listos/RandomEditor">Exportar</button>
+        {p.clip ? <>
+          <button onClick={quitarAire} style={bt(false)} title="Quita los silencios largos de la pista principal (Ctrl+Z para deshacer)">✨ Quitar el aire</button>
+          <button onClick={volverAlOriginal} disabled={!!(tarea&&!tarea.cerrada)} style={bt(false)} title="Deshace todo lo guardado en este clip">Volver al original</button>
+          <button onClick={guardarCambios} disabled={!!(tarea&&!tarea.cerrada)} style={bt(true)} title="Ctrl+S · rehace el clip con estos cambios, en su sitio (no exporta nada aparte)">Guardar cambios</button>
+        </> : <>
+          <button onClick={quitarAire} style={bt(false)} title="Quita los silencios largos de la pista principal (Ctrl+Z para deshacer)">✨ Quitar el aire</button>
+          <button onClick={()=>exportar("clip")} disabled={!!(tarea&&!tarea.cerrada)} style={bt(false)} title="Como clip recortado NUEVO (aprobado) para montarlo con el clon">Exportar como clip nuevo</button>
+          <button onClick={()=>exportar("listos")} disabled={!!(tarea&&!tarea.cerrada)} style={bt(true)} title="Ctrl+E · a Shorts Listos/RandomEditor">Exportar</button>
+        </>}
       </div>
       <PanelTarea tarea={tarea} onCerrar={cerrarTarea}/>
 
