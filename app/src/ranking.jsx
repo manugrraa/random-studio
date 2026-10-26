@@ -189,6 +189,36 @@ function Estadisticas({ x, toast }) {
     </div>);
 }
 
+// v3.9: lo que el ranking ha aprendido del canal (ranking_calibrar.py): ×1 = lo normal frente a
+// los Shorts subidos a su alrededor; y cómo acertó la nota que tenían los Short ANTES de subirse
+const NOMBRE_TEMA = {reto:"Retos (1 headshot = 1 caja…)", famoso:"Youtubers conocidos", caja:"Cajas, skin cases y ruletas",
+  baile:"Bailes", sub:"Suscriptores", pregunta:"Pregunta en el título", derrota:"Pierde o le remontan", hacker:"Hackers y ratas",
+  irl:"Fuera del juego", torneo:"Torneos", katana:"Katana", sniper:"Sniper"};
+function Calibracion({ c }) {
+  const temas = Object.entries(c.temas||{}).sort((a,b)=>b[1].bruto-a[1].bruto);
+  const color = v => v>=1.1 ? "#4ade80" : v<=0.9 ? "var(--red)" : "var(--text-2)";
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10,padding:"12px 14px",border:"1px solid var(--border)",borderRadius:12,background:"var(--bg-2)"}}>
+      <div style={{fontSize:12.5,color:"var(--text-3)"}}>Calibrado el {c.fecha} con {c.shorts} Shorts de tu canal · cada uno comparado con los 10 subidos a su alrededor (×1 = lo normal)</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:"6px 16px"}}>
+        {temas.map(([k,v])=>(
+          <div key={k} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:12.5}}>
+            <span style={{color:"var(--text-2)"}}>{NOMBRE_TEMA[k]||k} <span style={{color:"var(--text-3)"}}>({v.n})</span></span>
+            <b style={{color:color(v.bruto)}}>×{v.bruto.toFixed(2)}</b>
+          </div>))}
+      </div>
+      {(c.duracion||[]).length>0 && <div style={{display:"flex",gap:6,flexWrap:"wrap",fontSize:12}}>
+        <span style={{color:"var(--text-3)"}}>Duración:</span>
+        {c.duracion.map(t=><span key={t.desde} style={{padding:"2px 8px",borderRadius:8,border:"1px solid var(--border)",color:color(t.rel)}}>
+          {t.hasta>=600?`+${t.desde}`:`${t.desde}-${t.hasta}`} s ×{t.rel.toFixed(2)}</span>)}
+      </div>}
+      <div style={{fontSize:12.5,color:"var(--text-2)"}}>
+        {c.acierto!=null ? <>Acierto del ranking con lo ya subido: <b>{c.acierto>=0.5?"bueno":c.acierto>=0.2?"regular":"flojo"}</b> (correlación de puestos {c.acierto.toFixed(2)}, {c.pares.length} Shorts)</>
+          : <>Para medir el acierto hacen falta al menos 4 Shorts que tuvieran nota antes de subirse (ahora {(c.pares||[]).length}): cuantos más subas desde el ranking, mejor se ajusta.</>}
+      </div>
+    </div>);
+}
+
 // 25/10, él: "que yo pueda seleccionar el título que se ponga en cada Short": se rehace solo
 function CambiarTitulo({ x, onRetitular, ocupado }) {
   const [t, setT] = useState(x.titulo_pantalla||"");
@@ -293,6 +323,20 @@ export function RankingView({ toast }) {
   const [verSubidos, setVerSubidos] = useState(()=>{ try { return localStorage.getItem("rds_ranking_subidos")||"pendientes"; } catch(e){ return "pendientes"; } });
   useEffect(()=>{ try { localStorage.setItem("rds_ranking_subidos", verSubidos); } catch(e){} },[verSubidos]);
   const [verificando, setVerificando] = useState(false);
+  // v3.9 (26/10), él: "mejora el método del ranking con las estadísticas de los Shorts nuevos":
+  // lee el canal, mide cuánto rinde cada tema y cada duración frente a los Shorts de alrededor,
+  // y vuelve a poner la nota a todos con esos pesos (sin gastar Claude)
+  const [calibrando, setCalibrando] = useState(false);
+  const [verCal, setVerCal] = useState(false);
+  const calibrar = async () => {
+    if(!window.studioFS?.rankingCalibrar || calibrando) return;
+    setCalibrando(true);
+    const r = await window.studioFS.rankingCalibrar();
+    setCalibrando(false);
+    if(r.error){ toast && toast("No se pudo recalibrar: "+r.error.slice(-140)); return; }
+    toast && toast(`Recalibrado con ${r.shorts} Shorts del canal · ${r.renotados} notas actualizadas`);
+    setVerCal(true); cargar();
+  };
   const verificar = async (silencioso) => {
     if(!window.studioFS?.rankingVerificar || verificando) return;
     setVerificando(true);
@@ -475,9 +519,13 @@ export function RankingView({ toast }) {
             <button key={k} onClick={()=>setFiltro(k)} style={boton(filtro===k)}>{l}</button>
           ))}
           {enPC && <button onClick={()=>verificar(false)} disabled={verificando} title="Busca en tu canal los Shorts ya subidos comparando las miniaturas" style={{...boton(false),opacity:verificando?.6:1}}>{verificando?"Comprobando YouTube…":"Comprobar subidos"}</button>}
+          {enPC && window.studioFS?.rankingCalibrar && <button onClick={calibrar} disabled={calibrando} title="Lee cómo han ido tus Shorts subidos y ajusta lo que vale cada tema y cada duración"
+            style={{...boton(false),opacity:calibrando?.6:1}}>{calibrando?"Recalibrando… (1-2 min)":"Recalibrar con el canal"}</button>}
+          {datos.calibracion && <button onClick={()=>setVerCal(v=>!v)} style={boton(verCal)}>Qué funciona</button>}
           <span style={{fontSize:12,color:"var(--text-3)"}}>{datos.ranking.filter(x=>x.nota!=null).length} con nota · {pendientes} sin analizar</span>
         </div>
       )}
+      {datos && verCal && datos.calibracion && <Calibracion c={datos.calibracion}/>}
 
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {verSubidos==="eliminados" ? (datos?.eliminados||[]).map(x=>(

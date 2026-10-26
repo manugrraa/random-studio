@@ -229,7 +229,7 @@ ipcMain.handle("ranking-datos", async () => {
   try {
     // v3.2: lista y ranking en UNA llamada (antes dos procesos de Python cada vez)
     const d = JSON.parse(await correrPython(["datos"]));
-    return { lista: d.lista, ranking: d.ranking, eliminados: d.eliminados || [], analizando: !!rankingProc };
+    return { lista: d.lista, ranking: d.ranking, eliminados: d.eliminados || [], calibracion: d.calibracion || null, analizando: !!rankingProc };
   } catch (e) { return { error: e.message }; }
 });
 
@@ -237,6 +237,17 @@ ipcMain.handle("ranking-datos", async () => {
 ipcMain.handle("ranking-verificar", async () => {
   try {
     const out = await correrPython(["verificar", "150"]);
+    const ev = out.split("\n").map(l => { try { return JSON.parse(l); } catch (x) { return null; } }).filter(Boolean);
+    const fin = ev.find(x => x.evento === "fin"), err = ev.find(x => x.evento === "error");
+    return err ? { error: err.error } : fin || { ok: true };
+  } catch (e) { return { error: e.message }; }
+});
+
+// v3.9 (26/10): el ranking aprende del canal: rendimiento real de los Shorts subidos -> pesos de
+// cada tema y de la duración, y vuelve a poner la nota a todos (sin gastar Claude)
+ipcMain.handle("ranking-calibrar", async () => {
+  try {
+    const out = await correrPython(["calibrar", "200"]);
     const ev = out.split("\n").map(l => { try { return JSON.parse(l); } catch (x) { return null; } }).filter(Boolean);
     const fin = ev.find(x => x.evento === "fin"), err = ev.find(x => x.evento === "error");
     return err ? { error: err.error } : fin || { ok: true };
