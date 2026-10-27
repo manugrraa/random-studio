@@ -9,7 +9,7 @@ const { useState, useRef, useEffect, memo } = React;
    la Música por género, los SFX por categoría, los TEXTOS (normal y el de los títulos) y, preparados
    para lo que venga, Stickers y Efectos. Lo de audio se escucha antes de meterlo; todo se mete con ＋
    o arrastrándolo a la línea de tiempo, justo donde se suelta. */
-const PESTANAS = [["clips","Clips",I.archivo],["musica","Música",I.oir],["sfx","SFX",I.sonido],["texto","Texto",I.texto],["stickers","Stickers",I.sticker],["efectos","Efectos",I.efecto]];
+const PESTANAS = [["clips","Clips",I.archivo],["musica","Música",I.oir],["sfx","SFX",I.sonido],["texto","Texto",I.texto],["subtitulos","Subtítulos",I.subs],["stickers","Stickers",I.sticker],["efectos","Efectos",I.efecto]];
 
 const Fila = memo(function Fila({ m, pestana, oyendo, onOir, onMeter, cat }) {
   return (
@@ -60,7 +60,7 @@ function Textos({ presets, onTexto }) {
     </div>));
 }
 
-export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos }) {
+export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs }) {
   const [pestana, setPestana] = useState(()=>{ try { return localStorage.getItem("red_pestana") || "clips"; } catch(e){ return "clips"; } });
   const [cat, setCat] = useState("");
   const [busca, setBusca] = useState("");
@@ -86,9 +86,9 @@ export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTex
     <div style={{transform:"scale(1.8)",opacity:0.6}}>{icono}</div>{txt}</div>;
   return (
     <div className="rd-panel" style={{display:"flex",flexDirection:"column",minHeight:0,height:"100%"}}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6, 1fr)",gap:2,padding:6,borderBottom:"1px solid #2a2a2a"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7, 1fr)",gap:2,padding:6,borderBottom:"1px solid #2a2a2a"}}>
         {PESTANAS.map(([k,l,ic])=><button key={k} onClick={()=>{ setPestana(k); setCat(""); setRecop(null); }} className={"rd-tab"+(pestana===k?" on":"")} title={l}
-          style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"5px 0",fontSize:10.5}}>{ic}<span>{l}</span></button>)}
+          style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"5px 0",fontSize:9.5,minWidth:0}}>{ic}<span style={{maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l}</span></button>)}
       </div>
       {(pestana==="clips" || deAudio) && <div style={{display:"flex",gap:6,padding:"8px 8px 4px"}}>
         <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar…" className="rd-input" style={{flex:1,minWidth:0}}/>
@@ -104,6 +104,7 @@ export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTex
       </div>}
       <div style={{overflowY:"auto",flex:1,padding:"4px 8px 8px",display:"flex",flexDirection:"column",gap:4}}>
         {pestana==="texto" && <Textos presets={presets} onTexto={onTexto}/>}
+        {pestana==="subtitulos" && panelSubs}
         {pestana==="stickers" && vacio(I.sticker, "Aquí irán los stickers. Próximamente.")}
         {pestana==="efectos" && vacio(I.efecto, "Aquí irán los efectos. Próximamente.")}
         {(pestana==="clips" || deAudio) && lista===null && <div style={{fontSize:12.5,color:"#888",padding:8}}>{pestana==="clips" ? "Cargando los clips…" : "Ordenando la biblioteca…"}</div>}

@@ -45,6 +45,23 @@ export const colocarAudio = (ps, c, preferida) => colocar(ps, c, preferida, "aud
 /* un TEXTO de la línea de tiempo. `desde` empieza en 1000 (virtual) para que su principio se pueda
    alargar hacia atrás igual que el final; lo que dura es hasta - desde */
 export const TEXTO0 = 1000;
+
+/* 28/10: la pista de SUBTÍTULOS (una; justo encima de la principal, debajo de los textos). Sus tarjetas
+   llevan `palabras` [[a, b, w]] relativas a su inicio; la pista, su `plantilla` y sus cambios de `estilo` */
+export function ponerSubtitulos(p, clips, plantilla, estilo) {
+  const prev = p.pistas.find(x=>x.tipo==="subtitulos");
+  const pista = { id: prev ? prev.id : "s"+uid(), tipo:"subtitulos", nombre:"Subtítulos", plantilla, estilo: estilo ?? ((prev && prev.estilo) || {}), clips };
+  if(prev) return {...p, pistas: p.pistas.map(x=>x.id===prev.id ? {...x, ...pista} : x)};
+  const i = p.pistas.findIndex(x=>x.id==="v1");
+  return {...p, pistas: [...p.pistas.slice(0, i), pista, ...p.pistas.slice(i)]};
+}
+// el texto de una tarjeta cambiado a mano: si tiene las mismas palabras, conservan su tiempo; si no, se reparten
+export function retextoTarjeta(c, texto) {
+  const ws = texto.split(/\s+/).filter(Boolean), viejas = c.palabras || [], dur = largo(c);
+  const palabras = ws.length === viejas.length ? viejas.map((p, k)=>[p[0], p[1], ws[k]])
+    : ws.map((w, k)=>[+(dur * k / ws.length).toFixed(3), +(dur * (k + 1) / ws.length).toFixed(3), w]);
+  return {...c, texto, nombre: texto, palabras};
+}
 export const nuevoTexto = (texto, estilo, en, dur, plantilla) => ({ id:uid(), tipo:"texto", texto, nombre:texto, estilo:{...estilo},
   plantilla: plantilla || null, desde:TEXTO0, hasta:TEXTO0 + dur, dur_src:1e9, en, vol:1, silencio:false });
 

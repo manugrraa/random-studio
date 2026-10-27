@@ -9,6 +9,7 @@ import { Biblioteca } from "./Biblioteca";
 import { I } from "./iconos";
 import { Fps, Medidor, AjustesEditor, useAjuste } from "./Rendimiento";
 import { InspectorTexto } from "./Textos";
+import { PanelSubtitulos, InspectorSub } from "./Subtitulos";
 export { ATAJOS_EDITOR } from "./atajos";
 const { useState, useEffect, useRef, useMemo } = React;
 const { fin, largo, tc, tcLargo } = M;
@@ -82,13 +83,23 @@ export function RandomEditor({ toast }) {
   const [fuentes, setFuentes] = useState(null);
   const [presets, setPresets] = useState(null);
   const [menuExp, setMenuExp] = useState(false);
+  // 28/10: los subtítulos (las plantillas, la elegida y cuántas palabras por tarjeta)
+  const [subsInfo, setSubsInfo] = useState(null);
+  const [subsPid, setSubsPid] = useAjuste("red_subs_plantilla", "shorts");
+  const [subsMax, setSubsMax] = useAjuste("red_subs_palabras", 3);
   const colaProxy = useRef({ pedidos:new Set(), cola:[], activos:0 });
   const pedidos = useRef(new Set());
   const est = useRef({}); est.current = { sel, porta, zoom, iman, herramienta };
   const guardandoClip = useRef(false);
   // las tareas del clon se oyen en las dos ventanas: aquí solo cuentan las del editor
   const [tareaClon, lanzar, cerrarTarea] = useTarea(ev=>{
-    if(!["exportar","guardarclip"].includes(ev.tarea)) return;
+    if(!["exportar","guardarclip","redsubs"].includes(ev.tarea)) return;
+    if(ev.tarea === "redsubs"){
+      const f = (tareaClonRef.current && tareaClonRef.current.eventos || []).find(e=>e.evento==="fin");
+      if(!ev.codigo && f && f.clips){ cambiar(q=>M.ponerSubtitulos(q, f.clips, f.plantilla)); /* (al rehacerlos se queda su estilo) */ toast(`${f.clips.length} tarjetas de subtítulos (${f.palabras} palabras)`); }
+      else if(ev.codigo) toast("No se pudieron generar los subtítulos");
+      return;
+    }
     if(guardandoClip.current){
       guardandoClip.current = false;
       if(!ev.codigo){ sucio.current = false; repintar(x=>x+1); toast("Cambios guardados en el clip: el montaje del clon ya usa esta versión"); }
@@ -99,7 +110,7 @@ export function RandomEditor({ toast }) {
   });
 
   const tareaClonRef = useRef(null); tareaClonRef.current = tareaClon;
-  const tarea = tareaClon && ["exportar","guardarclip"].includes(tareaClon.args[0]) ? tareaClon : null;
+  const tarea = tareaClon && ["exportar","guardarclip","redsubs"].includes(tareaClon.args[0]) ? tareaClon : null;
   const dur = M.total(p);
   const v1 = p.pistas.find(x=>x.id==="v1");
   const todos = useMemo(()=>M.todos(p),[p]);
@@ -110,6 +121,7 @@ export function RandomEditor({ toast }) {
   useEffect(()=>{
     consultar(["redmedios"]).then(ev=>setMedios(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
     consultar(["redbiblio"]).then(ev=>setBiblio(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
+    consultar(["redsubsplant"]).then(ev=>setSubsInfo(ev.find(e=>e.evento==="hecho") || null)).catch(()=>{});
     consultar(["redfuentes"]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); if(h){ setFuentes(h.fuentes); setPresets({titulo:h.titulo, normal:h.normal}); } }).catch(()=>{});
     window.studioFS.redLista().then(r=>setProyectos(r.lista||[]));
     const quitar = window.studioFS.onEditorPeticion && window.studioFS.onEditorPeticion(req=>{ if(req && req.recopilacion) abrirRecopilacion(req.recopilacion); else if(req && req.carpeta) abrirClip(req.carpeta, req.archivo); });
@@ -232,6 +244,22 @@ export function RandomEditor({ toast }) {
     const ids = new Set(textosElegidos().map(c=>c.id)); if(!ids.size) return;
     if(!gesto.current) alGesto("inicio");
     alGesto("durante", {...pRef.current, pistas: pRef.current.pistas.map(pi=>pi.tipo!=="texto" ? pi : {...pi, clips: pi.clips.map(c=>ids.has(c.id) ? {...c, texto:v, nombre:v.split("\n")[0] || "Texto"} : c)})});
+  };
+  const pistaSubs = p.pistas.find(x=>x.tipo==="subtitulos");
+  const generarSubs = async () => {
+    if(!v1 || !v1.clips.length){ toast("La pista principal está vacía: no hay nada que escuchar"); return; }
+    if(pistaSubs && !window.confirm("Ya hay subtítulos. ¿Volver a generarlos? (los cambios a mano en sus tarjetas se pierden; Ctrl+Z los recupera)")) return;
+    const r = await window.studioFS.redGuardarTmp({...pRef.current, nombre: pRef.current.nombre || "Sin título"}); if(r.error){ toast(r.error); return; }
+    try { await lanzar(["redsubs", r.ruta, (pistaSubs && pistaSubs.plantilla) || subsPid, String(subsMax)]); } catch(e){ toast(e.message); }
+  };
+  const cambiarPistaSubs = (patch, gesto) => {
+    const f = q => ({...q, pistas: q.pistas.map(x=>x.tipo!=="subtitulos" ? x : {...x, ...patch(x)})});
+    if(gesto) alGesto("durante", f(pRef.current)); else cambiar(f);
+  };
+  const cambiarTarjeta = v => {
+    const s = est.current.sel;
+    if(!gesto.current) alGesto("inicio");
+    alGesto("durante", {...pRef.current, pistas: pRef.current.pistas.map(pi=>pi.tipo!=="subtitulos" ? pi : {...pi, clips: pi.clips.map(c=>s.has(c.id) ? M.retextoTarjeta(c, v) : c)})});
   };
   const meterArchivos = async () => {
     for(const r of await window.studioFS.redElegirArchivos()){
@@ -423,7 +451,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
   const elegidos = todos.filter(c=>sel.has(c.id));
   const uno = elegidos.length === 1 ? elegidos[0] : null;
   const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista} reloj={reloj} sel={sel}
-    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto}/>;
+    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto} subs={subsInfo}/>;
   const menuEl = menu && createPortal(
     <div onMouseDown={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:2000}}>
       <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:Math.min(menu.x, window.innerWidth-230), top:Math.min(menu.y, window.innerHeight-300)}}>
@@ -471,6 +499,10 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       {/* biblioteca · previsualización · propiedades */}
       <div className="rd-medio-fila">
         <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
+          panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
+            onGenerar={generarSubs} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
+            onPlantilla={pid=>cambiarPistaSubs(()=>({plantilla:pid, estilo:{}}))} onEstilo={(patch, g)=>cambiarPistaSubs(x=>({estilo:{...(x.estilo||{}), ...patch}}), g)}
+            onQuitar={()=>{ cambiar(q=>({...q, pistas: q.pistas.filter(x=>x.tipo!=="subtitulos")})); toast("Subtítulos quitados (Ctrl+Z para recuperarlos)"); }}/>}
           onMeterTodos={async r=>{ for(const m of r.clips) await meter(m, "video"); toast(`${r.clips.length} momentos al final de la principal, en tu orden`); }}/>
         <div className="rd-panel" style={{display:"flex",flexDirection:"column",minWidth:0,background:"#0b0b0b"}}>
           <div style={{position:"relative",flex:1,minHeight:0,display:"flex",alignItems:"stretch",justifyContent:"center",padding:10,gap:6}}>
@@ -499,13 +531,14 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <div className="rd-panel rd-insp" style={{padding:12,display:"flex",flexDirection:"column",gap:10,fontSize:12.5,overflowY:"auto"}}>
           <b style={{fontSize:13}}>{elegidos.length ? (uno ? uno.nombre : `${elegidos.length} elegidos`) : "Propiedades"}</b>
           {!elegidos.length && <div style={{color:"#888",lineHeight:1.6}}>Elige un clip para ver y cambiar sus propiedades.<br/>Todos los atajos, en Configuración del Studio.</div>}
+          {uno && uno.tipo === "sub" && <InspectorSub c={uno} alGesto={alGesto} cambiar={cambiarTarjeta}/>}
           {uno && uno.tipo === "texto" && <InspectorTexto c={uno} fuentes={fuentes} presets={presets} alGesto={alGesto} cambiarEstilo={cambiarEstilo} cambiarTexto={cambiarTexto} W={p.ancho} H={p.alto}/>}
           {uno && <div style={{color:"#aaa",lineHeight:1.7,fontFamily:"ui-monospace, Consolas, monospace",fontSize:11.5}}>
-            {uno.tipo !== "texto" && <div>Archivo · {tc(uno.desde, fps)} → {tc(uno.hasta, fps)}</div>}
+            {uno.tipo !== "texto" && uno.tipo !== "sub" && <div>Archivo · {tc(uno.desde, fps)} → {tc(uno.hasta, fps)}</div>}
             <div>Línea · {tc(uno.en, fps)} → {tc(fin(uno), fps)}</div>
             <div>Dura · {tc(largo(uno), fps)}</div>
           </div>}
-          {elegidos.length>0 && !elegidos.every(c=>c.tipo==="texto") && <>
+          {elegidos.length>0 && !elegidos.every(c=>c.tipo==="texto" || c.tipo==="sub") && <>
             {[["Volumen","vol",0,2,0.01,v=>Math.round(v*100)+"%"],["Fundido de entrada","fade_in",0,3,0.05,v=>v.toFixed(2)+" s"],["Fundido de salida","fade_out",0,3,0.05,v=>v.toFixed(2)+" s"]].map(([n,campo,a,b,st,fmt])=>{
               const v = elegidos[0][campo] ?? (campo==="vol" ? 1 : 0);
               return <label key={campo} style={{display:"flex",flexDirection:"column",gap:4}}><span style={{display:"flex",justifyContent:"space-between"}}>{n}<span style={{color:"#999"}}>{fmt(v)}</span></span>

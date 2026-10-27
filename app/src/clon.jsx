@@ -73,7 +73,7 @@ export function useTarea(onFin) {
   return [tarea, lanzar, ()=>setTarea(null)];
 }
 
-const NOMBRE_TAREA = { preparar:"Preparando", clipear:"Clipeando", montar:"Montando", mejorar:"Mejorando", criba:"Puntuando los clips", revoz:"Poniendo las voces" };
+const NOMBRE_TAREA = { preparar:"Preparando", clipear:"Clipeando", montar:"Montando", mejorar:"Mejorando", criba:"Puntuando los clips", revoz:"Poniendo las voces", redsubs:"Generando los subtítulos", exportar:"Exportando", guardarclip:"Guardando el clip" };
 
 /* (28/10: fuera el panel de voces de CapCut; él: "no quiero que se use CapCut ya para nada" → sin voz en el título) */
 
