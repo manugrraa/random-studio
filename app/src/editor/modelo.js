@@ -21,7 +21,11 @@ export const cerrar = pista => {
   let t = 0;
   return { ...pista, clips: [...pista.clips].sort((a,b)=>a.en-b.en).map(c=>{ const n = c.en===t ? c : {...c, en:t}; t += largo(c); return n; }) };
 };
-export const ordenar = p => ({ ...p, pistas: p.pistas.map(cerrar) });
+// 28/10, él: "poder mover los clips del timeline a mi libre albedrío, no que se queden pegados": la principal
+// solo se cierra sola con `magnetica` (el botón de la barra); si no, cada clip se queda donde se suelta
+export const ordenar = p => p.magnetica ? { ...p, pistas: p.pistas.map(cerrar) } : p;
+// con la principal libre, un clip que caería encima de otro se va al final de la pista
+export const sinPisar = (pi, c) => solapa(pi, c.en, largo(c), c.id) ? {...c, en: Math.max(0, ...pi.clips.filter(x=>x.id!==c.id).map(fin))} : c;
 export const solapa = (pi, en, d, ignorar) => pi.clips.some(x=>x.id!==ignorar && en < fin(x) - 1e-6 && en + d > x.en + 1e-6);
 export const total = p => Math.max(0, ...p.pistas.flatMap(pi=>pi.clips.map(fin)));
 export const todos = p => p.pistas.flatMap(pi=>pi.clips.map(c=>({...c, pista:pi.id})));
@@ -76,7 +80,7 @@ export const dividir = (p, ids, t) => ({...p, pistas: p.pistas.map(pi=>({...pi, 
 export const borrarLado = (p, ids, t, izq) => ({...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>{
   if(!ids.has(c.id) || t <= c.en + 0.01 || t >= fin(c) - 0.01) return c;
   const k = c.desde + (t - c.en);
-  return izq ? {...c, desde:k, en: pi.id==="v1" ? c.en : t} : {...c, hasta:k};
+  return izq ? {...c, desde:k, en: pi.id==="v1" && p.magnetica ? c.en : t} : {...c, hasta:k};
 })}))});
 
 export const eliminar = (p, ids) => ({...p, pistas: p.pistas.map(pi=> pi.bloqueada ? pi : {...pi, clips: pi.clips.filter(c=>!ids.has(c.id))})});
@@ -91,7 +95,8 @@ export function pegar(p, cs, t, trasCadaUno) {
       const pi = ps.find(x=>x.id==="v1");
       const cubre = pi.clips.find(x=>t > x.en && t < fin(x));
       const pos = trasCadaUno ? fin(c) : (cubre ? fin(cubre) : t);
-      n.en = pos - 0.0005 + k * 0.00001;
+      if(p.magnetica) n.en = pos - 0.0005 + k * 0.00001;
+      else { n.en = trasCadaUno ? fin(c) : t + (c.en - base); Object.assign(n, sinPisar(ps.find(x=>x.id==="v1"), n)); }
       ps = ps.map(x=>x.id!=="v1" ? x : {...x, clips:[...x.clips, n]});
     } else {
       n.en = trasCadaUno ? fin(c) : t + (c.en - base);

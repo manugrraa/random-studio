@@ -215,7 +215,7 @@ export function RandomEditor({ toast }) {
       try { const ev = await consultar(["redinfo", m.ruta]); const a = ((ev.find(e=>e.evento==="hecho")||{}).archivos||[])[0]; if(a && a.fps) fpsNuevo = a.fps; } catch(e){}
     }
     if(tipo === "video"){
-      cambiar(prev=>({...prev, ...(fpsNuevo ? {fps: fpsNuevo} : {}), pistas: prev.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips:[...pi.clips, {...c, en: en==null ? Math.max(0,...pi.clips.map(fin)) : en - 0.0005}]})}));
+      cambiar(prev=>({...prev, ...(fpsNuevo ? {fps: fpsNuevo} : {}), pistas: prev.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips:[...pi.clips, prev.magnetica ? {...c, en: en==null ? Math.max(0,...pi.clips.map(fin)) : en - 0.0005} : M.sinPisar(pi, {...c, en: en==null ? Math.max(0,...pi.clips.map(fin)) : Math.max(0, en)})]})}));
     } else {
       cambiar(prev=>({...prev, pistas: M.colocarAudio(prev.pistas, {...c, en: en==null ? reloj.t : Math.max(0, en)}, pistaId)}));
     }
@@ -574,7 +574,9 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <button onClick={extraer} disabled={!elegidos.some(c=>c.pista==="v1")} className="rd-ico" title="Extraer audio (Ctrl+Shift+S)">{I.extraer}</button>
         <span className="rd-sep"/>
         <button onClick={marcador} className="rd-ico" title="Marcador (M)">{I.marcador}</button>
-        <button onClick={()=>setIman(x=>!x)} className={"rd-ico"+(iman?" on":"")} title="Imán (N)">{I.iman}</button>
+        <button onClick={()=>setIman(x=>!x)} className={"rd-ico"+(iman?" on":"")} title="Imán: se pega a los bordes al arrastrar (N)">{I.iman}</button>
+        <button onClick={()=>cambiar(q=>({...q, magnetica: !q.magnetica}))} className={"rd-ico"+(p.magnetica?" on":"")}
+          title={p.magnetica ? "Pista principal magnética: los clips se juntan solos (pulsa para moverlos libres)" : "Pista principal libre: cada clip donde lo sueltes (pulsa para que se junten solos)"}>{I.magnetica}</button>
         <button onClick={anadirPista} className="rd-ico" title="Pista de audio nueva">{I.pista}</button>
         <span style={{flex:1}}/>
         <button onClick={()=>setZoom(z=>Math.max(0.5,z/1.4))} className="rd-ico" title="Alejar (Ctrl+-)">{I.menos}</button>

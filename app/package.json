@@ -1,7 +1,7 @@
 {
   "name": "rderandom-studio",
   "productName": "RandomStudio",
-  "version": "3.16.0",
+  "version": "3.16.1",
   "description": "RandomStudio: gestor de contenido de RDeRandom (escritorio + web)",
   "private": true,
   "main": "electron/main.cjs",

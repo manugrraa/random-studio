@@ -98,6 +98,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
   const [scroll, setScroll] = useState(0);
   const [ancho, setAncho] = useState(1000);
   const fps = proyecto.fps || 30;
+  const mag = !!proyecto.magnetica;
   const dur = useMemo(()=>Math.max(0, ...proyecto.pistas.flatMap(pi=>pi.clips.map(fin))),[proyecto]);
   const puntos = useMemo(()=>puntosDeCorte(proyecto),[proyecto]);
   const anchoTotal = Math.max(ancho, (dur + 20) * zoom + PAD * 2);
@@ -307,7 +308,8 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
             const g = encaje(y.en + (desde - y.desde), y.id); desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + (g - y.en)));
             desde = cuantiza(desde, fps);
             txt = `${desde - y.desde >= 0 ? "−" : "+"}${tc(Math.abs(desde - y.desde), fps)}  ·  dura ${tc(y.hasta - desde, fps)}`;
-            return {...y, desde, en: pi.id==="v1" ? y.en : y.en + (desde - y.desde)};
+            const n = {...y, desde, en: pi.id==="v1" && mag ? y.en : y.en + (desde - y.desde)};
+            return pi.id==="v1" && !mag && solapa(pi, n.en, largo(n), n.id) ? y : n;
           }
           if(modo === "der"){
             let hasta = Math.max(y.desde + 1/fps, Math.min(y.dur_src ?? 1e9, y.hasta + dt));
@@ -316,10 +318,11 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
             txt = `${hasta - y.hasta >= 0 ? "+" : "−"}${tc(Math.abs(hasta - y.hasta), fps)}  ·  dura ${tc(hasta - y.desde, fps)}`;
             return {...y, hasta};
           }
-          if(pi.id === "v1"){ txt = ""; return {...y, en: y.en + dt + (dt > 0 ? 0.0005 : -0.0005)}; }
+          if(pi.id === "v1" && mag){ txt = ""; return {...y, en: y.en + dt + (dt > 0 ? 0.0005 : -0.0005)}; }
           let en = Math.max(0, encaje(y.en + dt, y.id));
           const f2 = encaje(en + largo(y), y.id); if(f2 !== en + largo(y)) en = Math.max(0, f2 - largo(y));
           txt = tc(en, fps);
+          if(pi.id === "v1" && solapa(pi, en, largo(y), y.id)) return y;      // (la principal libre: sin montar un clip encima de otro)
           return {...y, en};
         });
         if(pi.id === destino && destino !== pista.id){
