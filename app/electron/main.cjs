@@ -1,7 +1,7 @@
 /* RandomStudio — proceso principal de Electron.
    Guarda los datos en un archivo local (con copia diaria) y gestiona el
    login de Google en una ventana propia, sin depender de la web. */
-const { app, BrowserWindow, ipcMain, shell, dialog, nativeTheme } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, nativeTheme, Menu } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
@@ -311,7 +311,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "retencion", "aprender"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "retencion", "aprender"]);
 const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
@@ -340,10 +340,9 @@ ipcMain.handle("clon-consultar", async (e, args) => {
 ipcMain.handle("clon-tarea", async (e, args) => {
   if (tarea) return { error: "Ya hay una tarea del clon en marcha: " + tarea.args.slice(0, 2).join(" ") };
   if (!Array.isArray(args) || !TAREAS.has(args[0]) || !args.every(a => typeof a === "string")) return { error: "Tarea no válida" };
-  const wc = e.sender;
   const proc = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
   tarea = { proc, args, eventos: [], inicio: Date.now() };
-  const enviar = ev => { tarea && (tarea.eventos.push(ev), tarea.eventos.length > 400 && tarea.eventos.shift()); try { wc.send("clon-progreso", ev); } catch (x) {} };
+  const enviar = ev => { tarea && (tarea.eventos.push(ev), tarea.eventos.length > 400 && tarea.eventos.shift()); BrowserWindow.getAllWindows().forEach(w => { try { w.webContents.send("clon-progreso", ev); } catch (x) {} }); };
   let resto = "", err = "";
   proc.stdout.on("data", d => { resto += d; const ls = resto.split("\n"); resto = ls.pop(); leerEventos(ls.join("\n")).forEach(enviar); });
   proc.stderr.on("data", d => { err += d; if (err.length > 20000) err = err.slice(-10000); });
@@ -456,8 +455,8 @@ ipcMain.handle("red-lista", async () => {
     return { lista: l };
   } catch (x) { return { error: x.message }; }
 });
-ipcMain.handle("red-elegir-archivos", async () => {
-  const r = await dialog.showOpenDialog(mainWindow || undefined, { properties: ["openFile", "multiSelections"], title: "Meter archivos en el RandomEditor",
+ipcMain.handle("red-elegir-archivos", async (e) => {
+  const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender) || undefined, { properties: ["openFile", "multiSelections"], title: "Meter archivos en el RandomEditor",
     filters: [{ name: "Vídeo y audio", extensions: ["mp4", "mov", "mkv", "webm", "mp3", "wav", "m4a", "ogg", "flac", "aac"] }] });
   return (r.canceled || !r.filePaths.length) ? [] : r.filePaths;
 });
@@ -467,6 +466,52 @@ ipcMain.handle("clon-elegir-carpeta", async () => {
     defaultPath: path.join(CLON_DIR, "VODs") });
   return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
 });
+
+// ——— v3.14: EL RANDOMEDITOR EN SU PROPIA VENTANA ———
+// Él (28/10): "un apartado aparte para el Editor, individual del Studio, pero anexado: una ventana que
+// salga del Studio cuando se requiera, que funcione fluido". Es la misma página (dist/index.html#editor)
+// en otro proceso de render: lo que haga el Studio no le quita fluidez, y al revés. Se cierra con el Studio.
+let editorWin = null, editorListo = false, editorPendiente = null, editorSucio = false;
+const ventanaEditorFile = () => path.join(dataDir(), "ventana_editor.json");
+function abrirEditor(req) {
+  const conClip = req && req.carpeta ? req : null;
+  if (editorWin && !editorWin.isDestroyed()) {
+    if (editorWin.isMinimized()) editorWin.restore();
+    editorWin.show(); editorWin.focus();
+    if (conClip) { if (editorListo) editorWin.webContents.send("editor-peticion", conClip); else editorPendiente = conClip; }
+    return editorWin;
+  }
+  let v = {}; try { v = JSON.parse(fs.readFileSync(ventanaEditorFile(), "utf8")); } catch (x) {}
+  editorListo = false; editorPendiente = conClip; editorSucio = false;
+  editorWin = new BrowserWindow({
+    width: v.width || 1600, height: v.height || 960, x: v.x, y: v.y, minWidth: 1100, minHeight: 680,
+    backgroundColor: "#0e0e0e", title: "RandomEditor", show: false, autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false,
+      backgroundThrottling: !process.env.STUDIO_CAPTURA }
+  });
+  if (v.max) editorWin.maximize();
+  editorWin.once("ready-to-show", () => { try { editorWin.show(); } catch (x) {} });
+  editorWin.loadFile(path.join(__dirname, "..", "dist", "index.html"), { hash: "editor" });
+  editorWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: "deny" }; });
+  editorWin.webContents.on("will-navigate", (e, u) => { if (!u.startsWith("file:")) e.preventDefault(); });
+  editorWin.on("close", e => {
+    if (editorSucio && !process.env.STUDIO_CAPTURA) {
+      const r = dialog.showMessageBoxSync(editorWin, { type: "question", buttons: ["Cerrar sin guardar", "Cancelar"], defaultId: 1, cancelId: 1,
+        title: "RandomEditor", message: "Hay cambios sin guardar en el RandomEditor.", detail: "¿Cerrarlo igualmente?" });
+      if (r !== 0) { e.preventDefault(); return; }
+    }
+    try { if (!process.env.STUDIO_CAPTURA) fs.writeFileSync(ventanaEditorFile(), JSON.stringify({ ...editorWin.getNormalBounds(), max: editorWin.isMaximized() })); } catch (x) {}
+  });
+  editorWin.on("closed", () => { editorWin = null; editorListo = false; });
+  return editorWin;
+}
+ipcMain.handle("editor-abrir", async (e, req) => { abrirEditor(req); return true; });
+ipcMain.handle("editor-listo", async () => {
+  editorListo = true;
+  if (editorPendiente && editorWin) { editorWin.webContents.send("editor-peticion", editorPendiente); editorPendiente = null; }
+  return true;
+});
+ipcMain.on("editor-sucio", (e, si) => { editorSucio = !!si; });
 
 // v3.11: la ventana recuerda su tamaño y si estaba maximizada
 const ventanaFile = () => path.join(dataDir(), "ventana.json");
@@ -502,7 +547,7 @@ function createWindow() {
     }
   });
   if (v.max) mainWindow.maximize();
-  mainWindow.on("close", guardarVentana);
+  mainWindow.on("close", e => { guardarVentana(); if (editorWin && !editorWin.isDestroyed()) { editorWin.close(); if (editorWin && !editorWin.isDestroyed()) e.preventDefault(); } });
   mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   // Los enlaces externos (YouTube Studio, etc.) se abren en el navegador normal
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -518,11 +563,26 @@ function createWindow() {
   // guarda una captura de cada una y se cierra (pruebas del clon sin tocar la pantalla)
   if (process.env.STUDIO_CAPTURA) {
     const dir = process.env.STUDIO_CAPTURA;
-    const pestanas = (process.env.STUDIO_PESTANAS || "Directos,Clips").split(",");
+    const pestanas = (process.env.STUDIO_PESTANAS || "Directos,Clips").split(process.env.STUDIO_SEP || ",");
     const esperar = ms => new Promise(r => setTimeout(r, ms));
     mainWindow.webContents.once("did-finish-load", async () => {
       await esperar(5000);
+      let mainWindow0 = BrowserWindow.getAllWindows()[0];   // (aquí «mainWindow» aún no se puede nombrar)
+      if (process.env.STUDIO_EDITOR) {
+        const [carpeta, archivo] = (process.env.STUDIO_EDITOR_CLIP || "").split("|");
+        mainWindow0 = abrirEditor(carpeta ? { carpeta, archivo } : null);
+        await new Promise(r => mainWindow0.webContents.once("did-finish-load", r));
+        await esperar(Number(process.env.STUDIO_ESPERA_EDITOR || 8000));
+      }
+      const mainWindow = mainWindow0;
       for (const p of pestanas) {
+        // "$código" = ejecuta JavaScript en la página (pruebas de arrastre, del imán…); lo que devuelva sale en la terminal
+        if (p.startsWith("$")) {
+          const r = await mainWindow.webContents.executeJavaScript(p.slice(1)).catch(x => "ERROR " + x.message);
+          console.log("[captura-js]", JSON.stringify(r));
+          await esperar(Number(process.env.STUDIO_ESPERA_JS || 700));
+          continue;
+        }
         // "!Tecla+mod*N" = pulsa una tecla (p. ej. "!B+control", "!Right+shift*10"): prueba atajos
         if (p.startsWith("!")) {
           const [cuerpo, veces] = p.slice(1).split("*");
@@ -563,7 +623,8 @@ app.on("second-instance", () => {
   if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
 });
 
-app.whenReady().then(createWindow);
+// v3.14, él: "al pulsar Alt se baja un menú de la ventana del Studio... no quiero que exista"
+app.whenReady().then(() => { Menu.setApplicationMenu(null); createWindow(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on("window-all-closed", () => app.quit());
 

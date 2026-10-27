@@ -7,7 +7,7 @@ import { ConvertidorView } from "./convertidor";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { BarraLateral } from "./navegacion";
-import { RandomEditorView } from "./random_editor";
+import { abrirEnEditor } from "./random_editor";
 import { APP_VERSION, DEFAULT_FORMATS, Icons, SEED, STATUSES, clone, dnd, makeVideo, setIdBase, uid, useToast } from "./base";
 import { DEFAULT_TASK_LISTS, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudFecha, cloudLoad, cloudSave, cloudSaveUrgente, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
 import { ConfirmDialog, SyncModal } from "./dialogos";
@@ -56,7 +56,9 @@ export function App() {
   // Objetivos (dinero → visitas), RPM real e historial diario de visitas/ingresos (se sincroniza)
   const [goals, setGoals] = useState(()=> (_initial && _initial.goals && typeof _initial.goals==="object") ? _initial.goals : null);
   // v3.11: se abre donde lo dejaste
-  const [view, setView] = useState(()=>{ try { return localStorage.getItem("rds_vista")||"calendar"; } catch(e){ return "calendar"; } });
+  const [view, setView0] = useState(()=>{ try { const v = localStorage.getItem("rds_vista")||"calendar"; return v==="editor" ? "clips" : v; } catch(e){ return "calendar"; } });
+  // v3.14: el RandomEditor es su propia ventana: «RandomEditor» la abre (o la trae delante) y no cambia de apartado
+  const setView = v => { if(v==="editor"){ abrirEnEditor(); return; } setView0(v); };
   useEffect(()=>{ try { localStorage.setItem("rds_vista", view); } catch(e){} },[view]);
   const [plegada, setPlegada] = useState(()=>{ try { return localStorage.getItem("rds_barra_plegada")==="1"; } catch(e){ return false; } });
   useEffect(()=>{ try { localStorage.setItem("rds_barra_plegada", plegada?"1":"0"); } catch(e){} },[plegada]);
@@ -784,7 +786,6 @@ export function App() {
   // v3.11: Ctrl+1…9 salta a cada apartado (en el orden de la barra)
   tabs.filter(t=>t.grupo!=="abajo").forEach((t,i)=>{ if(i<9) t.atajo = i+1; });
   const vistaActual = tabs.find(t=>t.id===view) || tabs[0];
-  useEffect(()=>{ const h = () => setView("editor"); window.addEventListener("rds-ir-editor", h); return ()=>window.removeEventListener("rds-ir-editor", h); },[]);
   const tabsRef = useRef(tabs); tabsRef.current = tabs;
   useEffect(()=>{
     const h = e => {
@@ -1227,7 +1228,6 @@ export function App() {
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="directos" && <DirectosView toast={toast}/>}
         {view==="clips" && <ClipsView toast={toast}/>}
-        {view==="editor" && <RandomEditorView toast={toast}/>}
         {view==="ranking" && <RankingView toast={toast}/>}
         {view==="convertidor" && <ConvertidorView toast={toast}/>}
         {view==="randomchat" && <RandomChatView toast={toast}/>}

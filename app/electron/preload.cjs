@@ -25,6 +25,15 @@ contextBridge.exposeInMainWorld("studioFS", {
   redLista: () => ipcRenderer.invoke("red-lista"),
   redGuardarTmp: (p) => ipcRenderer.invoke("red-guardar-tmp", p),
   redElegirArchivos: () => ipcRenderer.invoke("red-elegir-archivos"),
+  // v3.14: el RandomEditor en su propia ventana
+  abrirEditor: (req) => ipcRenderer.invoke("editor-abrir", req || {}),
+  editorListo: () => ipcRenderer.invoke("editor-listo"),
+  editorSucio: (si) => ipcRenderer.send("editor-sucio", !!si),
+  onEditorPeticion: (cb) => {
+    const h = (e, d) => cb(d);
+    ipcRenderer.on("editor-peticion", h);
+    return () => ipcRenderer.removeListener("editor-peticion", h);
+  },
   rankingSubido: (n, si) => ipcRenderer.invoke("ranking-subido", n, si),
   rankingEliminar: (n, recuperar) => ipcRenderer.invoke("ranking-eliminar", n, !!recuperar),
   onRankingProgreso: (cb) => {

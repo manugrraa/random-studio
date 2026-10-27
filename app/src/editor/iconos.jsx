@@ -1,0 +1,38 @@
+import React from "react";
+
+/* RandomEditor · los iconos (sin texto: él sabe lo que es cada uno; el nombre y el atajo van en el «title») */
+const S = (d, o={}) => <svg width={o.w||17} height={o.w||17} viewBox="0 0 24 24" fill={o.fill?"currentColor":"none"} stroke={o.fill?"none":"currentColor"} strokeWidth={o.sw||2} strokeLinecap="round" strokeLinejoin="round">{d}</svg>;
+export const I = {
+  play: S(<path d="M7 5v14l12-7z"/>, {fill:true, w:18}),
+  pausa: S(<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>, {fill:true, w:18}),
+  inicio: S(<path d="M6 5h2v14H6zM20 5v14L9 12z"/>, {fill:true}),
+  final: S(<path d="M16 5h2v14h-2zM4 5v14l11-7z"/>, {fill:true}),
+  atras: S(<path d="M11 19l-7-7 7-7M20 19l-7-7 7-7"/>),
+  adelante: S(<path d="M13 5l7 7-7 7M4 5l7 7-7 7"/>),
+  seleccion: S(<path d="M5 3l14 8-6 2-3 6z"/>),
+  cuchilla: S(<><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/></>),
+  dividir: S(<><path d="M12 3v18"/><path d="M5 8l-3 4 3 4M19 8l3 4-3 4"/></>),
+  izq: S(<path d="M4 4v16M20 12H8M12 8l-4 4 4 4"/>),
+  der: S(<path d="M20 4v16M4 12h12M12 8l4 4-4 4"/>),
+  borrar: S(<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>),
+  copiar: S(<><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></>),
+  pegar: S(<><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V2h6v2"/></>),
+  duplicar: S(<><rect x="3" y="7" width="12" height="12" rx="2"/><rect x="9" y="3" width="12" height="12" rx="2"/></>),
+  deshacer: S(<><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></>),
+  rehacer: S(<><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/></>),
+  iman: S(<><path d="M6 3v8a6 6 0 0012 0V3"/><path d="M6 7h4M14 7h4"/></>),
+  marcador: S(<path d="M6 3h12v18l-6-4-6 4z"/>, {fill:true, w:16}),
+  mudo: S(<><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M22 9l-6 6M16 9l6 6"/></>),
+  sonido: S(<><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M19 5a10 10 0 010 14"/></>),
+  extraer: S(<><path d="M3 6h12v8H3z"/><path d="M7 18v2M11 18v3M15 17v4M19 15v6"/></>),
+  menos: S(<path d="M5 12h14"/>, {sw:2.4, w:15}),
+  mas: S(<path d="M12 5v14M5 12h14"/>, {sw:2.4, w:15}),
+  ajustar: S(<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>),
+  completa: S(<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>, {w:16}),
+  pista: S(<path d="M3 8h12M3 16h18M19 4v8M15 8h8"/>, {w:16}),
+  archivo: S(<><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6M12 12v6M9 15h6"/></>, {w:16}),
+  guias: S(<><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M12 3v18M4 12h16"/></>, {w:16}),
+  aire: S(<path d="M3 12h4l2-6 3 12 2-6h7"/>),
+  oir: S(<path d="M8 5v14l11-7z"/>, {fill:true, w:13}),
+  parar: S(<path d="M6 6h12v12H6z"/>, {fill:true, w:13}),
+};
