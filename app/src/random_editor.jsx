@@ -31,7 +31,7 @@ export const ATAJOS_EDITOR = [
   ["Ctrl+A", "Elegir todo"], ["Esc", "Quitar la selección"],
   ["Ctrl+Z", "Deshacer"], ["Ctrl+Shift+Z / Ctrl+Y", "Rehacer"],
   ["← / →", "Un fotograma atrás / adelante"], ["Shift+← / →", "Un segundo atrás / adelante"],
-  ["↑ / ↓", "Al corte o marcador anterior / siguiente"], ["Inicio / Fin", "Al principio / al final"],
+  ["↑ / ↓  ·  Ctrl+← / →", "De trozo en trozo: al corte o marcador anterior / siguiente"], ["Inicio / Fin", "Al principio / al final"],
   ["M", "Poner (o quitar) un marcador en el cabezal"],
   ["Shift+M", "Silenciar / devolver el sonido de lo elegido"],
   ["Ctrl++ / Ctrl+-", "Acercar / alejar la línea de tiempo (o Ctrl+rueda)"], ["Shift+Z", "Ver toda la línea de tiempo"],
@@ -335,10 +335,14 @@ export function RandomEditorView({ toast }) {
   };
   useEffect(()=>{
     if(!jugando){ sincronizar(t, 0); cancelAnimationFrame(reloj.current); return; }
-    let ant = performance.now(), tt = (jugando>0 && t >= total - 0.05) ? 0 : t;
+    let ant = null, tt = (jugando>0 && t >= total - 0.05) ? 0 : t;
     const paso = ahora => {
-      tt += (ahora - ant) / 1000 * jugando; ant = ahora;
-      if(tt >= total || tt <= 0){ tt = Math.max(0, Math.min(total, tt)); setT(tt); setJugando(0); return; }
+      // 28/10, él: "al poner la vara al principio y darle al play, a veces no se reproduce y se queda
+      // pillado": el primer paso podía salir negativo y en 0:00 contaba como "fin". Ahora el primer
+      // fotograma solo marca el tiempo, y solo se para al llegar al final (o al principio yendo atrás)
+      const dt = ant===null ? 0 : Math.max(0, (ahora - ant) / 1000); ant = ahora;
+      tt += dt * jugando;
+      if((jugando > 0 && tt >= total) || (jugando < 0 && tt <= 0)){ tt = Math.max(0, Math.min(total, tt)); setT(tt); setJugando(0); return; }
       setT(tt); sincronizar(tt, jugando);
       const l = linea.current;          // la línea sigue al cabezal
       if(l){ const x = 20 + tt * est.current.zoom; if(x > l.scrollLeft + l.clientWidth - 60 || x < l.scrollLeft) l.scrollLeft = x - 80; }
@@ -439,7 +443,10 @@ export function RandomEditorView({ toast }) {
   // ---- atajos (los de CapCut)
   useEffect(()=>{
     const h = e => {
-      if(/INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName||"")) return;
+      const ae = document.activeElement;
+      const escribiendo = ae && (ae.tagName==="TEXTAREA" || ae.tagName==="SELECT" || (ae.tagName==="INPUT" && !["range","checkbox","button"].includes(ae.type)));
+      if(escribiendo) return;
+      if(ae && ae !== document.body && (ae.tagName==="INPUT" || ae.tagName==="BUTTON")) ae.blur();    // la barra o el botón sueltan el teclado
       const k = e.key, ctrl = e.ctrlKey || e.metaKey, tt = est.current.t, fps = pRef.current.fps || 30, K = k.length===1 ? k.toLowerCase() : k;
       const ok = () => { e.preventDefault(); e.stopImmediatePropagation(); };   // que no deshaga también la planificación
       if(k===" "){ ok(); jugar(); }
@@ -469,15 +476,20 @@ export function RandomEditorView({ toast }) {
       else if(!ctrl && K==="l"){ ok(); setJugando(j=>j>0 ? Math.min(4, j*2) : 1); }
       else if(!ctrl && K==="j"){ ok(); setJugando(j=>j<0 ? Math.max(-4, j*2) : -1); }
       else if(k==="Escape"){ ok(); if(completa) setCompleta(false); else setSel(new Set()); }
+      // 28/10, él: "con las flechas poder ir de trozo en trozo, como en CapCut": ↑/↓ y Ctrl+←/→ saltan al
+      // corte (o marcador) anterior/siguiente; ←/→ solas, fotograma a fotograma (Shift: 1 s)
+      else if(k==="ArrowUp" || (ctrl && k==="ArrowLeft")){ ok(); setJugando(0); const c = [...puntos].reverse().find(x=>x < tt - 0.01); ir(c ?? 0); }
+      else if(k==="ArrowDown" || (ctrl && k==="ArrowRight")){ ok(); setJugando(0); const c = puntos.find(x=>x > tt + 0.01); ir(c ?? total); }
       else if(k==="ArrowLeft"){ ok(); setJugando(0); ir(tt - (e.shiftKey ? 1 : 1/fps)); }
       else if(k==="ArrowRight"){ ok(); setJugando(0); ir(tt + (e.shiftKey ? 1 : 1/fps)); }
-      else if(k==="ArrowUp"){ ok(); const c = [...puntos].reverse().find(x=>x < tt - 0.01); ir(c ?? 0); }
-      else if(k==="ArrowDown"){ ok(); const c = puntos.find(x=>x > tt + 0.01); ir(c ?? total); }
       else if(k==="Home"){ ok(); ir(0); }
       else if(k==="End"){ ok(); ir(total); }
     };
+    // al soltar Espacio con un botón con foco, el navegador lo pulsa: no
+    const arriba = e => { if(e.key===" " && !/TEXTAREA|SELECT/.test(document.activeElement?.tagName||"") && !(document.activeElement?.tagName==="INPUT" && document.activeElement.type==="text")) e.preventDefault(); };
     window.addEventListener("keydown", h, true);
-    return ()=>window.removeEventListener("keydown", h, true);
+    window.addEventListener("keyup", arriba, true);
+    return ()=>{ window.removeEventListener("keydown", h, true); window.removeEventListener("keyup", arriba, true); };
   });
   const ajustar = () => {
     const tot = Math.max(0, ...pRef.current.pistas.flatMap(pi=>pi.clips.map(fin)));      // (del proyecto de ahora, no del de la última pintada)
@@ -558,7 +570,9 @@ export function RandomEditorView({ toast }) {
     </div>);
   const sep = <span style={{width:1,height:20,background:"var(--border)",margin:"0 3px"}}/>;
   return (
-    <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:12}}>
+    <div className="fade-in" onMouseDownCapture={e=>{ if(e.target.closest && e.target.closest("button")) e.preventDefault(); }}
+      onPointerUpCapture={e=>{ if(e.target.tagName==="INPUT" && e.target.type==="range") setTimeout(()=>e.target.blur(), 0); }}
+      style={{display:"flex",flexDirection:"column",gap:12}}>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         {p.clip && <span style={{fontSize:12,fontWeight:700,padding:"5px 9px",borderRadius:8,background:"rgba(212,175,55,0.15)",color:"var(--gold)",whiteSpace:"nowrap"}}>✂ Clip</span>}
         <input ref={nombreRef} readOnly={!!p.clip} title={p.clip ? "Estás editando este clip recortado" : undefined} value={p.nombre} onChange={e=>{ pRef.current = {...pRef.current, nombre:e.target.value}; sucioRef.current = true; repintar(x=>x+1); }} placeholder="Nombre del proyecto"
