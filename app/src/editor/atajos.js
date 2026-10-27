@@ -8,6 +8,7 @@ export const ATAJOS_EDITOR = [
   ["Supr / Retroceso", "Eliminar lo elegido (la principal se cierra sola)"],
   ["Ctrl+C / Ctrl+X / Ctrl+V", "Copiar / cortar / pegar en el cabezal"], ["Ctrl+D", "Duplicar"],
   ["Ctrl+A / Esc", "Elegir todo / quitar la selección"],
+  ["Arrastrar en un hueco de las pistas", "Recuadro de selección, como en el escritorio (Shift/Ctrl: se suma); un clic, mueve el cabezal"],
   ["Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y)", "Deshacer / rehacer (todo: también arrastres, recortes, volumen)"],
   ["← / →", "Un fotograma atrás / adelante (Shift: 1 s)"],
   ["↑ / ↓  ·  Ctrl+← / →", "De trozo en trozo: al corte o marcador anterior / siguiente"],

@@ -257,9 +257,10 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
   const pararAuto = () => { cancelAnimationFrame(auto.current.raf); auto.current.raf = 0; };
 
   // ---- el cabezal (arrastrar en la regla o en un hueco): se pega a los bordes de los trozos
+  const soltarFoco = () => { const a = document.activeElement; if(a && a !== document.body && a.blur) a.blur(); };
   const arrastrarCabezal = e => {
     if(e.button !== 0) return;
-    e.preventDefault();
+    e.preventDefault(); soltarFoco();
     if(!e.shiftKey) setSel(new Set());
     arrastrando.current = true;
     const mover = (ev, desdeAuto) => {
@@ -274,12 +275,43 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
   };
 
+  // ---- arrastrar en un hueco de las pistas = recuadro de selección (como el escritorio de Windows);
+  //      un clic sin arrastrar mueve el cabezal ahí (Shift/Ctrl: se suma a lo elegido)
+  const marco = useRef(null);
+  const seleccionCaja = e => {
+    if(e.button !== 0) return;
+    e.preventDefault(); soltarFoco();
+    const x0 = e.clientX, y0 = e.clientY, suma = e.shiftKey || e.ctrlKey, base = suma ? new Set(sel) : new Set();
+    const fuera = marco.current.parentElement.getBoundingClientRect();
+    let activo = false;
+    const mover = ev => {
+      if(!activo && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+      activo = true;
+      const l = Math.min(x0, ev.clientX), r = Math.max(x0, ev.clientX), t = Math.min(y0, ev.clientY), b = Math.max(y0, ev.clientY);
+      Object.assign(marco.current.style, { display:"block", left:(l - fuera.left)+"px", top:(t - fuera.top)+"px", width:(r - l)+"px", height:(b - t)+"px" });
+      const cr = caja.current.getBoundingClientRect(), sc = caja.current.scrollLeft;
+      const n = new Set(base);
+      pRef.current.pistas.forEach(pi=>{
+        const fr = filas.current[pi.id]; if(!fr || pi.bloqueada) return;
+        const rr = fr.getBoundingClientRect(); if(rr.bottom < t || rr.top > b) return;
+        pi.clips.forEach(c=>{ const cl = cr.left + PAD + c.en * zRef.current - sc, crr = cl + largo(c) * zRef.current; if(crr >= l && cl <= r) n.add(c.id); });
+      });
+      setSel(n);
+    };
+    const soltar = ev => {
+      window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar);
+      marco.current.style.display = "none";
+      if(!activo){ if(!suma) setSel(new Set()); onIr(cuantiza(Math.min(tDeX(ev.clientX), durRef.current), fps)); }
+    };
+    window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
+  };
+
   // ---- los clips: elegir, mover, recortar, o cortar con la cuchilla
   const filas = useRef({});
   const pistaBajo = clientY => Object.entries(filas.current).find(([id, el])=>{ if(!el) return false; const r = el.getBoundingClientRect(); return clientY >= r.top && clientY <= r.bottom; });
   const onDown = (e, c, pista, modo) => {
     if(e.button !== 0) return;
-    e.stopPropagation(); e.preventDefault();
+    e.stopPropagation(); e.preventDefault(); soltarFoco();
     if(pista.bloqueada) return;
     if(herramienta === "cuchilla"){ onDividirEn(c.id, cuantiza(encaje(tDeX(e.clientX), null), fps)); return; }
     if(e.shiftKey || e.ctrlKey){ setSel(s=>{ const n = new Set(s); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; }); return; }
@@ -417,7 +449,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
             </div>
             {/* pistas */}
             {proyecto.pistas.map(pi=>(
-              <div key={pi.id} ref={el=>{ filas.current[pi.id] = el; }} onMouseDown={arrastrarCabezal}
+              <div key={pi.id} ref={el=>{ filas.current[pi.id] = el; }} onMouseDown={seleccionCaja}
                 onDragOver={e=>{ e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
                 onDrop={e=>{ e.preventDefault(); try { onSoltarMedio(JSON.parse(e.dataTransfer.getData("application/x-randomeditor")), pi, cuantiza(encaje(tDeX(e.clientX), null), fps)); } catch(x){} }}
                 style={{position:"relative",height:ALTO[pi.tipo],marginTop:6,background:pi.bloqueada?"repeating-linear-gradient(135deg,#151515 0 8px,#1a1a1a 8px 16px)":"#161616",opacity:pi.muda?0.6:1}}>
@@ -440,6 +472,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           </div>
         </div>
       </div>
+      <div ref={marco} style={{display:"none",position:"absolute",zIndex:6,pointerEvents:"none",border:"1px solid rgba(212,175,55,0.9)",background:"rgba(212,175,55,0.12)",borderRadius:2}}/>
       <Barra ancho={ancho} zoom={zoom} scroll={scroll} dur={dur} marcadores={proyecto.marcadores} puntos={puntos} reloj={reloj} onVista={ponerVista}/>
       <div ref={aviso} style={{position:"absolute",top:ALTO_REGLA+4,display:"none",fontSize:11,fontWeight:700,color:"#000",background:"var(--gold)",padding:"3px 7px",borderRadius:5,pointerEvents:"none",zIndex:5,whiteSpace:"nowrap"}}/>
     </div>);
