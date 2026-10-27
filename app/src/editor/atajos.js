@@ -31,5 +31,7 @@ export const ATAJOS_EDITOR = [
   ["Ctrl+Shift+F", "Previsualización a pantalla completa"],
   ["Clic derecho en un clip", "Menú: dividir, copiar, duplicar, extraer audio, silenciar, eliminar"],
   ["Arrastrar un clip / un borde", "Moverlo (en la principal cambia el orden; el audio, también de pista) / recortarlo (con su medida)"],
+  ["Arrastrar uno de los elegidos", "Mueve todos los elegidos juntos, cada uno en su pista (un clic sin arrastrar: se queda elegido solo ese)"],
+  ["☆ en la biblioteca", "Favorito: sale en «★ Favoritos», el primer apartado de cada pestaña"],
   ["Arrastrar de la biblioteca", "Meterlo justo donde lo sueltes"],
 ];

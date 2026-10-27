@@ -1,6 +1,7 @@
 import React from "react";
 import { fin, largo } from "./modelo";
 import { familiaCss } from "./Textos";
+import { Estrella } from "./Biblioteca";
 const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React;
 
 /* RandomEditor · los SUBTÍTULOS (28/10, él: "un apartado de subtítulos que use lo que tú usas para
@@ -82,7 +83,8 @@ function Muestra({ pl, info }) {
     filter: pl.estilo.sombra ? `drop-shadow(${p.sdx * k}px ${p.sdy * k}px 0 rgba(0,0,0,${p.salpha}))` : undefined}}>{pl.modo === "palabra" ? "palabra" : "una frase"}</span>;
 }
 
-export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setMaxPal, onGenerar, ocupado, generando, onPlantilla, onEstilo, alGesto, onQuitar, fuentes }) {
+export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setMaxPal, onGenerar, ocupado, generando, onPlantilla, onEstilo, alGesto, onQuitar, fuentes,
+                                  favs = [], onFav, soloFavs, vacioFavs }) {
   if(!info) return <div style={{fontSize:12.5,color:"#888",padding:8}}>Cargando las plantillas…</div>;
   const actual = plantillaDe(info, pista || { plantilla: elegida });
   const e = actual ? actual.estilo : {};
@@ -95,16 +97,20 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
   return (
     <div style={{display:"flex",flexDirection:"column",gap:10,paddingBottom:6}}>
       <div style={{fontSize:10.5,fontWeight:700,color:"#888",letterSpacing:0.4,padding:"4px 2px 0"}}>PLANTILLAS</div>
-      {info.plantillas.map(pl=>{
+      {soloFavs && !info.plantillas.some(pl=>favs.includes(pl.id)) && vacioFavs}
+      {info.plantillas.filter(pl=>!soloFavs || favs.includes(pl.id)).map(pl=>{
         const on = (pista ? pista.plantilla : elegida) === pl.id;
         return (
-          <button key={pl.id} onClick={()=>{ setElegida(pl.id); setMaxPal(pl.max_pal); if(pista) onPlantilla(pl.id); }} className="rd-medio"
-            style={{flexDirection:"column",alignItems:"stretch",padding:8,gap:6,cursor:"pointer",textAlign:"left",borderColor:on?"rgba(212,175,55,0.7)":undefined,background:on?"rgba(212,175,55,0.08)":undefined}}
+          <div key={pl.id} style={{position:"relative"}}>
+          {onFav && <Estrella on={favs.includes(pl.id)} onClick={()=>onFav(pl.id)} style={{position:"absolute",right:6,top:6,zIndex:1,background:"rgba(0,0,0,0.55)"}}/>}
+          <button onClick={()=>{ setElegida(pl.id); setMaxPal(pl.max_pal); if(pista) onPlantilla(pl.id); }} className="rd-medio"
+            style={{width:"100%",flexDirection:"column",alignItems:"stretch",padding:8,gap:6,cursor:"pointer",textAlign:"left",borderColor:on?"rgba(212,175,55,0.7)":undefined,background:on?"rgba(212,175,55,0.08)":undefined}}
             title={pl.ayuda}>
             <div style={{height:50,borderRadius:6,background:"repeating-linear-gradient(45deg,#1b1b1b 0 10px,#202020 10px 20px)",display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}><Muestra pl={pl} info={info}/></div>
             <div style={{fontSize:12,fontWeight:650,color:on?"var(--gold)":"#eee"}}>{pl.nombre}{on ? " ✓" : ""}</div>
             <div style={{fontSize:10.5,color:"#8a8a8a",lineHeight:1.35}}>{pl.ayuda}</div>
-          </button>);
+          </button>
+          </div>);
       })}
       <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12}}><span style={fila}>Palabras por tarjeta<span style={{color:"#999"}}>{maxPal}</span></span>
         <input type="range" min={1} max={6} step={1} value={maxPal} onChange={ev=>setMaxPal(Number(ev.target.value))}/></label>

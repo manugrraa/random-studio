@@ -216,10 +216,12 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
 
   // ---- encajar (imán), con la línea amarilla donde engancha
   const encajado = useRef(null);
+  // (ignorar: el id de un clip, o un Set con los de un grupo que se mueve junto)
   const encaje = (t, ignorar) => {
     if(!iman) return t;
     const u = 9 / zRef.current;
-    const ps = [reloj.t, ...(pRef.current.marcadores||[]), ...pRef.current.pistas.flatMap(pi=>pi.clips.filter(c=>c.id!==ignorar).flatMap(c=>[c.en, fin(c)]))];
+    const fuera = ignorar instanceof Set ? ignorar : new Set([ignorar]);
+    const ps = [reloj.t, ...(pRef.current.marcadores||[]), ...pRef.current.pistas.flatMap(pi=>pi.clips.filter(c=>!fuera.has(c.id)).flatMap(c=>[c.en, fin(c)]))];
     let mejor = t, d = u;
     ps.forEach(q=>{ if(Math.abs(q - t) < d){ d = Math.abs(q - t); mejor = q; } });
     if(mejor !== t) encajado.current = mejor;
@@ -317,6 +319,10 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     if(e.shiftKey || e.ctrlKey){ setSel(s=>{ const n = new Set(s); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; }); return; }
     if(!sel.has(c.id)) setSel(new Set([c.id]));
     const x0 = e.clientX, s0 = caja.current.scrollLeft, inicial = pRef.current;
+    // 28/10, él: "que los elementos seleccionados se muevan todos juntos cuando mueva uno": cogiendo uno
+    // de los elegidos (sin las pistas bloqueadas), se mueve el grupo entero, cada uno en su pista
+    const grupo = modo === "mover" && sel.has(c.id) && sel.size > 1
+      ? new Set(inicial.pistas.filter(pi=>!pi.bloqueada).flatMap(pi=>pi.clips.filter(y=>sel.has(y.id)).map(y=>y.id))) : null;
     let movido = false;
     arrastrando.current = true;
     onGesto("inicio");
@@ -326,6 +332,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       if(!desdeAuto) autoDesplazar(ev, mover);
       encajado.current = null;
       const dt = (ev.clientX - x0 + caja.current.scrollLeft - s0) / zRef.current;
+      if(grupo && grupo.size > 1){ moverGrupo(inicial, grupo, dt, ev.clientX, ev.altKey); return; }
       let destino = pista.id;
       if(modo === "mover" && pista.tipo !== "video"){ const f = pistaBajo(ev.clientY); if(f){ const pd = inicial.pistas.find(x=>x.id===f[0]); if(pd && pd.tipo===pista.tipo && !pd.bloqueada) destino = pd.id; } }
       let txt = "";
@@ -369,8 +376,34 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       onGesto("durante", {...inicial, pistas: ps});
       avisar(txt, ev.clientX);
     };
-    const soltar = () => { arrastrando.current = false; pararAuto(); mostrarGuia(null); window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); avisar(null); onGesto("fin"); };
+    const soltar = () => {
+      arrastrando.current = false; pararAuto(); mostrarGuia(null); window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); avisar(null); onGesto("fin");
+      if(grupo && !movido) setSel(new Set([c.id]));      // un clic sin arrastrar en uno del grupo: se queda solo ese (como CapCut)
+    };
     window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
+  };
+  // el grupo elegido, todos a la vez la misma distancia: el imán pega el borde (de cualquiera) que caiga más
+  // cerca de algo; nadie pasa de 0, y en la principal libre ninguno se monta encima de otro que no se mueve
+  const moverGrupo = (inicial, grupo, dt, clientX, sinIman) => {
+    const elegidos = inicial.pistas.flatMap(pi=>pi.clips.filter(y=>grupo.has(y.id)));
+    let delta = Math.max(dt, -Math.min(...elegidos.map(y=>y.en)));
+    let pegado = null;
+    if(iman && !sinIman){         // (Alt al arrastrar: sin imán)
+      let mejor = Infinity;
+      for(const y of elegidos) for(const borde of [y.en + delta, fin(y) + delta]){
+        const g = encaje(borde, grupo);
+        if(g !== borde && Math.abs(g - borde) < Math.abs(mejor)){ mejor = g - borde; pegado = g; }
+      }
+      if(pegado != null) delta = Math.max(delta + mejor, -Math.min(...elegidos.map(y=>y.en)));
+    }
+    const ps = inicial.pistas.map(pi=>!pi.clips.some(y=>grupo.has(y.id)) ? pi : {...pi, clips: pi.clips.map(y=>!grupo.has(y.id) ? y
+      : {...y, en: Math.max(0, y.en + delta + (pi.id==="v1" && mag ? (delta > 0 ? 0.0005 : -0.0005) : 0))})});
+    const v1 = ps.find(x=>x.id==="v1");
+    if(v1 && !mag && v1.clips.some(y=>grupo.has(y.id) && solapa({clips: v1.clips.filter(x=>!grupo.has(x.id))}, y.en, largo(y)))) return;
+    encajado.current = pegado;
+    mostrarGuia(pegado);
+    onGesto("durante", {...inicial, pistas: ps});
+    avisar(`${elegidos.length} elementos · ${delta >= 0 ? "+" : "−"}${tc(Math.abs(delta), fps)}`, clientX);
   };
   // los clips no se repintan al desplazar ni al reproducir: sus manejadores no cambian de identidad
   const downRef = useRef(onDown); downRef.current = onDown;
