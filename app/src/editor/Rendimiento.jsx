@@ -94,11 +94,13 @@ export function AjustesEditor({ abierto, onCerrar, usarProxies, setUsarProxies, 
       <div onMouseDown={e=>e.stopPropagation()} className="rd-menu" style={{right:12,top:52,width:340,padding:14,display:"flex",flexDirection:"column",gap:14,fontSize:12.5}}>
         <b style={{fontSize:13.5}}>Rendimiento</b>
         <div style={{display:"flex",gap:6}}>
-          {[["maximo","Máximo"],["equilibrado","Equilibrado"]].map(([k,l])=>
+          {[["equilibrado","Equilibrado"],["alto","Alto"],["maximo","Máximo"]].map(([k,l])=>
             <button key={k} onClick={()=>modo(k)} className={"rd-btn"+(r && r.modo===k ? " on" : "")} style={{flex:1,justifyContent:"center"}}>{l}</button>)}
         </div>
         <div style={{fontSize:11.5,color:"#999",lineHeight:1.55}}>
-          <b style={{color:"#ccc"}}>Máximo</b>: la gráfica dedicada, el dibujo y el vídeo por GPU y más memoria (gasta más batería).<br/>
+          <b style={{color:"#ccc"}}>Equilibrado</b>: lo normal de Chromium (en tu portátil, la gráfica Intel).<br/>
+          <b style={{color:"#ccc"}}>Alto</b>: la gráfica NVIDIA dibuja el editor; nada forzado. Recomendado.<br/>
+          <b style={{color:"#ccc"}}>Máximo</b>: además quita los límites de seguridad de la gráfica y reserva hasta 8 GB de RAM.<br/>
           {r && <>Ahora: {r.gpu || "gráfica sin identificar"} · {r.nucleos} hilos · {r.ram} GB de RAM</>}
         </div>
         {cambiado && <button onClick={()=>window.studioFS.reiniciar()} className="rd-btn primario" style={{justifyContent:"center"}}>Reiniciar RandomStudio para aplicarlo</button>}

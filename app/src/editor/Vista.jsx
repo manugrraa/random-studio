@@ -23,9 +23,30 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies }, ref
   };
   // saltar sin encolar: si el vídeo aún está buscando el anterior, se apunta solo el último destino
   // (arrastrando la vara se pedían decenas de saltos seguidos y se quedaba atrás)
+  // (+1 ms: con el tiempo justo del fotograma, Chromium a veces enseña el anterior por redondeo)
   const saltar = (v, t) => {
+    t += 0.001;
     if(v.seeking){ v._pend = t; return; }
     try { v.currentTime = t; } catch(e){}
+  };
+  /* 28/10, él: "la vara no se para precisa cuando le doy al espacio". El reloj iba por su cuenta y el
+     vídeo, a su ritmo: al pausar, la vara (y la imagen) saltaban hasta 200 ms. Ahora cada reproductor
+     apunta el instante EXACTO del fotograma que acaba de pintar en pantalla, y la vara va con él. */
+  useEffect(()=>{
+    const ids = [];
+    [A.current, B.current].forEach(v=>{
+      if(!v || !v.requestVideoFrameCallback) return;
+      const cb = (ahora, md) => { v._visto = { t: md.mediaTime, at: performance.now(), clip: v.dataset.clip }; ids.push([v, v.requestVideoFrameCallback(cb)]); };
+      ids.push([v, v.requestVideoFrameCallback(cb)]);
+    });
+    return ()=>ids.forEach(([v, id])=>{ try { v.cancelVideoFrameCallback(id); } catch(e){} });
+  },[]);
+  // el tiempo (de la línea) del fotograma que se está viendo, o null si no se sabe
+  const mostrado = () => {
+    const v = [A.current, B.current][activo.current]; if(!v || !v._visto) return null;
+    const pr = pRef.current, v1 = pr.pistas.find(x=>x.id==="v1");
+    const c = v1 && v1.clips.find(x=>x.id === v._visto.clip); if(!c) return null;
+    return c.en + (v._visto.t - c.desde);
   };
   const alBuscar = e => { const v = e.target; if(v._pend != null){ const t = v._pend; v._pend = null; try { v.currentTime = t; } catch(x){} } };
   const sincronizar = (t, vel) => {
@@ -42,15 +63,18 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies }, ref
       if(vs[i].dataset.clip !== c.id && vs[1-i].dataset.clip === c.id) i = activo.current = 1 - i;
       const v = vs[i], o = vs[1-i];
       const local = cargar(v, c, t);
-      if(Math.abs(v.currentTime - local) > (adelante ? 0.2 : 0.01) || (!adelante && v._pend != null)) saltar(v, local);
+      if(Math.abs(v.currentTime - local) > (adelante ? 0.2 : 0.005) || (!adelante && v._pend != null)) saltar(v, local);
       v.playbackRate = adelante ? vel : 1;
       v.volume = volumenEn(c, t, v1.muda);
       v.style.opacity = 1; o.style.opacity = 0;
       if(adelante && v.paused) v.play().catch(()=>{});
       if(!adelante && !v.paused) v.pause();
       if(!o.paused) o.pause();
-      // reproduciendo, el reloj lo marca el vídeo (como en los editores de verdad): así no se desfasan
-      if(adelante && vel === 1 && !v.paused && v.readyState >= 3) medido = c.en + (v.currentTime - c.desde);
+      // reproduciendo, la vara la marca el fotograma que se ve (como en los editores de verdad)
+      if(adelante && vel === 1 && !v.paused && v.readyState >= 2){
+        const vi = v._visto;
+        medido = vi && vi.clip === c.id && performance.now() - vi.at < 150 ? c.en + (vi.t - c.desde) : c.en + (v.currentTime - c.desde);
+      }
       // el siguiente, preparado en el otro (en pausa y en su primer fotograma)
       const sig = cs.find(x=>x.en >= fin(c) - 1e-3 && x.id !== c.id);
       if(sig && (o.dataset.clip !== sig.id || o.dataset.src !== fuente(sig))){ cargar(o, sig, sig.en); saltar(o, sig.desde); }
@@ -76,7 +100,7 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies }, ref
   };
   // el reproductor que se ve (para contar sus fotogramas: el contador de FPS)
   const activoV = () => [A.current, B.current][activo.current];
-  useImperativeHandle(ref, ()=>({ sincronizar, soltar, activoV }));
+  useImperativeHandle(ref, ()=>({ sincronizar, soltar, activoV, mostrado }));
   useEffect(()=>()=>{ Object.values(auds.current).forEach(a=>{ try { a.pause(); a.src=""; } catch(e){} }); },[]);
   const [W, H] = [proyecto.ancho, proyecto.alto];
   const estiloV = {position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"contain",opacity:0,transition:"none"};

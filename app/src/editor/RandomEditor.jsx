@@ -98,6 +98,7 @@ export function RandomEditor({ toast }) {
   const v1 = p.pistas.find(x=>x.id==="v1");
   const todos = useMemo(()=>M.todos(p),[p]);
   const fps = p.fps || 30;
+  const fpsRef = useRef(fps); fpsRef.current = fps;
 
   // ---- al abrir: biblioteca, proyectos y lo que pida el Studio («Editar el clip»)
   useEffect(()=>{
@@ -161,14 +162,23 @@ export function RandomEditor({ toast }) {
       const tot = M.total(pRef.current);
       if((jugandoRef.current > 0 && t >= tot) || (jugandoRef.current < 0 && t <= 0)){ ir(Math.max(0, Math.min(tot, t))); setJugando(0); return; }
       const m = vista.current ? vista.current.sincronizar(t, jugandoRef.current) : null;
-      if(m != null && Math.abs(m - t) < 0.25 && m >= reloj.t - 0.002) t = m;     // manda el vídeo (sin volver atrás)
+      if(m != null && Math.abs(m - t) < 0.25 && m >= reloj.t - 0.02) t = m;     // manda el fotograma que se ve
       reloj.poner(t);
       raf = requestAnimationFrame(paso);
     };
     raf = requestAnimationFrame(paso);
     return ()=>cancelAnimationFrame(raf);
   },[jugando]);
-  const jugar = () => setJugando(j=>j ? 0 : 1);
+  /* parar: la vara se queda EXACTAMENTE en el fotograma que se estaba viendo (y la imagen no se mueve),
+     en la rejilla de fotogramas del vídeo. Devuelve ese tiempo (las flechas cuentan desde él). */
+  const detener = () => {
+    if(!jugandoRef.current) return reloj.t;
+    const m = vista.current && vista.current.mostrado ? vista.current.mostrado() : null;
+    const t = M.cuantiza(m != null && Math.abs(m - reloj.t) < 0.5 ? m : reloj.t, fpsRef.current);
+    setJugando(0); ir(t);
+    return t;
+  };
+  const jugar = () => { if(jugandoRef.current) detener(); else setJugando(1); };
 
   // ---- meter medios
   const durDe = async m => {
@@ -180,8 +190,13 @@ export function RandomEditor({ toast }) {
     let info; try { info = await durDe(m); } catch(e){ toast(e.message); return; }
     if(info.video === false) tipo = "audio";
     const c = { id:M.uid(), ruta:m.ruta, nombre:m.nombre, mini:m.mini, desde:0, hasta:info.dur, dur_src:info.dur, en:0, vol:1, silencio:false };
+    // el primer vídeo de la principal fija los fotogramas por segundo del proyecto (los de verdad)
+    let fpsNuevo = null;
+    if(tipo === "video" && !(pRef.current.pistas.find(x=>x.id==="v1")||{clips:[]}).clips.length){
+      try { const ev = await consultar(["redinfo", m.ruta]); const a = ((ev.find(e=>e.evento==="hecho")||{}).archivos||[])[0]; if(a && a.fps) fpsNuevo = a.fps; } catch(e){}
+    }
     if(tipo === "video"){
-      cambiar(prev=>({...prev, pistas: prev.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips:[...pi.clips, {...c, en: en==null ? Math.max(0,...pi.clips.map(fin)) : en - 0.0005}]})}));
+      cambiar(prev=>({...prev, ...(fpsNuevo ? {fps: fpsNuevo} : {}), pistas: prev.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips:[...pi.clips, {...c, en: en==null ? Math.max(0,...pi.clips.map(fin)) : en - 0.0005}]})}));
     } else {
       cambiar(prev=>({...prev, pistas: M.colocarAudio(prev.pistas, {...c, en: en==null ? reloj.t : Math.max(0, en)}, pistaId)}));
     }
@@ -291,7 +306,9 @@ export function RandomEditor({ toast }) {
       const ae = document.activeElement;
       if(ae && (ae.tagName==="TEXTAREA" || ae.tagName==="SELECT" || (ae.tagName==="INPUT" && !["range","checkbox","button"].includes(ae.type)))) return;
       if(ae && ae !== document.body && (ae.tagName==="INPUT" || ae.tagName==="BUTTON")) ae.blur();
-      const k = e.key, ctrl = e.ctrlKey || e.metaKey, t = reloj.t, K = k.length===1 ? k.toLowerCase() : k;
+      const k = e.key, ctrl = e.ctrlKey || e.metaKey, K = k.length===1 ? k.toLowerCase() : k;
+      const para = ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(k) || (K==="k" && !ctrl);
+      const t = para ? detener() : reloj.t;
       const ok = () => { e.preventDefault(); e.stopImmediatePropagation(); };
       const puntos = M.puntosDeCorte(pRef.current);
       if(k===" "){ ok(); jugar(); }
@@ -311,8 +328,8 @@ export function RandomEditor({ toast }) {
       else if(ctrl && K==="i"){ ok(); meterArchivos(); }
       else if(ctrl && (k==="+"||k==="=")){ ok(); setZoom(z=>Math.min(2000, z*1.4)); }
       else if(ctrl && (k==="-"||k==="_")){ ok(); setZoom(z=>Math.max(0.5, z/1.4)); }
-      else if(ctrl && k==="ArrowLeft"){ ok(); setJugando(0); ir([...puntos].reverse().find(x=>x < t - 0.01) ?? 0); }
-      else if(ctrl && k==="ArrowRight"){ ok(); setJugando(0); ir(puntos.find(x=>x > t + 0.01) ?? M.total(pRef.current)); }
+      else if(ctrl && k==="ArrowLeft"){ ok(); ir([...puntos].reverse().find(x=>x < t - 0.01) ?? 0); }
+      else if(ctrl && k==="ArrowRight"){ ok(); ir(puntos.find(x=>x > t + 0.01) ?? M.total(pRef.current)); }
       else if(ctrl) return;
       else if(k==="Delete"||k==="Backspace"){ ok(); eliminar(); }
       else if(e.shiftKey && K==="z"){ ok(); ajustar(); }
@@ -324,15 +341,15 @@ export function RandomEditor({ toast }) {
       else if(K==="g"){ ok(); setGuias(x=>!x); }
       else if(K==="v"){ ok(); setHerramienta("sel"); }
       else if(K==="b"){ ok(); setHerramienta("cuchilla"); }
-      else if(K==="k"){ ok(); setJugando(0); }
+      else if(K==="k"){ ok(); }
       else if(K==="l"){ ok(); setJugando(j=>j>0 ? Math.min(4, j*2) : 1); }
       else if(K==="j"){ ok(); setJugando(j=>j<0 ? Math.max(-4, j*2) : -1); }
       else if(k==="Escape"){ ok(); if(menu) setMenu(null); else if(completa) setCompleta(false); else { setSel(new Set()); setHerramienta("sel"); } }
       else if(e.altKey && (k==="ArrowLeft" || k==="ArrowRight")){ ok(); empujar((k==="ArrowLeft" ? -1 : 1) * (e.shiftKey ? 10 : 1) / fps); }
-      else if(k==="ArrowLeft"){ ok(); setJugando(0); ir(M.cuantiza(t, fps) - (e.shiftKey ? 1 : 1/fps)); }
-      else if(k==="ArrowRight"){ ok(); setJugando(0); ir(M.cuantiza(t, fps) + (e.shiftKey ? 1 : 1/fps)); }
-      else if(k==="ArrowUp"){ ok(); setJugando(0); ir([...puntos].reverse().find(x=>x < t - 0.01) ?? 0); }
-      else if(k==="ArrowDown"){ ok(); setJugando(0); ir(puntos.find(x=>x > t + 0.01) ?? M.total(pRef.current)); }
+      else if(k==="ArrowLeft"){ ok(); ir(M.cuantiza(t, fps) - (e.shiftKey ? 1 : 1/fps)); }
+      else if(k==="ArrowRight"){ ok(); ir(M.cuantiza(t, fps) + (e.shiftKey ? 1 : 1/fps)); }
+      else if(k==="ArrowUp"){ ok(); ir([...puntos].reverse().find(x=>x < t - 0.01) ?? 0); }
+      else if(k==="ArrowDown"){ ok(); ir(puntos.find(x=>x > t + 0.01) ?? M.total(pRef.current)); }
       else if(k==="Home"){ ok(); ir(0); }
       else if(k==="End"){ ok(); ir(M.total(pRef.current)); }
     };

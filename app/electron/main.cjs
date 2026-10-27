@@ -17,12 +17,16 @@ if (!process.env.STUDIO_CAPTURA) app.setPath("userData", path.join(app.getPath("
 // Electron cogía la Intel integrada), rasterizado y vídeo por GPU y más memoria para la página.
 // EQUILIBRADO: lo de Chromium de serie. Se lee ANTES de arrancar (cambiarlo pide reiniciar).
 const RENDIMIENTO_FILE = path.join(app.getPath("appData"), "RDeRandom Studio", "rendimiento.json");
-let rendimiento = { modo: "maximo" };
+// 28/10, él: "no lo voy a poner en Máximo, se me gastaría la RAM y la gráfica; algo más que Equilibrado
+// pero no tan basto": ALTO (por defecto) = solo la gráfica dedicada y el dibujo por GPU, sin forzar nada.
+let rendimiento = { modo: "alto" };
 try { rendimiento = { ...rendimiento, ...JSON.parse(fs.readFileSync(RENDIMIENTO_FILE, "utf8")) }; } catch (e) {}
-if (rendimiento.modo === "maximo") {
+if (rendimiento.modo === "alto" || rendimiento.modo === "maximo") {
   app.commandLine.appendSwitch("force_high_performance_gpu");
-  app.commandLine.appendSwitch("ignore-gpu-blocklist");
   app.commandLine.appendSwitch("enable-gpu-rasterization");
+}
+if (rendimiento.modo === "maximo") {
+  app.commandLine.appendSwitch("ignore-gpu-blocklist");
   app.commandLine.appendSwitch("enable-zero-copy");
   app.commandLine.appendSwitch("enable-features", "CanvasOopRasterization,PlatformHEVCDecoderSupport");
   app.commandLine.appendSwitch("js-flags", "--max-old-space-size=8192");
@@ -40,7 +44,7 @@ ipcMain.handle("rendimiento-leer", async () => {
 ipcMain.handle("rendimiento-poner", async (e, modo) => {
   try {
     fs.mkdirSync(path.dirname(RENDIMIENTO_FILE), { recursive: true });
-    fs.writeFileSync(RENDIMIENTO_FILE, JSON.stringify({ ...rendimiento, modo: modo === "equilibrado" ? "equilibrado" : "maximo" }));
+    fs.writeFileSync(RENDIMIENTO_FILE, JSON.stringify({ ...rendimiento, modo: ["equilibrado", "alto", "maximo"].includes(modo) ? modo : "alto" }));
     return { ok: true };
   } catch (x) { return { error: x.message }; }
 });
