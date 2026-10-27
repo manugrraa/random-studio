@@ -7,6 +7,7 @@ import { Vista, fileUrl } from "./Vista";
 import { LineaTiempo } from "./LineaTiempo";
 import { Biblioteca } from "./Biblioteca";
 import { I } from "./iconos";
+import { Fps, Medidor, AjustesEditor, useAjuste } from "./Rendimiento";
 export { ATAJOS_EDITOR } from "./atajos";
 const { useState, useEffect, useRef, useMemo } = React;
 const { fin, largo, tc, tcLargo } = M;
@@ -70,6 +71,13 @@ export function RandomEditor({ toast }) {
   const [ondas, setOndas] = useState({});
   const [proyectos, setProyectos] = useState([]);
   const [menu, setMenu] = useState(null);
+  // v3.14.1: proxies (copias ligeras para previsualizar), contador de FPS, medidor y ajustes
+  const [proxies, setProxies] = useState({});
+  const [usarProxies, setUsarProxies] = useAjuste("red_proxies", true);
+  const [verFps, setVerFps] = useAjuste("red_fps", true);
+  const [verMedidor, setVerMedidor] = useAjuste("red_medidor", true);
+  const [ajustesAb, setAjustesAb] = useState(false);
+  const colaProxy = useRef({ pedidos:new Set(), cola:[], activos:0 });
   const pedidos = useRef(new Set());
   const est = useRef({}); est.current = { sel, porta, zoom, iman, herramienta };
   const guardandoClip = useRef(false);
@@ -121,6 +129,24 @@ export function RandomEditor({ toast }) {
       }).catch(()=>{});
     }));
   });
+
+  // proxies de los vídeos de la principal, de uno en uno (la gráfica los hace en segundos) y en caché
+  const rutasVideo = [...new Set((v1 ? v1.clips : []).map(c=>c.ruta))];
+  useEffect(()=>{
+    if(!usarProxies) return;
+    const q = colaProxy.current;
+    rutasVideo.forEach(r=>{ if(!q.pedidos.has(r)){ q.pedidos.add(r); q.cola.push(r); } });
+    const siguiente = () => {
+      if(q.activos >= 1 || !q.cola.length) return;
+      const r = q.cola.shift(); q.activos++;
+      consultar(["redproxy", r]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); if(h && h.proxy) setProxies(x=>({...x, [r]: h.proxy})); })
+        .catch(e=>console.log("proxy", e.message)).finally(()=>{ q.activos--; siguiente(); });
+    };
+    siguiente();
+  });
+  const proxiesVista = usarProxies ? proxies : null;
+  useEffect(()=>{ if(!jugandoRef.current && vista.current) vista.current.sincronizar(reloj.t, 0); },[proxiesVista]);
+  const proxiesListos = rutasVideo.filter(r=>proxies[r]).length;
 
   // ---- reproducción
   const ir = t => { t = Math.max(0, Math.min(M.total(pRef.current), t)); reloj.poner(t); vista.current && vista.current.sincronizar(t, 0); };
@@ -189,6 +215,18 @@ export function RandomEditor({ toast }) {
   const silenciar = () => { const s = est.current.sel; if(!s.size) return; const m = todos.filter(c=>s.has(c.id)).every(c=>c.silencio);
     cambiar(q=>({...q, pistas: q.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>s.has(c.id) ? {...c, silencio:!m} : c)}))})); };
   const extraer = () => { const s = est.current.sel; if(s.size) { cambiar(q=>M.extraerAudio(q, s)); toast("Audio extraído a una pista (el vídeo se queda mudo)"); } };
+  // v3.14.1: Alt+← / Alt+→ empujan lo elegido de las pistas de audio un fotograma (Shift: 10), para cuadrar un SFX
+  const empujar = d => {
+    const s = est.current.sel; if(!s.size) return;
+    const q0 = pRef.current;
+    const nuevo = {...q0, pistas: q0.pistas.map(pi=>pi.id==="v1" || pi.bloqueada ? pi : {...pi, clips: pi.clips.map(c=>{
+      if(!s.has(c.id)) return c;
+      const en = Math.max(0, M.cuantiza(c.en + d, fps));
+      return M.solapa(pi, en, largo(c), c.id) ? c : {...c, en};
+    })})};
+    if(JSON.stringify(nuevo.pistas) === JSON.stringify(q0.pistas)) return;
+    cambiar(()=>nuevo);
+  };
   const marcador = () => { const t = M.cuantiza(reloj.t, fps), ms = pRef.current.marcadores||[], cerca = ms.find(m=>Math.abs(m-t) < 0.05);
     cambiar(q=>({...q, marcadores: cerca!=null ? ms.filter(m=>m!==cerca) : [...ms, t].sort((a,b)=>a-b)})); };
   const accionPista = (que, id) => cambiar(q=>({...q, pistas: que==="quitar" ? q.pistas.filter(x=>x.id!==id) : q.pistas.map(x=>x.id===id ? {...x, [que]:!x[que]} : x)}));
@@ -290,6 +328,7 @@ export function RandomEditor({ toast }) {
       else if(K==="l"){ ok(); setJugando(j=>j>0 ? Math.min(4, j*2) : 1); }
       else if(K==="j"){ ok(); setJugando(j=>j<0 ? Math.max(-4, j*2) : -1); }
       else if(k==="Escape"){ ok(); if(menu) setMenu(null); else if(completa) setCompleta(false); else { setSel(new Set()); setHerramienta("sel"); } }
+      else if(e.altKey && (k==="ArrowLeft" || k==="ArrowRight")){ ok(); empujar((k==="ArrowLeft" ? -1 : 1) * (e.shiftKey ? 10 : 1) / fps); }
       else if(k==="ArrowLeft"){ ok(); setJugando(0); ir(M.cuantiza(t, fps) - (e.shiftKey ? 1 : 1/fps)); }
       else if(k==="ArrowRight"){ ok(); setJugando(0); ir(M.cuantiza(t, fps) + (e.shiftKey ? 1 : 1/fps)); }
       else if(k==="ArrowUp"){ ok(); setJugando(0); ir([...puntos].reverse().find(x=>x < t - 0.01) ?? 0); }
@@ -305,7 +344,7 @@ export function RandomEditor({ toast }) {
   const ocupado = !!(tarea && !tarea.cerrada);
   const elegidos = todos.filter(c=>sel.has(c.id));
   const uno = elegidos.length === 1 ? elegidos[0] : null;
-  const vistaEl = <Vista ref={vista} proyecto={p} guias={guias}/>;
+  const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista}/>;
   const menuEl = menu && createPortal(
     <div onMouseDown={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:2000}}>
       <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:Math.min(menu.x, window.innerWidth-230), top:Math.min(menu.y, window.innerHeight-300)}}>
@@ -333,6 +372,7 @@ export function RandomEditor({ toast }) {
         <span className="rd-sep"/>
         {Object.entries(M.LIENZOS).map(([k,[w,h,et]])=><button key={k} onClick={()=>formato(k)} className={"rd-btn"+(p.formato===k?" on":"")}>{et}</button>)}
         <span style={{flex:1}}/>
+        <button onClick={()=>setAjustesAb(x=>!x)} className={"rd-ico"+(ajustesAb?" on":"")} title="Rendimiento, proxies y contador de FPS">{I.ajustes}</button>
         <button onClick={quitarAire} className="rd-btn" title="Quita los silencios largos de la pista principal (Ctrl+Z para deshacer)">{I.aire} Quitar el aire</button>
         {p.clip ? <>
           <button onClick={volverAlOriginal} disabled={ocupado} className="rd-btn">Volver al original</button>
@@ -347,8 +387,15 @@ export function RandomEditor({ toast }) {
       <div className="rd-medio-fila">
         <Biblioteca medios={medios} biblio={biblio} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos}/>
         <div className="rd-panel" style={{display:"flex",flexDirection:"column",minWidth:0,background:"#0b0b0b"}}>
-          <div style={{flex:1,minHeight:0,display:"flex",alignItems:"center",justifyContent:"center",padding:10}}>
-            {completa ? createPortal(<div style={{position:"fixed",inset:0,zIndex:1500,background:"#000",display:"flex",alignItems:"center",justifyContent:"center"}} onDoubleClick={()=>setCompleta(false)}>{vistaEl}</div>, document.body) : vistaEl}
+          <div style={{position:"relative",flex:1,minHeight:0,display:"flex",alignItems:"stretch",justifyContent:"center",padding:10,gap:6}}>
+            {verFps && <Fps vista={vista} jugando={jugando}/>}
+            {usarProxies && rutasVideo.length > proxiesListos && <div style={{position:"absolute",right:10,top:8,zIndex:2,fontSize:11,fontWeight:700,padding:"2px 7px",borderRadius:5,background:"rgba(0,0,0,0.6)",color:"#bbb"}}
+              title="Copias ligeras para previsualizar: mientras se hacen, se ve el original">Preparando la previsualización fluida… {proxiesListos}/{rutasVideo.length}</div>}
+            <div onClick={jugar} onDoubleClick={()=>{ setJugando(0); setCompleta(true); }} title="Clic: reproducir / pausar · doble clic: pantalla completa"
+              style={{flex:1,minWidth:0,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+              {completa ? createPortal(<div style={{position:"fixed",inset:0,zIndex:1500,background:"#000",display:"flex",alignItems:"center",justifyContent:"center"}} onDoubleClick={()=>setCompleta(false)}>{vistaEl}</div>, document.body) : vistaEl}
+            </div>
+            {verMedidor && <Medidor reloj={reloj} proyecto={p} ondas={ondas}/>}
           </div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"6px 10px",borderTop:"1px solid #222"}}>
             <button onClick={()=>ir(0)} className="rd-ico" title="Al principio (Inicio)">{I.inicio}</button>
@@ -424,6 +471,9 @@ export function RandomEditor({ toast }) {
           onPista={accionPista}/>
       </div>
       {menuEl}
+      <AjustesEditor abierto={ajustesAb} onCerrar={()=>setAjustesAb(false)} usarProxies={usarProxies} setUsarProxies={setUsarProxies}
+        verFps={verFps} setVerFps={setVerFps} verMedidor={verMedidor} setVerMedidor={setVerMedidor}
+        proxiesListos={proxiesListos} proxiesTotal={rutasVideo.length} toast={toast}/>
     </div>);
 }
 

@@ -1,18 +1,21 @@
 import React from "react";
 import { fin, largo, tc, corto, puntosDeCorte, cuantiza, solapa } from "./modelo";
-const { useEffect, useRef, useState, useMemo, memo } = React;
+const { useEffect, useLayoutEffect, useRef, useState, useMemo, memo, useCallback } = React;
 
 /* RandomEditor · la línea de tiempo, al estilo de CapCut de PC.
    - cada pista es un LIENZO que pinta solo lo que se ve: el fotograma real de cada punto del clip
      (no una miniatura repetida) y la onda del sonido de abajo hacia arriba
    - encima, los clips como cajas (borde, nombre, asas para recortar); solo los visibles
    - el cabezal y la línea del ratón se mueven solos (el reloj), sin repintar el resto
-   - imán: el cabezal, los recortes y los movimientos se pegan a los cortes y marcadores
-   - Ctrl+rueda acerca/aleja donde está el ratón; la rueda sola desplaza */
+   - imán: el cabezal, los recortes y los movimientos se pegan a los cortes y marcadores (línea amarilla)
+   - v3.14.1, él: "necesito poder navegar por el timeline horizontalmente, con atajos o con una barra":
+     barra de abajo (arrastrar = desplazar; sus bordes = acercar/alejar, como Premiere), rueda,
+     Re Pág / Av Pág, botón central del ratón arrastrando, y el cabezal nunca se queda fuera de la vista */
 export const PAD = 16, ALTO_REGLA = 30;
 export const ALTO = { video: 100, audio: 58 };
-const ALTO_FOTO = 58;
+const ALTO_FOTO = 58, CABECERA = 96, ALTO_BARRA = 16;
 const COL = { video:"#1d3557", audio:"#183a2b", sel:"#D4AF37", borde:"rgba(255,255,255,0.16)" };
+const ZMIN = 0.5, ZMAX = 2000;
 
 function pasoRegla(zoom, fps) {
   const opciones = [1/fps, 2/fps, 5/fps, 10/fps, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
@@ -38,9 +41,59 @@ const Clip = memo(function Clip({ c, pista, zoom, elegido, cuchilla, onDown, onM
     </div>);
 });
 
+/* la barra de desplazamiento: toda la línea de tiempo en pequeño; el tramo claro es lo que se ve.
+   Arrastrarlo desplaza; arrastrar sus bordes acerca o aleja; clic fuera centra la vista ahí. */
+function Barra({ ancho, zoom, scroll, dur, marcadores, puntos, reloj, onVista }) {
+  const pista = useRef(null), cab = useRef(null);
+  const [W0, setW0] = useState(ancho);
+  useEffect(()=>{ const el = pista.current; if(!el) return; const ro = new ResizeObserver(()=>setW0(el.clientWidth)); ro.observe(el); setW0(el.clientWidth); return ()=>ro.disconnect(); },[]);
+  const S = Math.max(dur + 20, 1);                                   // segundos que representa la barra
+  const W = Math.max(1, W0);
+  const t0 = Math.max(0, (scroll - PAD) / zoom), vis = ancho / zoom;
+  const L = Math.min(W - 24, t0 / S * W), R = Math.max(L + 24, Math.min(W, (t0 + vis) / S * W));
+  const zRef = useRef({zoom, t0, vis, S, W}); zRef.current = {zoom, t0, vis, S, W};
+  useEffect(()=>reloj.oir(t=>{ if(cab.current) cab.current.style.transform = `translateX(${t / zRef.current.S * zRef.current.W}px)`; }),[reloj]);
+  useEffect(()=>{ if(cab.current) cab.current.style.transform = `translateX(${reloj.t / S * W}px)`; },[S, W]);
+  const arrastrar = (e, modo) => {
+    if(e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const x0 = e.clientX, a = zRef.current;
+    const tL = a.t0, tR = a.t0 + a.vis;
+    const mover = ev => {
+      const dts = (ev.clientX - x0) / a.W * a.S;
+      if(modo === "mover") onVista(null, Math.max(0, tL + dts));
+      else if(modo === "izq"){ const n = Math.max(0, Math.min(tR - 0.05, tL + dts)); onVista(ancho / (tR - n), n); }
+      else { const n = Math.max(tL + 0.05, tR + dts); onVista(ancho / (n - tL), tL); }
+    };
+    const soltar = () => { window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); };
+    window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
+  };
+  const clicFuera = e => {
+    if(e.button !== 0) return;
+    const r = pista.current.getBoundingClientRect(), t = (e.clientX - r.left) / W * S;
+    onVista(null, Math.max(0, t - vis / 2));
+    arrastrar(e, "mover");
+  };
+  return (
+    <div style={{display:"flex",height:ALTO_BARRA + 8,alignItems:"center",borderTop:"1px solid #222",background:"#121212",flexShrink:0}}>
+      <div style={{width:CABECERA,flexShrink:0}}/>
+      <div ref={pista} onMouseDown={clicFuera} title="Arrastra para moverte · sus bordes, para acercar o alejar"
+        style={{position:"relative",flex:1,minWidth:0,marginRight:6,height:ALTO_BARRA,background:"#1a1a1a",borderRadius:4,cursor:"pointer",overflow:"hidden"}}>
+        {puntos.map((q, k)=><div key={"p"+k} style={{position:"absolute",left:q / S * W,top:4,bottom:4,width:1,background:"rgba(255,255,255,0.13)"}}/>)}
+        {(marcadores||[]).map((m, k)=><div key={"m"+k} style={{position:"absolute",left:m / S * W - 1,top:0,bottom:0,width:2,background:"#60a5fa"}}/>)}
+        <div onMouseDown={e=>arrastrar(e, "mover")} style={{position:"absolute",left:L,width:R - L,top:1,bottom:1,borderRadius:4,
+          background:"rgba(255,255,255,0.16)",border:"1px solid rgba(255,255,255,0.28)",boxSizing:"border-box",cursor:"grab"}}>
+          <div onMouseDown={e=>arrastrar(e, "izq")} title="Acercar / alejar" style={{position:"absolute",left:-1,top:-1,bottom:-1,width:7,cursor:"ew-resize",background:"rgba(212,175,55,0.75)",borderRadius:"4px 0 0 4px"}}/>
+          <div onMouseDown={e=>arrastrar(e, "der")} title="Acercar / alejar" style={{position:"absolute",right:-1,top:-1,bottom:-1,width:7,cursor:"ew-resize",background:"rgba(212,175,55,0.75)",borderRadius:"0 4px 4px 0"}}/>
+        </div>
+        <div ref={cab} style={{position:"absolute",left:0,top:0,bottom:0,width:2,background:"#fff",pointerEvents:"none"}}/>
+      </div>
+    </div>);
+}
+
 export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta, iman, reloj, jugando, tiras, ondas,
                               onIr, onGesto, onDividirEn, onSoltarMedio, onMenu, onPista }) {
-  const caja = useRef(null), regla = useRef(null), cabezal = useRef(null), hover = useRef(null), hoverTxt = useRef(null), aviso = useRef(null);
+  const caja = useRef(null), vertical = useRef(null), regla = useRef(null), cabezal = useRef(null), hover = useRef(null), hoverTxt = useRef(null), aviso = useRef(null), guia = useRef(null);
   const lienzos = useRef({});
   const [scroll, setScroll] = useState(0);
   const [ancho, setAncho] = useState(1000);
@@ -50,6 +103,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
   const anchoTotal = Math.max(ancho, (dur + 20) * zoom + PAD * 2);
   const pRef = useRef(proyecto); pRef.current = proyecto;
   const zRef = useRef(zoom); zRef.current = zoom;
+  const durRef = useRef(dur); durRef.current = dur;
 
   // el tamaño visible
   useEffect(()=>{
@@ -57,23 +111,43 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     const ro = new ResizeObserver(()=>setAncho(el.clientWidth)); ro.observe(el); setAncho(el.clientWidth);
     return ()=>ro.disconnect();
   },[]);
-  const alDesplazar = () => { const el = caja.current; if(el) requestAnimationFrame(()=>setScroll(el.scrollLeft)); };
+  // desplazar (un solo repintado por fotograma, aunque lleguen muchos eventos)
+  const pend = useRef(false);
+  const alDesplazar = () => { if(pend.current) return; pend.current = true; requestAnimationFrame(()=>{ pend.current = false; if(caja.current) setScroll(caja.current.scrollLeft); }); };
+  const desplazarA = x => { const el = caja.current; if(!el) return; el.scrollLeft = Math.max(0, x); alDesplazar(); };
+  // poner la vista: zoom (o null = el mismo) y el segundo que queda en el borde izquierdo
+  // (con zoom nuevo, el desplazamiento se aplica cuando el contenido ya tiene su ancho nuevo)
+  const objetivo = useRef(null);
+  const ponerVista = (z, tIzq) => {
+    const nz = z == null ? zRef.current : Math.max(ZMIN, Math.min(ZMAX, z));
+    if(nz !== zRef.current){ zRef.current = nz; objetivo.current = tIzq * nz + PAD; setZoom(nz); }
+    else desplazarA(tIzq * nz + PAD);
+  };
+  // el zoom que llega de fuera (botones, Ctrl++ / Ctrl+-, la barra de zoom) acerca alrededor del cabezal
+  const zAnt = useRef(zoom);
+  useLayoutEffect(()=>{
+    const oz = zAnt.current; zAnt.current = zoom;
+    if(objetivo.current != null){ const x = objetivo.current; objetivo.current = null; desplazarA(x); return; }
+    const el = caja.current; if(!el || oz === zoom) return;
+    const enPantalla = reloj.t * oz + PAD - el.scrollLeft;
+    desplazarA(reloj.t * zoom + PAD - (enPantalla >= 0 && enPantalla <= el.clientWidth ? enPantalla : el.clientWidth * 0.35));
+  },[zoom]);
 
-  // el cabezal sigue al reloj (sin pasar por React)
+  // el cabezal sigue al reloj (sin pasar por React) y nunca se queda fuera de la vista
   useEffect(()=>reloj.oir(t=>{
     const x = PAD + t * zRef.current;
     if(cabezal.current) cabezal.current.style.transform = `translateX(${x}px)`;
-    const el = caja.current;
-    if(el && jugando.current){ if(x > el.scrollLeft + el.clientWidth - 80 || x < el.scrollLeft) el.scrollLeft = Math.max(0, x - 120); }
+    const el = caja.current; if(!el || arrastrando.current) return;
+    if(jugando.current){ if(x > el.scrollLeft + el.clientWidth - 80 || x < el.scrollLeft) desplazarA(x - 120); }
+    else if(x < el.scrollLeft + 4 || x > el.scrollLeft + el.clientWidth - 4) desplazarA(x - el.clientWidth * 0.35);
   }),[reloj]);
   useEffect(()=>{ if(cabezal.current) cabezal.current.style.transform = `translateX(${PAD + reloj.t * zoom}px)`; },[zoom]);
 
   // ---- pintar: la regla y cada pista (solo lo visible)
+  const tam = (cv, w, h) => { const dpr = window.devicePixelRatio || 1; if(cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)){ cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); } const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h); return g; };
   useEffect(()=>{
     const cv = regla.current; if(!cv) return;
-    const dpr = window.devicePixelRatio || 1;
-    cv.width = ancho * dpr; cv.height = ALTO_REGLA * dpr;
-    const g = cv.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, ancho, ALTO_REGLA);
+    const g = tam(cv, ancho, ALTO_REGLA);
     const paso = pasoRegla(zoom, fps), sub = paso / 5;
     const t0 = Math.max(0, (scroll - PAD) / zoom), t1 = (scroll + ancho) / zoom;
     g.fillStyle = "rgba(255,255,255,0.18)";
@@ -88,13 +162,11 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
   },[zoom, scroll, ancho, proyecto.marcadores, fps]);
 
   useEffect(()=>{
-    const dpr = window.devicePixelRatio || 1;
     const t0 = Math.max(0, (scroll - PAD) / zoom) - 1, t1 = (scroll + ancho) / zoom + 1;
     proyecto.pistas.forEach(pi=>{
       const cv = lienzos.current[pi.id]; if(!cv) return;
       const H = ALTO[pi.tipo];
-      cv.width = ancho * dpr; cv.height = H * dpr;
-      const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, ancho, H);
+      const g = tam(cv, ancho, H);
       pi.clips.forEach(c=>{
         if(fin(c) < t0 || c.en > t1) return;
         const x0 = PAD + c.en*zoom - scroll, x1 = PAD + fin(c)*zoom - scroll;
@@ -121,12 +193,12 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         if(od && od.length){
           const ytop = pi.tipo==="video" ? ALTO_FOTO + 3 : 16, hW = H - ytop - 3, base = H - 3, n = od.length, ds = c.dur_src || 1;
           g.fillStyle = gris ? "rgba(150,150,150,0.55)" : (pi.tipo==="video" ? "rgba(96,165,250,0.95)" : "rgba(74,222,128,0.95)");
+          const vf = Math.min(1.25, c.vol ?? 1);
           for(let x = Math.floor(a); x < b; x++){
             const s0 = tsrc(x), s1 = tsrc(x + 1);
             let i0 = Math.floor(s0 / ds * n), i1 = Math.max(i0 + 1, Math.ceil(s1 / ds * n)), m = 0;
             for(let i = Math.max(0, i0); i < Math.min(n, i1); i++) if(od[i] > m) m = od[i];
-            const vf = (c.vol ?? 1);
-            const hh = Math.max(1, m * Math.min(1.25, vf) * hW);
+            const hh = Math.max(1, m * vf * hW);
             g.fillRect(x, base - hh, 1, hh);
           }
         }
@@ -140,35 +212,63 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     });
   },[proyecto, zoom, scroll, ancho, tiras, ondas]);
 
-  // ---- encajar (imán)
+  // ---- encajar (imán), con la línea amarilla donde engancha
+  const encajado = useRef(null);
   const encaje = (t, ignorar) => {
     if(!iman) return t;
     const u = 9 / zRef.current;
     const ps = [reloj.t, ...(pRef.current.marcadores||[]), ...pRef.current.pistas.flatMap(pi=>pi.clips.filter(c=>c.id!==ignorar).flatMap(c=>[c.en, fin(c)]))];
     let mejor = t, d = u;
     ps.forEach(q=>{ if(Math.abs(q - t) < d){ d = Math.abs(q - t); mejor = q; } });
+    if(mejor !== t) encajado.current = mejor;
     return mejor;
   };
+  const mostrarGuia = t => { const el = guia.current; if(!el) return; if(t == null){ el.style.display = "none"; return; } el.style.display = "block"; el.style.transform = `translateX(${PAD + t * zRef.current}px)`; };
   const tDeX = clientX => { const r = caja.current.getBoundingClientRect(); return Math.max(0, (clientX - r.left + caja.current.scrollLeft - PAD) / zRef.current); };
   const avisar = (txt, clientX) => {
     const el = aviso.current; if(!el) return;
     if(!txt){ el.style.display = "none"; return; }
-    const r = caja.current.parentElement.getBoundingClientRect();
+    const r = el.parentElement.getBoundingClientRect();
     el.style.display = "block"; el.textContent = txt; el.style.left = (clientX - r.left + 12) + "px";
   };
+
+  // ---- arrastrar cerca del borde: la vista se desplaza sola (y lo arrastrado sigue al ratón)
+  const arrastrando = useRef(false);
+  const auto = useRef({ raf:0, ev:null, mover:null });
+  const autoDesplazar = (ev, mover) => {
+    const a = auto.current; a.ev = ev; a.mover = mover;
+    const el = caja.current; if(!el) return;
+    const r = el.getBoundingClientRect(), borde = 48;
+    const v = ev.clientX > r.right - borde ? (ev.clientX - (r.right - borde)) : ev.clientX < r.left + borde ? -((r.left + borde) - ev.clientX) : 0;
+    if(!v){ cancelAnimationFrame(a.raf); a.raf = 0; return; }
+    if(a.raf) return;
+    const paso = () => {
+      const r2 = el.getBoundingClientRect(), e2 = a.ev;
+      const v2 = e2.clientX > r2.right - borde ? (e2.clientX - (r2.right - borde)) : e2.clientX < r2.left + borde ? -((r2.left + borde) - e2.clientX) : 0;
+      if(!v2){ a.raf = 0; return; }
+      el.scrollLeft = Math.max(0, el.scrollLeft + Math.sign(v2) * Math.min(40, 4 + Math.abs(v2) * 0.6)); alDesplazar();
+      a.mover(e2, true);
+      a.raf = requestAnimationFrame(paso);
+    };
+    a.raf = requestAnimationFrame(paso);
+  };
+  const pararAuto = () => { cancelAnimationFrame(auto.current.raf); auto.current.raf = 0; };
 
   // ---- el cabezal (arrastrar en la regla o en un hueco): se pega a los bordes de los trozos
   const arrastrarCabezal = e => {
     if(e.button !== 0) return;
     e.preventDefault();
     if(!e.shiftKey) setSel(new Set());
-    const mover = ev => {
-      let t = tDeX(ev.clientX);
-      if(iman && !ev.altKey){ const u = 9 / zRef.current; const q = puntos.find(p=>Math.abs(p - t) < u); if(q != null) t = q; }
-      onIr(cuantiza(t, fps));
+    arrastrando.current = true;
+    const mover = (ev, desdeAuto) => {
+      let t = tDeX(ev.clientX), q = null;
+      if(iman && !ev.altKey){ const u = 9 / zRef.current; q = puntos.find(p=>Math.abs(p - t) < u); if(q != null) t = q; }
+      mostrarGuia(q);
+      onIr(cuantiza(Math.min(t, durRef.current), fps));
+      if(!desdeAuto) autoDesplazar(ev, mover);
     };
-    mover(e);
-    const soltar = () => { window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); };
+    mover(e, true);
+    const soltar = () => { arrastrando.current = false; pararAuto(); mostrarGuia(null); window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); };
     window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
   };
 
@@ -182,13 +282,16 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     if(herramienta === "cuchilla"){ onDividirEn(c.id, cuantiza(encaje(tDeX(e.clientX), null), fps)); return; }
     if(e.shiftKey || e.ctrlKey){ setSel(s=>{ const n = new Set(s); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; }); return; }
     if(!sel.has(c.id)) setSel(new Set([c.id]));
-    const x0 = e.clientX, inicial = pRef.current;
+    const x0 = e.clientX, s0 = caja.current.scrollLeft, inicial = pRef.current;
     let movido = false;
+    arrastrando.current = true;
     onGesto("inicio");
-    const mover = ev => {
+    const mover = (ev, desdeAuto) => {
       if(!movido && Math.abs(ev.clientX - x0) < 3 && modo === "mover") return;
       movido = true;
-      const dt = (ev.clientX - x0) / zRef.current;
+      if(!desdeAuto) autoDesplazar(ev, mover);
+      encajado.current = null;
+      const dt = (ev.clientX - x0 + caja.current.scrollLeft - s0) / zRef.current;
       let destino = pista.id;
       if(modo === "mover" && pista.tipo === "audio"){ const f = pistaBajo(ev.clientY); if(f){ const pd = inicial.pistas.find(x=>x.id===f[0]); if(pd && pd.tipo==="audio" && !pd.bloqueada) destino = pd.id; } }
       let txt = "";
@@ -200,8 +303,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           if(y.id !== c.id) return y;
           if(modo === "izq"){
             let desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + dt));
-            if(pi.id !== "v1"){ const en = encaje(y.en + (desde - y.desde), y.id); desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + (en - y.en))); }
-            else { const g = encaje(y.en + (desde - y.desde), y.id); desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + (g - y.en))); }
+            const g = encaje(y.en + (desde - y.desde), y.id); desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + (g - y.en)));
             desde = cuantiza(desde, fps);
             txt = `${desde - y.desde >= 0 ? "−" : "+"}${tc(Math.abs(desde - y.desde), fps)}  ·  dura ${tc(y.hasta - desde, fps)}`;
             return {...y, desde, en: pi.id==="v1" ? y.en : y.en + (desde - y.desde)};
@@ -227,84 +329,114 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         return {...pi, clips};
       });
       if(destino !== pista.id && !ps.find(x=>x.id===destino).clips.some(y=>y.id===c.id)) return;
+      mostrarGuia(encajado.current);
       onGesto("durante", {...inicial, pistas: ps});
       avisar(txt, ev.clientX);
     };
-    const soltar = () => { window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); avisar(null); onGesto("fin"); };
+    const soltar = () => { arrastrando.current = false; pararAuto(); mostrarGuia(null); window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); avisar(null); onGesto("fin"); };
     window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
   };
+  // los clips no se repintan al desplazar ni al reproducir: sus manejadores no cambian de identidad
+  const downRef = useRef(onDown); downRef.current = onDown;
+  const menuRef = useRef(onMenu); menuRef.current = onMenu;
+  const onDownFijo = useCallback((...a)=>downRef.current(...a),[]);
+  const onMenuFijo = useCallback((...a)=>menuRef.current(...a),[]);
 
   // ---- ratón por encima: una línea fina y su tiempo exacto (para cortar justo donde se quiere)
   const alMover = e => {
     const el = hover.current; if(!el || !caja.current) return;
-    const r = caja.current.getBoundingClientRect();
-    if(e.clientY < r.top) { el.style.display = "none"; return; }
     let t = tDeX(e.clientX);
     if(herramienta === "cuchilla") t = cuantiza(encaje(t, null), fps);
     el.style.display = "block"; el.style.transform = `translateX(${PAD + t * zRef.current}px)`;
     if(hoverTxt.current) hoverTxt.current.textContent = tc(t, fps);
     el.style.background = herramienta === "cuchilla" ? "rgba(248,113,113,0.95)" : "rgba(255,255,255,0.35)";
   };
+  // botón central del ratón (la rueda pulsada) arrastrando: mover la vista en las dos direcciones
+  const mano = e => {
+    if(e.button !== 1) return;
+    e.preventDefault();
+    const x0 = e.clientX, y0 = e.clientY, s0 = caja.current.scrollLeft, v0 = vertical.current.scrollTop;
+    document.body.style.cursor = "grabbing";
+    const mover = ev => { desplazarA(s0 - (ev.clientX - x0)); vertical.current.scrollTop = v0 - (ev.clientY - y0); };
+    const soltar = () => { document.body.style.cursor = ""; window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); };
+    window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
+  };
+  // rueda: desplaza en horizontal · Shift: las pistas en vertical · Ctrl o Alt: acercar/alejar donde está el ratón
   const rueda = e => {
     const el = caja.current; if(!el) return;
-    if(e.ctrlKey){
-      e.preventDefault();
+    e.preventDefault();
+    if(e.ctrlKey || e.altKey){
       const r = el.getBoundingClientRect(), mx = e.clientX - r.left, t = (mx + el.scrollLeft - PAD) / zRef.current;
-      const nz = Math.max(0.5, Math.min(2000, zRef.current * (e.deltaY < 0 ? 1.18 : 1/1.18)));
-      setZoom(nz);
-      requestAnimationFrame(()=>{ el.scrollLeft = Math.max(0, t * nz + PAD - mx); setScroll(el.scrollLeft); });    // el punto bajo el ratón no se mueve
-    } else if(!e.shiftKey && Math.abs(e.deltaY) > Math.abs(e.deltaX)){
-      el.scrollLeft += e.deltaY; alDesplazar();
+      const d = e.deltaY || e.deltaX;
+      const nz = Math.max(ZMIN, Math.min(ZMAX, zRef.current * (d < 0 ? 1.18 : 1/1.18)));
+      ponerVista(nz, t - mx / nz);    // el punto bajo el ratón no se mueve
+    } else if(e.shiftKey){
+      vertical.current.scrollTop += e.deltaY || e.deltaX;
+    } else {
+      desplazarA(el.scrollLeft + (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY));
     }
   };
-  useEffect(()=>{ const el = caja.current; if(!el) return; el.addEventListener("wheel", rueda, {passive:false}); return ()=>el.removeEventListener("wheel", rueda); });
+  useEffect(()=>{ const el = vertical.current; if(!el) return; el.addEventListener("wheel", rueda, {passive:false}); return ()=>el.removeEventListener("wheel", rueda); });
+  // Re Pág / Av Pág: una pantalla a la izquierda / derecha (sin mover el cabezal)
+  useEffect(()=>{
+    const h = e => {
+      const ae = document.activeElement;
+      if(ae && (ae.tagName==="TEXTAREA" || (ae.tagName==="INPUT" && ae.type==="text"))) return;
+      if(e.key==="PageDown" || e.key==="PageUp"){ e.preventDefault(); const el = caja.current; if(el) desplazarA(el.scrollLeft + (e.key==="PageDown" ? 1 : -1) * el.clientWidth * 0.85); }
+    };
+    window.addEventListener("keydown", h); return ()=>window.removeEventListener("keydown", h);
+  },[]);
 
   const t0v = Math.max(0, (scroll - PAD) / zoom) - 2, t1v = (scroll + ancho) / zoom + 2;
   const cuchilla = herramienta === "cuchilla";
   return (
-    <div style={{position:"relative",display:"flex",minHeight:0,flex:1,userSelect:"none"}} onDragStart={e=>{ if(!e.target.closest || !e.target.closest("[data-medio]")) e.preventDefault(); }}>
-      {/* cabeceras de pista */}
-      <div style={{width:96,flexShrink:0,borderRight:"1px solid #2a2a2a",background:"#141414"}}>
-        <div style={{height:ALTO_REGLA,borderBottom:"1px solid #2a2a2a"}}/>
-        {proyecto.pistas.map(pi=>(
-          <div key={pi.id} style={{height:ALTO[pi.tipo],marginTop:6,display:"flex",alignItems:"center",gap:4,padding:"0 6px"}}>
-            <span style={{fontSize:10.5,fontWeight:800,color:"#888",width:22}}>{pi.tipo==="video" ? "V1" : "A"+(proyecto.pistas.filter(x=>x.tipo==="audio").indexOf(pi)+1)}</span>
-            <button onClick={()=>onPista("muda", pi.id)} title={pi.muda ? "Pista silenciada" : "Silenciar la pista"} className={"rd-ico"+(pi.muda?" on":"")} style={{width:24,height:24}}>{pi.muda ? "🔇" : "🔊"}</button>
-            <button onClick={()=>onPista("bloqueada", pi.id)} title={pi.bloqueada ? "Pista bloqueada" : "Bloquear la pista"} className={"rd-ico"+(pi.bloqueada?" on":"")} style={{width:24,height:24}}>{pi.bloqueada ? "🔒" : "🔓"}</button>
-            {pi.tipo==="audio" && !pi.clips.length && proyecto.pistas.filter(x=>x.tipo==="audio").length>1 &&
-              <button onClick={()=>onPista("quitar", pi.id)} title="Quitar la pista vacía" className="rd-ico" style={{width:20,height:24}}>×</button>}
-          </div>))}
-      </div>
-      <div ref={caja} onScroll={alDesplazar} onMouseMove={alMover} onMouseLeave={()=>{ if(hover.current) hover.current.style.display = "none"; }}
-        style={{position:"relative",overflowX:"auto",overflowY:"hidden",flex:1,background:"#101010"}}>
-        <div style={{position:"relative",width:anchoTotal,minHeight:"100%"}}>
-          {/* regla */}
-          <div onMouseDown={arrastrarCabezal} style={{position:"relative",height:ALTO_REGLA,borderBottom:"1px solid #2a2a2a",cursor:"pointer",background:"#151515"}}>
-            <canvas ref={regla} style={{position:"sticky",left:0,display:"block",width:ancho,height:ALTO_REGLA}}/>
-          </div>
-          {/* pistas */}
+    <div style={{position:"relative",display:"flex",flexDirection:"column",minHeight:0,minWidth:0,flex:1,userSelect:"none"}} onDragStart={e=>{ if(!e.target.closest || !e.target.closest("[data-medio]")) e.preventDefault(); }}>
+      <div ref={vertical} onMouseDown={mano} style={{display:"flex",flex:1,minHeight:0,overflowY:"auto",overflowX:"hidden"}}>
+        {/* cabeceras de pista */}
+        <div style={{width:CABECERA,flexShrink:0,borderRight:"1px solid #2a2a2a",background:"#141414",height:"fit-content",minHeight:"100%"}}>
+          <div style={{height:ALTO_REGLA,borderBottom:"1px solid #2a2a2a"}}/>
           {proyecto.pistas.map(pi=>(
-            <div key={pi.id} ref={el=>{ filas.current[pi.id] = el; }} onMouseDown={arrastrarCabezal}
-              onDragOver={e=>{ e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
-              onDrop={e=>{ e.preventDefault(); try { onSoltarMedio(JSON.parse(e.dataTransfer.getData("application/x-randomeditor")), pi, cuantiza(encaje(tDeX(e.clientX), null), fps)); } catch(x){} }}
-              style={{position:"relative",height:ALTO[pi.tipo],marginTop:6,background:pi.bloqueada?"repeating-linear-gradient(135deg,#151515 0 8px,#1a1a1a 8px 16px)":"#161616",opacity:pi.muda?0.6:1}}>
-              <canvas ref={el=>{ lienzos.current[pi.id] = el; }} style={{position:"sticky",left:0,display:"block",width:ancho,height:ALTO[pi.tipo],pointerEvents:"none"}}/>
-              <div style={{position:"absolute",inset:0}}>
-                {pi.clips.filter(c=>fin(c) >= t0v && c.en <= t1v).map(c=>
-                  <Clip key={c.id} c={c} pista={pi} zoom={zoom} elegido={sel.has(c.id)} cuchilla={cuchilla} onDown={onDown} onMenu={onMenu}/>)}
-              </div>
-              {pi.id==="v1" && !pi.clips.length && <div style={{position:"absolute",left:PAD+8,top:38,fontSize:12,color:"#777",pointerEvents:"none"}}>Arrastra aquí clips de la biblioteca (o pulsa ＋)</div>}
+            <div key={pi.id} style={{height:ALTO[pi.tipo],marginTop:6,display:"flex",alignItems:"center",gap:4,padding:"0 6px"}}>
+              <span style={{fontSize:10.5,fontWeight:800,color:"#888",width:22}}>{pi.tipo==="video" ? "V1" : "A"+(proyecto.pistas.filter(x=>x.tipo==="audio").indexOf(pi)+1)}</span>
+              <button onClick={()=>onPista("muda", pi.id)} title={pi.muda ? "Pista silenciada" : "Silenciar la pista"} className={"rd-ico"+(pi.muda?" on":"")} style={{width:24,height:24}}>{pi.muda ? "🔇" : "🔊"}</button>
+              <button onClick={()=>onPista("bloqueada", pi.id)} title={pi.bloqueada ? "Pista bloqueada" : "Bloquear la pista"} className={"rd-ico"+(pi.bloqueada?" on":"")} style={{width:24,height:24}}>{pi.bloqueada ? "🔒" : "🔓"}</button>
+              {pi.tipo==="audio" && !pi.clips.length && proyecto.pistas.filter(x=>x.tipo==="audio").length>1 &&
+                <button onClick={()=>onPista("quitar", pi.id)} title="Quitar la pista vacía" className="rd-ico" style={{width:20,height:24}}>×</button>}
             </div>))}
-          {/* el ratón y el cabezal */}
-          <div ref={hover} style={{position:"absolute",left:0,top:0,bottom:0,width:1,display:"none",pointerEvents:"none",zIndex:3}}>
-            <span ref={hoverTxt} style={{position:"absolute",top:2,left:5,fontSize:10,fontWeight:700,color:"#fff",background:"rgba(0,0,0,0.75)",padding:"1px 4px",borderRadius:3,whiteSpace:"nowrap"}}/>
-          </div>
-          <div ref={cabezal} style={{position:"absolute",left:0,top:0,bottom:0,width:0,pointerEvents:"none",zIndex:4,transform:`translateX(${PAD}px)`}}>
-            <div style={{position:"absolute",left:-1,top:0,bottom:0,width:2,background:"#fff",boxShadow:"0 0 4px rgba(0,0,0,0.8)"}}/>
-            <div style={{position:"absolute",left:-7,top:0,width:14,height:16,background:"#fff",clipPath:"polygon(0 0,100% 0,100% 60%,50% 100%,0 60%)"}}/>
+        </div>
+        <div ref={caja} onScroll={alDesplazar} onMouseMove={alMover} onMouseLeave={()=>{ if(hover.current) hover.current.style.display = "none"; }}
+          style={{position:"relative",overflow:"hidden",flex:1,minWidth:0,background:"#101010",height:"fit-content",minHeight:"100%",paddingBottom:10}}>
+          <div style={{position:"relative",width:anchoTotal,minHeight:"100%"}}>
+            {/* regla */}
+            <div onMouseDown={arrastrarCabezal} style={{position:"relative",height:ALTO_REGLA,borderBottom:"1px solid #2a2a2a",cursor:"pointer",background:"#151515"}}>
+              <canvas ref={regla} style={{position:"sticky",left:0,display:"block",width:ancho,height:ALTO_REGLA}}/>
+            </div>
+            {/* pistas */}
+            {proyecto.pistas.map(pi=>(
+              <div key={pi.id} ref={el=>{ filas.current[pi.id] = el; }} onMouseDown={arrastrarCabezal}
+                onDragOver={e=>{ e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+                onDrop={e=>{ e.preventDefault(); try { onSoltarMedio(JSON.parse(e.dataTransfer.getData("application/x-randomeditor")), pi, cuantiza(encaje(tDeX(e.clientX), null), fps)); } catch(x){} }}
+                style={{position:"relative",height:ALTO[pi.tipo],marginTop:6,background:pi.bloqueada?"repeating-linear-gradient(135deg,#151515 0 8px,#1a1a1a 8px 16px)":"#161616",opacity:pi.muda?0.6:1}}>
+                <canvas ref={el=>{ lienzos.current[pi.id] = el; }} style={{position:"sticky",left:0,display:"block",width:ancho,height:ALTO[pi.tipo],pointerEvents:"none"}}/>
+                <div style={{position:"absolute",inset:0}}>
+                  {pi.clips.filter(c=>fin(c) >= t0v && c.en <= t1v).map(c=>
+                    <Clip key={c.id} c={c} pista={pi} zoom={zoom} elegido={sel.has(c.id)} cuchilla={cuchilla} onDown={onDownFijo} onMenu={onMenuFijo}/>)}
+                </div>
+                {pi.id==="v1" && !pi.clips.length && <div style={{position:"absolute",left:PAD+8,top:38,fontSize:12,color:"#777",pointerEvents:"none"}}>Arrastra aquí clips de la biblioteca (o pulsa ＋)</div>}
+              </div>))}
+            {/* el imán, el ratón y el cabezal */}
+            <div ref={guia} style={{position:"absolute",left:0,top:0,bottom:0,width:0,borderLeft:"1px dashed #facc15",display:"none",pointerEvents:"none",zIndex:3}}/>
+            <div ref={hover} style={{position:"absolute",left:0,top:0,bottom:0,width:1,display:"none",pointerEvents:"none",zIndex:3}}>
+              <span ref={hoverTxt} style={{position:"absolute",top:2,left:5,fontSize:10,fontWeight:700,color:"#fff",background:"rgba(0,0,0,0.75)",padding:"1px 4px",borderRadius:3,whiteSpace:"nowrap"}}/>
+            </div>
+            <div ref={cabezal} style={{position:"absolute",left:0,top:0,bottom:0,width:0,pointerEvents:"none",zIndex:4,transform:`translateX(${PAD}px)`}}>
+              <div style={{position:"absolute",left:-1,top:0,bottom:0,width:2,background:"#fff",boxShadow:"0 0 4px rgba(0,0,0,0.8)"}}/>
+              <div style={{position:"absolute",left:-7,top:0,width:14,height:16,background:"#fff",clipPath:"polygon(0 0,100% 0,100% 60%,50% 100%,0 60%)"}}/>
+            </div>
           </div>
         </div>
       </div>
+      <Barra ancho={ancho} zoom={zoom} scroll={scroll} dur={dur} marcadores={proyecto.marcadores} puntos={puntos} reloj={reloj} onVista={ponerVista}/>
       <div ref={aviso} style={{position:"absolute",top:ALTO_REGLA+4,display:"none",fontSize:11,fontWeight:700,color:"#000",background:"var(--gold)",padding:"3px 7px",borderRadius:5,pointerEvents:"none",zIndex:5,whiteSpace:"nowrap"}}/>
     </div>);
 }

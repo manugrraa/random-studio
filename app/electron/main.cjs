@@ -12,6 +12,40 @@ app.setAppUserModelId("com.rderandom.studio");
 app.setName("RandomStudio");
 if (!process.env.STUDIO_CAPTURA) app.setPath("userData", path.join(app.getPath("appData"), "RDeRandom Studio"));
 
+// v3.14.1, él (28/10): "si funciona con los componentes de mi PC, permíteme subirle el consumo: tengo buen
+// procesador, buena gráfica y buena RAM". Modo MÁXIMO (por defecto): la gráfica dedicada (en su portátil
+// Electron cogía la Intel integrada), rasterizado y vídeo por GPU y más memoria para la página.
+// EQUILIBRADO: lo de Chromium de serie. Se lee ANTES de arrancar (cambiarlo pide reiniciar).
+const RENDIMIENTO_FILE = path.join(app.getPath("appData"), "RDeRandom Studio", "rendimiento.json");
+let rendimiento = { modo: "maximo" };
+try { rendimiento = { ...rendimiento, ...JSON.parse(fs.readFileSync(RENDIMIENTO_FILE, "utf8")) }; } catch (e) {}
+if (rendimiento.modo === "maximo") {
+  app.commandLine.appendSwitch("force_high_performance_gpu");
+  app.commandLine.appendSwitch("ignore-gpu-blocklist");
+  app.commandLine.appendSwitch("enable-gpu-rasterization");
+  app.commandLine.appendSwitch("enable-zero-copy");
+  app.commandLine.appendSwitch("enable-features", "CanvasOopRasterization,PlatformHEVCDecoderSupport");
+  app.commandLine.appendSwitch("js-flags", "--max-old-space-size=8192");
+}
+ipcMain.handle("rendimiento-leer", async () => {
+  let gpu = "";
+  try {
+    const g = await app.getGPUInfo("basic");
+    const d = (g.gpuDevice || []).find(x => x.active) || (g.gpuDevice || [])[0] || {};
+    gpu = d.deviceString || d.driverVendor || (d.vendorId === 4318 ? "NVIDIA" : d.vendorId === 32902 ? "Intel" : "");
+    if (!gpu && d.vendorId) gpu = d.vendorId === 4318 ? "NVIDIA" : d.vendorId === 32902 ? "Intel (integrada)" : "id " + d.vendorId;
+  } catch (e) {}
+  return { modo: rendimiento.modo, gpu, nucleos: require("os").cpus().length, ram: Math.round(require("os").totalmem() / 2 ** 30) };
+});
+ipcMain.handle("rendimiento-poner", async (e, modo) => {
+  try {
+    fs.mkdirSync(path.dirname(RENDIMIENTO_FILE), { recursive: true });
+    fs.writeFileSync(RENDIMIENTO_FILE, JSON.stringify({ ...rendimiento, modo: modo === "equilibrado" ? "equilibrado" : "maximo" }));
+    return { ok: true };
+  } catch (x) { return { error: x.message }; }
+});
+ipcMain.handle("app-reiniciar", async () => { app.relaunch(); app.quit(); return true; });
+
 // Con STUDIO_DEBUG=1, los mensajes de consola de la app salen por la terminal
 if (process.env.STUDIO_DEBUG) {
   app.on("web-contents-created", (e, wc) => {
@@ -311,7 +345,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "retencion", "aprender"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "retencion", "aprender"]);
 const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
