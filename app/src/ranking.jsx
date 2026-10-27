@@ -231,7 +231,6 @@ function CambiarTitulo({ x, onRetitular, ocupado }) {
         style={{flex:"1 1 200px",minWidth:0,fontSize:13,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>
       {t.trim() && t.trim()!==(x.titulo_pantalla||"") && <button disabled={ocupado} onClick={()=>onRetitular(x, t.trim())}
         style={{fontSize:12,fontWeight:600,color:"var(--gold)",border:"1px solid var(--gold)",borderRadius:8,padding:"5px 10px",opacity:ocupado?.5:1}}>Cambiar y rehacer</button>}
-      {x.voz_pendiente && <span style={{fontSize:11.5,color:"#fbbf24"}}>🎙️ esperando su voz de CapCut</span>}
     </div>);
 }
 

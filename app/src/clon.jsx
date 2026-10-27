@@ -75,49 +75,7 @@ export function useTarea(onFin) {
 
 const NOMBRE_TAREA = { preparar:"Preparando", clipear:"Clipeando", montar:"Montando", mejorar:"Mejorando", criba:"Puntuando los clips", revoz:"Poniendo las voces" };
 
-/* 24/10: la voz del título es la de CapCut DE VERDAD ("Vivo Paladín"), por tandas:
-   los Shorts salen esperando su voz; aquí se prepara la tanda, él (o el clon) la genera en
-   CapCut y se recoge y se rehacen los Shorts */
-function VocesCapcut({ toast, lanzar, ocupado, tarea }) {
-  const [v, setV] = useState(null);
-  const [trabajando, setTrabajando] = useState(false);
-  const leer = async () => { try { const ev = await consultar(["voces"]); setV(ev.find(e=>e.evento==="voces")); } catch(e){} };
-  useEffect(()=>{ leer(); },[]);
-  // el montaje por fases se para a esperar las voces: el panel se pone al día solo
-  const esperando = !!(tarea && !tarea.cerrada && tarea.eventos.some(e=>e.evento==="esperando_voces"));
-  useEffect(()=>{ if(esperando) leer(); },[esperando]);
-  if(!v || !v.pendientes || !v.pendientes.length) return null;
-  const orden = async (que) => {
-    setTrabajando(true);
-    try {
-      const ev = await consultar(["voces", que]);
-      const h = ev.find(e=>e.evento==="hecho") || {};
-      if(que==="preparar") toast && toast(`Timeline «VOCES IA» listo en CapCut con ${h.titulos} título(s)`);
-      else {
-        toast && toast(`${h.recogidas} voz(es) recogidas${h.aviso ? " · "+h.aviso : ""}`);
-        // si el montaje está esperando, él sigue solo; si no, se rehacen los Shorts que la esperaban
-        if(h.recogidas && !ocupado) await lanzar(["revoz"]);
-      }
-      leer();
-    } catch(e){ toast && toast(e.message); }
-    finally { setTrabajando(false); }
-  };
-  return (
-    <div style={{border:"1px solid var(--gold)",borderRadius:12,padding:"12px 14px",background:"var(--bg-2)",display:"flex",flexDirection:"column",gap:8}}>
-      <div style={{fontWeight:700,fontSize:14}}>🎙️ {v.pendientes.length} título{v.pendientes.length!==1?"s":""} esperando la voz de CapCut (Vivo Paladín){esperando ? " · el montaje está esperando" : ""}</div>
-      <div style={{fontSize:12.5,color:"var(--text-2)"}}>{v.pendientes.slice(0,6).map(t=>"«"+t+"»").join(" · ")}{v.pendientes.length>6?" …":""}</div>
-      <ol style={{fontSize:12.5,color:"var(--text-2)",margin:"0 0 0 18px",padding:0,lineHeight:1.6}}>
-        <li>Cierra CapCut y pulsa <b>Preparar en CapCut</b>.</li>
-        <li>Abre CapCut → proyecto <b>Clips RIVALS</b> → pestaña <b>VOCES IA</b> → selecciona todos los textos → <b>Texto a voz</b> → <b>Vivo Paladín</b>.</li>
-        <li>Cierra CapCut y pulsa <b>Recoger y rehacer los Shorts</b>.</li>
-      </ol>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        <button disabled={trabajando||(ocupado&&!esperando)} onClick={()=>orden("preparar")} style={boton(false)}>{v.capcut_abierto ? "Preparar en CapCut (ciérralo antes)" : "Preparar en CapCut"}</button>
-        <button disabled={trabajando||(ocupado&&!esperando)} onClick={()=>orden("recoger")} style={boton(true)}>{esperando ? "Recoger (el montaje sigue solo)" : "Recoger y rehacer los Shorts"}</button>
-        <button onClick={leer} style={boton(false)}>Actualizar</button>
-      </div>
-    </div>);
-}
+/* (28/10: fuera el panel de voces de CapCut; él: "no quiero que se use CapCut ya para nada" → sin voz en el título) */
 
 export function PanelTarea({ tarea, onCerrar }) {
   const [verLog, setVerLog] = useState(false);
@@ -185,7 +143,6 @@ function Estado() {
   return <div style={{display:"flex",gap:8,flexWrap:"wrap",fontSize:12}}>
     {chip(!!e.claude && e.token, e.claude ? (e.token ? "Claude listo · "+e.claude.replace(" (Claude Code)","") : "Claude sin sesión") : "Claude no encontrado")}
     {chip(e.disco_libre_gb>20, Math.round(e.disco_libre_gb)+" GB libres")}
-    {e.capcut_abierto && chip(false, "CapCut abierto: no se copiarán los timelines a CapCut")}
   </div>;
 }
 
@@ -434,13 +391,11 @@ export function ClipsView({ toast }) {
   const [q, setQ] = useState("");
   const [abierto, setAbierto] = useState(null);
   const [error, setError] = useState("");
-  const [aCapcut, setACapcut] = useState(()=>ls("rds_clon_capcut","1")==="1");
   const [conNota, setConNota] = useState(()=>ls("rds_clon_nota","1")==="1");
   const [orden, setOrden] = useState(()=>ls("rds_clon_orden","numero"));     // 24/10: o por potencial
   const [soloRec, setSoloRec] = useState(false);
   useEffect(()=>lsSet("rds_clon_orden",orden),[orden]);
   useEffect(()=>lsSet("rds_clon_filtro",filtro),[filtro]);
-  useEffect(()=>lsSet("rds_clon_capcut",aCapcut?"1":"0"),[aCapcut]);
   useEffect(()=>lsSet("rds_clon_nota",conNota?"1":"0"),[conNota]);
   const cargar = async () => {
     try { const ev = await consultar(["clips","--descartados"]); setClips(ev.find(e=>e.evento==="clips").clips); setError(""); }
@@ -522,7 +477,7 @@ export function ClipsView({ toast }) {
     if(!cuales.length) return;
     try {
       await lanzar(["montar", ...cuales.map(c=>c.carpeta), "--modelo", ls("rds_clon_modelo_montar","claude-opus-5-5"),
-        "--esperar-voces", ...(aCapcut?[]:["--sin-capcut"]), ...(conNota?[]:["--sin-ranking"])]);
+        ...(conNota?[]:["--sin-ranking"])]);
       setSel(new Set());
     } catch(e){ toast && toast(e.message); }
   };
@@ -610,11 +565,9 @@ export function ClipsView({ toast }) {
         </div>
       </div>
       <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12.5,color:"var(--text-2)"}}>
-        <label style={{display:"flex",gap:6,alignItems:"center",cursor:"pointer"}}><input type="checkbox" checked={aCapcut} onChange={e=>setACapcut(e.target.checked)}/> Copiar también el timeline a CapCut (para retocarlo si quieres)</label>
         <label style={{display:"flex",gap:6,alignItems:"center",cursor:"pointer"}}><input type="checkbox" checked={conNota} onChange={e=>setConNota(e.target.checked)}/> Ponerle su nota del Ranking</label>
       </div>
       <Estado/>
-      <VocesCapcut toast={toast} lanzar={lanzar} ocupado={ocupado} tarea={tarea}/>
       <PanelTarea tarea={tarea} onCerrar={cerrarTarea}/>
       {error && <div style={{padding:"14px 16px",border:"1px solid rgba(248,113,113,0.35)",borderRadius:12,color:"var(--red)",fontSize:13}}>{error}</div>}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
