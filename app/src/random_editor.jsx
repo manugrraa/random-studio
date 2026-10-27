@@ -86,6 +86,22 @@ const bi = (activo, peligro) => ({display:"inline-flex",alignItems:"center",just
 const bt = (activo) => ({fontSize:12.5,fontWeight:600,padding:"7px 11px",borderRadius:9,border:"1px solid var(--border)",
   color: activo?"#000":"var(--text-2)", background: activo?"var(--gold)":"transparent", cursor:"pointer", whiteSpace:"nowrap"});
 
+const ALTO_V = 88, ALTO_A = 50, FOTOS_V = 50;     // pista de vídeo: fotogramas arriba y su sonido abajo
+function Onda({ picos, c, anchoPx, alto, color }) {
+  if(!picos || !picos.length) return null;
+  const n = picos.length, a = Math.max(0, Math.floor(c.desde / (c.dur_src||1) * n)), b = Math.min(n, Math.ceil(c.hasta / (c.dur_src||1) * n));
+  let seg = picos.slice(a, Math.max(a+1, b));
+  const max = Math.max(8, Math.floor(anchoPx));
+  if(seg.length > max){                       // menos puntos que píxeles: el pico de cada tramo
+    const k = seg.length / max, r = [];
+    for(let i = 0; i < max; i++){ let m = 0; for(let j = Math.floor(i*k); j < Math.floor((i+1)*k); j++) m = Math.max(m, seg[j]||0); r.push(m); }
+    seg = r;
+  }
+  const h = alto / 2;
+  return <svg viewBox={`0 0 ${seg.length} ${alto}`} preserveAspectRatio="none" style={{position:"absolute",left:0,bottom:0,width:"100%",height:alto,pointerEvents:"none"}}>
+    <path d={seg.map((v,i)=>`M${i+0.5},${h - v*(h-1)}V${h + v*(h-1)}`).join("")} stroke={color} strokeWidth="1" vectorEffect="non-scaling-stroke"/></svg>;
+}
+
 const nuevoProyecto = () => ({ nombre:"", formato:"vertical", ancho:1080, alto:1920, fps:30, marcadores:[], pistas:[
   { id:"v1", tipo:"video", nombre:"Principal", clips:[] },
   { id:"a1", tipo:"audio", nombre:"Audio 1", clips:[] },
@@ -163,9 +179,9 @@ export function RandomEditorView({ toast }) {
   },[]);
   // guardado automático cada 45 s (si tiene nombre y hay cambios), como CapCut
   useEffect(()=>{ const iv = setInterval(()=>{ if(sucioRef.current && pRef.current.nombre.trim() && !pRef.current.clip) guardar(true); }, 45000); return ()=>clearInterval(iv); },[]);
-  // las ondas de los audios de la línea de tiempo
+  // las ondas del sonido de todo lo que hay en la línea de tiempo (27/10, él: "me guío mucho por las marcas del sonido")
   useEffect(()=>{
-    p.pistas.filter(pi=>pi.tipo==="audio").flatMap(pi=>pi.clips).forEach(c=>{
+    p.pistas.flatMap(pi=>pi.clips).forEach(c=>{
       if(ondas[c.ruta]!==undefined) return;
       setOndas(o=>({...o, [c.ruta]:null}));
       consultar(["redonda", c.ruta]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); setOndas(o=>({...o, [c.ruta]:h ? h.picos : []})); }).catch(()=>{});
@@ -661,7 +677,7 @@ export function RandomEditorView({ toast }) {
           {/* cabeceras de pista */}
           <div style={{width:70,flexShrink:0,borderRight:"1px solid var(--border)",paddingTop:24}}>
             {p.pistas.map(pi=>(
-              <div key={pi.id} style={{height:pi.tipo==="video"?64:46,marginTop:6,display:"flex",alignItems:"center",justifyContent:"center",gap:3}}>
+              <div key={pi.id} style={{height:pi.tipo==="video"?ALTO_V:ALTO_A,marginTop:6,display:"flex",alignItems:"center",justifyContent:"center",gap:3}}>
                 <span style={{fontSize:10.5,fontWeight:700,color:"var(--text-3)"}}>{pi.tipo==="video" ? "V1" : "A"+(p.pistas.filter(x=>x.tipo==="audio").indexOf(pi)+1)}</span>
                 <button onClick={()=>silenciarPista(pi.id)} style={{...bi(!!pi.muda),width:24,height:24}} title={pi.muda ? "Pista silenciada" : "Silenciar la pista"}>{pi.muda ? I.mudo : I.sonido}</button>
                 {pi.tipo==="audio" && !pi.clips.length && p.pistas.filter(x=>x.tipo==="audio").length>1 && <button onClick={()=>quitarPista(pi.id)} style={{...bi(false,true),width:20,height:24}} title="Quitar la pista vacía">×</button>}
@@ -676,25 +692,22 @@ export function RandomEditorView({ toast }) {
               </div>
               {p.pistas.map(pi=>(
                 <div key={pi.id} onMouseDown={arrastrarCabezal} onDragOver={e=>{ e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }} onDrop={e=>soltarEnPista(e, pi)}
-                  style={{position:"relative",height:pi.tipo==="video"?64:46,marginTop:6,borderRadius:6,background:"rgba(255,255,255,0.025)",opacity:pi.muda?0.55:1}}>
+                  style={{position:"relative",height:pi.tipo==="video"?ALTO_V:ALTO_A,marginTop:6,borderRadius:6,background:"rgba(255,255,255,0.025)",opacity:pi.muda?0.55:1}}>
                   {pi.clips.map(c=>{
-                    const elegido = sel.has(c.id), od = ondas[c.ruta];
-                    let onda = null;
-                    if(pi.tipo==="audio" && od && od.length){
-                      const a = Math.floor(c.desde / (c.dur_src||1) * od.length), b = Math.ceil(c.hasta / (c.dur_src||1) * od.length);
-                      const seg = od.slice(a, Math.max(a+1, b));
-                      onda = <svg viewBox={`0 0 ${seg.length} 30`} preserveAspectRatio="none" style={{position:"absolute",left:0,right:0,bottom:0,height:30,width:"100%"}}>
-                        <path d={seg.map((v,i)=>`M${i},${15-v*14}V${15+v*14}`).join("")} stroke="rgba(74,222,128,0.7)" strokeWidth="0.8"/></svg>;
-                    }
+                    const elegido = sel.has(c.id), od = ondas[c.ruta], anchoPx = largo(c)*zoom;
+                    const onda = pi.tipo==="video"
+                      ? <div style={{position:"absolute",left:0,right:0,bottom:0,height:ALTO_V-FOTOS_V-4,background:"rgba(8,12,20,0.88)",borderTop:"1px solid rgba(255,255,255,0.12)"}}>
+                          <Onda picos={od} c={c} anchoPx={anchoPx} alto={ALTO_V-FOTOS_V-4} color={c.silencio||pi.muda ? "rgba(160,160,160,0.5)" : "rgba(96,165,250,0.95)"}/></div>
+                      : <Onda picos={od} c={c} anchoPx={anchoPx} alto={ALTO_A-6} color={c.silencio||pi.muda ? "rgba(160,160,160,0.5)" : "rgba(74,222,128,0.9)"}/>;
                     return (
                       <div key={c.id} onMouseDown={e=>arrastrarClip(e, c, pi, "mover")} title={c.nombre}
                         style={{position:"absolute",left:c.en*zoom,width:Math.max(4,largo(c)*zoom),top:0,bottom:0,borderRadius:6,overflow:"hidden",cursor:"grab",
                           border:"2px solid "+(elegido?"var(--gold)":"rgba(255,255,255,0.15)"),
-                          background: pi.tipo==="video" ? (c.mini ? `#1b2a3a url("${fileUrl(c.mini)}") left center/auto 100% repeat-x` : "#1b2a3a") : (c.silencio?"#3a2a2a":"#1f3a2a"),
+                          background: pi.tipo==="video" ? (c.mini ? `#1b2a3a url("${fileUrl(c.mini)}") left top/auto ${FOTOS_V}px repeat-x` : "#1b2a3a") : (c.silencio?"#3a2a2a":"#1f3a2a"),
                           opacity: c.silencio ? 0.55 : 1}}>
                         {onda}
                         <div style={{position:"absolute",left:4,top:2,right:4,fontSize:10.5,fontWeight:700,color:"#fff",textShadow:"0 1px 2px #000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.nombre}</div>
-                        {pi.tipo==="video" && <div style={{position:"absolute",left:4,bottom:2,fontSize:9.5,color:"#ddd",textShadow:"0 1px 2px #000"}}>{corto(largo(c))}</div>}
+                        {pi.tipo==="video" && <div style={{position:"absolute",right:6,top:FOTOS_V-16,fontSize:9.5,color:"#ddd",textShadow:"0 1px 2px #000"}}>{corto(largo(c))}</div>}
                         <div onMouseDown={e=>arrastrarClip(e, c, pi, "izq")} style={{position:"absolute",left:0,top:0,bottom:0,width:7,cursor:"ew-resize",background:elegido?"rgba(212,175,55,0.65)":"transparent"}}/>
                         <div onMouseDown={e=>arrastrarClip(e, c, pi, "der")} style={{position:"absolute",right:0,top:0,bottom:0,width:7,cursor:"ew-resize",background:elegido?"rgba(212,175,55,0.65)":"transparent"}}/>
                       </div>);
