@@ -288,7 +288,7 @@ function AnadirARecopilacion({ c, recops, onAnadir, onCrear, ocupado }) {
     </div>);
 }
 
-function Detalle({ c, recops, onEditar, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, onCrearRecop, ocupado }) {
+function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, onCrearRecop, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
   const [tit, setTit] = useState(c.titulo_suyo||"");
@@ -311,6 +311,11 @@ function Detalle({ c, recops, onEditar, onCribar, onRenombrar, onCerrar, onNota,
         {c.videos.length>0 && <video key={c.videos[v]+(c.editados&&c.editados[archivoDe(c.videos[v])]?"e":"")} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>}
         {c.estado!=="montado" && onEditar && c.videos.length>0 && <button onClick={()=>onEditar(c, c.videos[v])} disabled={ocupado} title="Ábrelo en el RandomEditor (E)"
           style={{...boton(false),width:"100%",marginTop:8,padding:"8px 0",fontSize:12.5}}>✂ Editar {c.videos.length>1?"este momento":"el clip"}{c.editados&&c.editados[archivoDe(c.videos[v])]?" · ya editado":""}</button>}
+        {/* 28/10, él: "mandar al editor todos los clips de una recopilación, en el orden seleccionado, y que sea
+            nada más que meterle lo que falte" */}
+        {onEditarRecop && (c.videos.length>1 || (c.recopilacion_suya && c.videos.length>0)) && <button onClick={()=>onEditarRecop(c)} disabled={ocupado}
+          title="Abre el RandomEditor con todos los momentos seguidos en la pista principal, en tu orden (sin los que quitaste)"
+          style={{...boton(true),width:"100%",marginTop:8,padding:"8px 0",fontSize:12.5}}>🎬 Mandar todos al editor, en orden</button>}
         {(c.videos.length>1 || (c.recopilacion_suya && c.videos.length>0)) && <>
           <div style={{fontSize:11,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:.4,marginTop:10}}>Momentos de la recopilación · {c.videos.length-fuera.size} de {c.videos.length} entran{c.orden && c.orden.length ? " · orden tuyo" : ""}</div>
           <div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>
@@ -593,7 +598,8 @@ export function ClipsView({ toast }) {
         {elegidos.length<aprobados.length && <button onClick={()=>setSel(new Set(aprobados.map(c=>c.carpeta)))} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Elegir todos</button>}
         {elegidos.length>0 && <button onClick={()=>setSel(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Quitar selección</button>}
       </div>}
-      {det && <Detalle c={det} onCribar={cribar} onEditar={async (c, ruta)=>{ await soltarVideo(); abrirEnEditor({carpeta:c.carpeta, archivo:archivoDe(ruta)}); }} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
+      {det && <Detalle c={det} onCribar={cribar} onEditar={async (c, ruta)=>{ await soltarVideo(); abrirEnEditor({carpeta:c.carpeta, archivo:archivoDe(ruta)}); }}
+        onEditarRecop={async c=>{ await soltarVideo(); abrirEnEditor({recopilacion:c.carpeta}); }} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
         onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
         recops={recops.filter(r=>r.carpeta!==det.carpeta)} onAnadir={anadirA} onCrearRecop={(c, nombre, archivo, momento)=>crearRecop(nombre, c, archivo, momento)}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}

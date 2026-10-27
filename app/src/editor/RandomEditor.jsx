@@ -112,7 +112,7 @@ export function RandomEditor({ toast }) {
     consultar(["redbiblio"]).then(ev=>setBiblio(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
     consultar(["redfuentes"]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); if(h){ setFuentes(h.fuentes); setPresets({titulo:h.titulo, normal:h.normal}); } }).catch(()=>{});
     window.studioFS.redLista().then(r=>setProyectos(r.lista||[]));
-    const quitar = window.studioFS.onEditorPeticion && window.studioFS.onEditorPeticion(req=>{ if(req && req.carpeta) abrirClip(req.carpeta, req.archivo); });
+    const quitar = window.studioFS.onEditorPeticion && window.studioFS.onEditorPeticion(req=>{ if(req && req.recopilacion) abrirRecopilacion(req.recopilacion); else if(req && req.carpeta) abrirClip(req.carpeta, req.archivo); });
     window.studioFS.editorListo && window.studioFS.editorListo();
     return ()=>{ quitar && quitar(); };
   },[]);
@@ -326,6 +326,23 @@ export function RandomEditor({ toast }) {
     try { const ev = await consultar(["redabrirclip", carpeta, archivo]); cargarProyecto(ev.find(e=>e.evento==="hecho").proyecto); }
     catch(e){ toast(e.message); }
   };
+  // 28/10: una recopilación entera (cada momento seguido, en su orden) como proyecto nuevo, listo para
+  // meterle lo que falte. Si ya hay un proyecto suyo guardado, se pregunta cuál abrir
+  const abrirRecopilacion = async carpeta => {
+    if(sucio.current && !window.confirm("Hay cambios sin guardar. ¿Abrir la recopilación igualmente?")) return;
+    try {
+      const ev = await consultar(["redrecop", carpeta]); const pr = ev.find(e=>e.evento==="hecho").proyecto;
+      if(pr.existe && window.confirm(`Ya tienes un proyecto «${pr.nombre}».
+
+Aceptar: abrir ese proyecto (con lo que ya le pusiste).
+Cancelar: empezar de nuevo con los clips de la recopilación.`)){
+        const r = await window.studioFS.redAbrir(pr.nombre); if(!r.error){ cargarProyecto(r.proyecto); return; }
+      }
+      const { existe, ...limpio } = pr;
+      cargarProyecto(limpio); sucio.current = true; repintar(x=>x+1);
+      toast(`${limpio.pistas[0].clips.length} momentos en la pista principal, en tu orden`);
+    } catch(e){ toast(e.message); }
+  };
   const guardarCambios = async () => {
     const c = pRef.current.clip; if(!c) return;
     if(!v1 || !v1.clips.length){ toast("La pista principal está vacía: para quitarlo entero, descarta el clip en Clips"); return; }
@@ -453,7 +470,8 @@ export function RandomEditor({ toast }) {
       {tarea && <div style={{padding:"0 10px"}}><PanelTarea tarea={tarea} onCerrar={cerrarTarea}/></div>}
       {/* biblioteca · previsualización · propiedades */}
       <div className="rd-medio-fila">
-        <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}/>
+        <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
+          onMeterTodos={async r=>{ for(const m of r.clips) await meter(m, "video"); toast(`${r.clips.length} momentos al final de la principal, en tu orden`); }}/>
         <div className="rd-panel" style={{display:"flex",flexDirection:"column",minWidth:0,background:"#0b0b0b"}}>
           <div style={{position:"relative",flex:1,minHeight:0,display:"flex",alignItems:"stretch",justifyContent:"center",padding:10,gap:6}}>
             {verFps && <Fps vista={vista} jugando={jugando}/>}

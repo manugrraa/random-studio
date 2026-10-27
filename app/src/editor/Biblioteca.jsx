@@ -60,7 +60,7 @@ function Textos({ presets, onTexto }) {
     </div>));
 }
 
-export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto }) {
+export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos }) {
   const [pestana, setPestana] = useState(()=>{ try { return localStorage.getItem("red_pestana") || "clips"; } catch(e){ return "clips"; } });
   const [cat, setCat] = useState("");
   const [busca, setBusca] = useState("");
@@ -94,7 +94,10 @@ export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTex
         <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar…" className="rd-input" style={{flex:1,minWidth:0}}/>
         <button onClick={onArchivos} className="rd-ico" title="Meter archivos del disco (Ctrl+I)">{I.archivo}</button>
       </div>}
-      {recop && <button onClick={()=>setRecop(null)} className="rd-btn" style={{margin:"4px 8px",justifyContent:"flex-start"}} title="Volver a todos los clips">‹ {recop.n} · {recop.nombre}</button>}
+      {recop && <div style={{display:"flex",gap:6,margin:"4px 8px"}}>
+        <button onClick={()=>setRecop(null)} className="rd-btn" style={{flex:1,minWidth:0,justifyContent:"flex-start",overflow:"hidden"}} title="Volver a todos los clips">‹ {recop.n} · {recop.nombre}</button>
+        <button onClick={()=>onMeterTodos(recop)} className="rd-btn primario" title="Todos los momentos, seguidos y en tu orden, al final de la pista principal">Meter todos en orden</button>
+      </div>}
       {cats.length>0 && <div style={{display:"flex",gap:4,flexWrap:"wrap",padding:"4px 8px",maxHeight:96,overflowY:"auto"}}>
         <button onClick={()=>setCat("")} className={"rd-chip"+(!cat?" on":"")}>Todo</button>
         {cats.map(x=><button key={x} onClick={()=>setCat(x)} className={"rd-chip"+(cat===x?" on":"")}>{x} · {(lista||[]).filter(m=>m.categoria===x).length}</button>)}

@@ -349,7 +349,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "retencion", "aprender"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "retencion", "aprender"]);
 const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
@@ -519,7 +519,7 @@ ipcMain.handle("clon-elegir-carpeta", async () => {
 let editorWin = null, editorListo = false, editorPendiente = null, editorSucio = false;
 const ventanaEditorFile = () => path.join(dataDir(), "ventana_editor.json");
 function abrirEditor(req) {
-  const conClip = req && req.carpeta ? req : null;
+  const conClip = req && (req.carpeta || req.recopilacion) ? req : null;    // un clip, o una recopilación entera
   if (editorWin && !editorWin.isDestroyed()) {
     if (editorWin.isMinimized()) editorWin.restore();
     editorWin.show(); editorWin.focus();
@@ -615,7 +615,7 @@ function createWindow() {
       let mainWindow0 = BrowserWindow.getAllWindows()[0];   // (aquí «mainWindow» aún no se puede nombrar)
       if (process.env.STUDIO_EDITOR) {
         const [carpeta, archivo] = (process.env.STUDIO_EDITOR_CLIP || "").split("|");
-        mainWindow0 = abrirEditor(carpeta ? { carpeta, archivo } : null);
+        mainWindow0 = abrirEditor(process.env.STUDIO_EDITOR_RECOP ? { recopilacion: process.env.STUDIO_EDITOR_RECOP } : carpeta ? { carpeta, archivo } : null);
         await new Promise(r => mainWindow0.webContents.once("did-finish-load", r));
         await esperar(Number(process.env.STUDIO_ESPERA_EDITOR || 8000));
       }
