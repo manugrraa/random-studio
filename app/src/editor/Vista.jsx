@@ -1,5 +1,6 @@
 import React from "react";
 import { fin, volumenEn } from "./modelo";
+import { CapaTextos } from "./Textos";
 const { useEffect, useRef, forwardRef, useImperativeHandle } = React;
 
 /* RandomEditor · la previsualización. Dos reproductores de vídeo que se pasan el relevo: mientras
@@ -7,7 +8,7 @@ const { useEffect, useRef, forwardRef, useImperativeHandle } = React;
    (antes, en cada corte había que cargar el vídeo de cero). Los audios, uno por pista. */
 export const fileUrl = p => p ? "file:///" + p.replace(/\\/g,"/").split("/").map(encodeURIComponent).join("/").replace(/^([A-Za-z])%3A/,"$1:") : null;
 
-export const Vista = forwardRef(function Vista({ proyecto, guias, proxies }, ref) {
+export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto }, ref) {
   const A = useRef(null), B = useRef(null), activo = useRef(0);
   const auds = useRef({});
   const pRef = useRef(proyecto); pRef.current = proyecto;
@@ -108,6 +109,7 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies }, ref
     <div style={{position:"relative",height:"100%",aspectRatio:`${W}/${H}`,maxWidth:"100%",maxHeight:"100%",background:"#000",boxShadow:"0 0 0 1px rgba(255,255,255,0.06)"}}>
       <video ref={A} playsInline preload="auto" style={estiloV} onSeeked={alBuscar}/>
       <video ref={B} playsInline preload="auto" style={estiloV} onSeeked={alBuscar}/>
+      {reloj && <CapaTextos proyecto={proyecto} reloj={reloj} sel={sel} onElegir={onElegirTexto} onGesto={onGesto}/>}
       {guias && <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
         {/* el centro y lo que tapa la interfaz de YouTube Shorts (título abajo, botones a la derecha) */}
         <div style={{position:"absolute",left:"50%",top:0,bottom:0,borderLeft:"1px dashed rgba(255,255,255,0.35)"}}/>

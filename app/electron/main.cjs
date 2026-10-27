@@ -349,7 +349,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "retencion", "aprender"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "retencion", "aprender"]);
 const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
@@ -492,6 +492,13 @@ ipcMain.handle("red-lista", async () => {
     }).sort((a, b) => b.fecha - a.fecha);
     return { lista: l };
   } catch (x) { return { error: x.message }; }
+});
+// 28/10, él: "en el editor añade la opción de poder exportar como vídeo": a donde él elija
+ipcMain.handle("red-elegir-destino", async (e, nombre) => {
+  const def = path.join(CLON_DIR, "Shorts Listos", "RandomEditor", String(nombre || "Sin título").replace(/[<>:"/\\|?*]/g, "").trim() + ".mp4");
+  const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender) || undefined, { title: "Exportar vídeo", defaultPath: def,
+    filters: [{ name: "Vídeo MP4", extensions: ["mp4"] }] });
+  return r.canceled || !r.filePath ? null : r.filePath;
 });
 ipcMain.handle("red-elegir-archivos", async (e) => {
   const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender) || undefined, { properties: ["openFile", "multiSelections"], title: "Meter archivos en el RandomEditor",

@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 
-export const APP_VERSION = "3.14.3";
+export const APP_VERSION = "3.15.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.

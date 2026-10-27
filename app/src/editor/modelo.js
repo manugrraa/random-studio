@@ -29,15 +29,24 @@ export const cuantiza = (t, fps) => Math.round(t * fps) / fps;          // los c
 export const puntosDeCorte = p => [...new Set([0, ...p.pistas.flatMap(pi=>pi.clips.flatMap(c=>[c.en, fin(c)])), ...(p.marcadores||[])])].sort((a,b)=>a-b);
 
 export const nuevaPistaAudio = ps => ({ id:"a"+uid(), tipo:"audio", nombre:"Audio "+(ps.filter(x=>x.tipo==="audio").length+1), clips:[] });
+// 28/10: las pistas de TEXTO van ENCIMA de la principal (como en CapCut): la primera de la lista es la de arriba
+export const nuevaPistaTexto = ps => ({ id:"t"+uid(), tipo:"texto", nombre:"Texto "+(ps.filter(x=>x.tipo==="texto").length+1), clips:[] });
 
-// mete un clip de audio donde quepa (en la pista pedida, en otra libre o en una nueva)
-export function colocarAudio(ps, c, preferida) {
-  const libre = ps.find(x=>x.id===preferida && x.tipo==="audio" && !x.bloqueada && !solapa(x, c.en, largo(c)))
-    || ps.find(x=>x.tipo==="audio" && !x.bloqueada && !solapa(x, c.en, largo(c)));
+// mete un clip donde quepa (en la pista pedida, en otra libre del mismo tipo o en una nueva)
+export function colocar(ps, c, preferida, tipo="audio") {
+  const libre = ps.find(x=>x.id===preferida && x.tipo===tipo && !x.bloqueada && !solapa(x, c.en, largo(c)))
+    || ps.find(x=>x.tipo===tipo && !x.bloqueada && !solapa(x, c.en, largo(c)));
   if(libre) return ps.map(x=>x.id!==libre.id ? x : {...x, clips:[...x.clips, c]});
-  const n = nuevaPistaAudio(ps);
-  return [...ps, {...n, clips:[c]}];
+  if(tipo === "texto"){ const n = nuevaPistaTexto(ps); const i = ps.findIndex(x=>x.tipo==="texto"); return i < 0 ? [{...n, clips:[c]}, ...ps] : [...ps.slice(0, i), {...n, clips:[c]}, ...ps.slice(i)]; }
+  return [...ps, {...nuevaPistaAudio(ps), clips:[c]}];
 }
+export const colocarAudio = (ps, c, preferida) => colocar(ps, c, preferida, "audio");
+
+/* un TEXTO de la línea de tiempo. `desde` empieza en 1000 (virtual) para que su principio se pueda
+   alargar hacia atrás igual que el final; lo que dura es hasta - desde */
+export const TEXTO0 = 1000;
+export const nuevoTexto = (texto, estilo, en, dur, plantilla) => ({ id:uid(), tipo:"texto", texto, nombre:texto, estilo:{...estilo},
+  plantilla: plantilla || null, desde:TEXTO0, hasta:TEXTO0 + dur, dur_src:1e9, en, vol:1, silencio:false });
 
 // dividir en `t` los clips con esos ids
 export const dividir = (p, ids, t) => ({...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.flatMap(c=>{
@@ -69,7 +78,7 @@ export function pegar(p, cs, t, trasCadaUno) {
       ps = ps.map(x=>x.id!=="v1" ? x : {...x, clips:[...x.clips, n]});
     } else {
       n.en = trasCadaUno ? fin(c) : t + (c.en - base);
-      ps = colocarAudio(ps, n, c.pista);
+      ps = colocar(ps, n, c.pista, (p.pistas.find(x=>x.id===c.pista) || {}).tipo || (n.tipo === "texto" ? "texto" : "audio"));
     }
   });
   return [{...p, pistas: ps}, nuevos];

@@ -12,9 +12,9 @@ const { useEffect, useLayoutEffect, useRef, useState, useMemo, memo, useCallback
      barra de abajo (arrastrar = desplazar; sus bordes = acercar/alejar, como Premiere), rueda,
      Re Pág / Av Pág, botón central del ratón arrastrando, y el cabezal nunca se queda fuera de la vista */
 export const PAD = 16, ALTO_REGLA = 30;
-export const ALTO = { video: 100, audio: 58 };
+export const ALTO = { video: 100, audio: 58, texto: 34 };
 const ALTO_FOTO = 58, CABECERA = 96, ALTO_BARRA = 16;
-const COL = { video:"#1d3557", audio:"#183a2b", sel:"#D4AF37", borde:"rgba(255,255,255,0.16)" };
+const COL = { video:"#1d3557", audio:"#183a2b", texto:"#4c1d95", sel:"#D4AF37", borde:"rgba(255,255,255,0.16)" };
 const ZMIN = 0.5, ZMAX = 2000;
 
 function pasoRegla(zoom, fps) {
@@ -29,8 +29,8 @@ const Clip = memo(function Clip({ c, pista, zoom, elegido, cuchilla, onDown, onM
       style={{position:"absolute",left:PAD + c.en*zoom,top:0,width:w,height:h,borderRadius:5,boxSizing:"border-box",
         border:`2px solid ${elegido ? COL.sel : COL.borde}`, boxShadow: elegido ? "0 0 0 1px rgba(212,175,55,0.35), 0 0 12px rgba(212,175,55,0.25)" : "none",
         cursor: cuchilla ? "crosshair" : "grab"}}>
-      {w > 30 && <div style={{position:"absolute",left:5,top:3,right:5,fontSize:10.5,fontWeight:700,color:"#fff",textShadow:"0 1px 3px #000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",pointerEvents:"none"}}>
-        {c.silencio ? "🔇 " : ""}{c.nombre}</div>}
+      {w > 30 && <div style={{position:"absolute",left:5,top:pista.tipo==="texto"?8:3,right:5,fontSize:10.5,fontWeight:700,color:"#fff",textShadow:"0 1px 3px #000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",pointerEvents:"none"}}>
+        {c.tipo === "texto" ? "T  " + (c.texto || "").split("\n").join(" ") :(c.silencio ? "🔇 " : "") + c.nombre}</div>}
       {w > 60 && pista.tipo==="video" && <div style={{position:"absolute",right:6,top:ALTO_FOTO-15,fontSize:9.5,fontWeight:700,color:"#eee",textShadow:"0 1px 3px #000",pointerEvents:"none"}}>{corto(largo(c))}</div>}
       {!cuchilla && <>
         <div onMouseDown={e=>onDown(e, c, pista, "izq")} title="Recortar el principio"
@@ -173,7 +173,8 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         const a = Math.max(0, x0), b = Math.min(ancho, x1);
         if(b <= a) return;
         g.save(); g.beginPath(); g.rect(a, 0, b - a, H); g.clip();
-        g.fillStyle = pi.tipo==="video" ? COL.video : COL.audio; g.fillRect(a, 0, b - a, H);
+        g.fillStyle = COL[pi.tipo] || COL.audio; g.fillRect(a, 0, b - a, H);
+        if(pi.tipo === "texto"){ g.restore(); return; }
         const gris = c.silencio || pi.muda;
         const tsrc = x => c.desde + ((x + scroll - PAD) / zoom - c.en);       // el segundo del archivo en esa x
         if(pi.tipo==="video"){
@@ -293,7 +294,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       encajado.current = null;
       const dt = (ev.clientX - x0 + caja.current.scrollLeft - s0) / zRef.current;
       let destino = pista.id;
-      if(modo === "mover" && pista.tipo === "audio"){ const f = pistaBajo(ev.clientY); if(f){ const pd = inicial.pistas.find(x=>x.id===f[0]); if(pd && pd.tipo==="audio" && !pd.bloqueada) destino = pd.id; } }
+      if(modo === "mover" && pista.tipo !== "video"){ const f = pistaBajo(ev.clientY); if(f){ const pd = inicial.pistas.find(x=>x.id===f[0]); if(pd && pd.tipo===pista.tipo && !pd.bloqueada) destino = pd.id; } }
       let txt = "";
       const ps = inicial.pistas.map(pi=>{
         if(pi.id !== pista.id && pi.id !== destino) return pi;
@@ -397,10 +398,10 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           <div style={{height:ALTO_REGLA,borderBottom:"1px solid #2a2a2a"}}/>
           {proyecto.pistas.map(pi=>(
             <div key={pi.id} style={{height:ALTO[pi.tipo],marginTop:6,display:"flex",alignItems:"center",gap:4,padding:"0 6px"}}>
-              <span style={{fontSize:10.5,fontWeight:800,color:"#888",width:22}}>{pi.tipo==="video" ? "V1" : "A"+(proyecto.pistas.filter(x=>x.tipo==="audio").indexOf(pi)+1)}</span>
+              <span style={{fontSize:10.5,fontWeight:800,color:pi.tipo==="texto"?"#a78bfa":"#888",width:22}}>{pi.tipo==="video" ? "V1" : pi.tipo==="texto" ? "T"+(proyecto.pistas.filter(x=>x.tipo==="texto").indexOf(pi)+1) : "A"+(proyecto.pistas.filter(x=>x.tipo==="audio").indexOf(pi)+1)}</span>
               <button onClick={()=>onPista("muda", pi.id)} title={pi.muda ? "Pista silenciada" : "Silenciar la pista"} className={"rd-ico"+(pi.muda?" on":"")} style={{width:24,height:24}}>{pi.muda ? "🔇" : "🔊"}</button>
               <button onClick={()=>onPista("bloqueada", pi.id)} title={pi.bloqueada ? "Pista bloqueada" : "Bloquear la pista"} className={"rd-ico"+(pi.bloqueada?" on":"")} style={{width:24,height:24}}>{pi.bloqueada ? "🔒" : "🔓"}</button>
-              {pi.tipo==="audio" && !pi.clips.length && proyecto.pistas.filter(x=>x.tipo==="audio").length>1 &&
+              {pi.tipo!=="video" && !pi.clips.length && (pi.tipo==="texto" || proyecto.pistas.filter(x=>x.tipo==="audio").length>1) &&
                 <button onClick={()=>onPista("quitar", pi.id)} title="Quitar la pista vacía" className="rd-ico" style={{width:20,height:24}}>×</button>}
             </div>))}
         </div>

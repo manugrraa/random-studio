@@ -597,8 +597,9 @@ export function ClipsView({ toast }) {
         onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
         recops={recops.filter(r=>r.carpeta!==det.carpeta)} onAnadir={anadirA} onCrearRecop={(c, nombre, archivo, momento)=>crearRecop(nombre, c, archivo, momento)}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>
-        {lista.map(c=>(
+      {/* 28/10, él: "si hay recopilaciones deben aparecer en la parte de arriba, como carpetas" */}
+      {(()=>{
+        const tarjeta = c => (
           <div key={c.carpeta} style={{position:"relative",border:"1px solid "+(abierto===c.carpeta?"var(--gold)":sel.has(c.carpeta)&&c.estado==="aprobado"?"#4ade80":"var(--border)"),borderRadius:12,background:"var(--bg-2)",overflow:"hidden",display:"flex",flexDirection:"column"}}>
             {c.estado==="aprobado" && <label title="Elegirlo para montar" onClick={e=>e.stopPropagation()} style={{position:"absolute",right:6,top:6,zIndex:2,width:24,height:24,borderRadius:6,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
               <input type="checkbox" checked={sel.has(c.carpeta)} onChange={()=>elegir(c)} style={{cursor:"pointer",accentColor:"#4ade80"}}/>
@@ -627,8 +628,16 @@ export function ClipsView({ toast }) {
               </div>
             )}
           </div>
-        ))}
-      </div>
+        );
+        const recs = lista.filter(c=>c.recopilacion_suya), resto = filtro==="recop" ? [] : lista.filter(c=>!c.recopilacion_suya);
+        const rejilla = xs => <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:10}}>{xs.map(tarjeta)}</div>;
+        const titulo = t => <div style={{fontSize:12,fontWeight:800,letterSpacing:0.5,color:"var(--text-3)",marginTop:4}}>{t}</div>;
+        return <>
+          {recs.length>0 && <>{titulo(`📁 RECOPILACIONES · ${recs.length}`)}{rejilla(recs)}</>}
+          {recs.length>0 && resto.length>0 && titulo(`CLIPS · ${resto.length}`)}
+          {resto.length>0 && rejilla(resto)}
+        </>;
+      })()}
       {clips && !lista.length && <div style={{padding:"40px 20px",textAlign:"center",color:"var(--text-3)",border:"1px dashed var(--border)",borderRadius:14,fontSize:13}}>No hay clips en «{(ESTADOS.find(e=>e[0]===filtro)||[0,filtro])[1]}».</div>}
     </div>
   );

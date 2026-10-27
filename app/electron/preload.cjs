@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   redLista: () => ipcRenderer.invoke("red-lista"),
   redGuardarTmp: (p) => ipcRenderer.invoke("red-guardar-tmp", p),
   redElegirArchivos: () => ipcRenderer.invoke("red-elegir-archivos"),
+  redElegirDestino: (nombre) => ipcRenderer.invoke("red-elegir-destino", nombre),
   // v3.14: el RandomEditor en su propia ventana
   abrirEditor: (req) => ipcRenderer.invoke("editor-abrir", req || {}),
   editorListo: () => ipcRenderer.invoke("editor-listo"),

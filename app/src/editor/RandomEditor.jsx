@@ -8,6 +8,7 @@ import { LineaTiempo } from "./LineaTiempo";
 import { Biblioteca } from "./Biblioteca";
 import { I } from "./iconos";
 import { Fps, Medidor, AjustesEditor, useAjuste } from "./Rendimiento";
+import { InspectorTexto } from "./Textos";
 export { ATAJOS_EDITOR } from "./atajos";
 const { useState, useEffect, useRef, useMemo } = React;
 const { fin, largo, tc, tcLargo } = M;
@@ -77,6 +78,10 @@ export function RandomEditor({ toast }) {
   const [verFps, setVerFps] = useAjuste("red_fps", true);
   const [verMedidor, setVerMedidor] = useAjuste("red_medidor", true);
   const [ajustesAb, setAjustesAb] = useState(false);
+  // 28/10: los textos (las fuentes instaladas y sus dos estilos: el de los títulos y el normal)
+  const [fuentes, setFuentes] = useState(null);
+  const [presets, setPresets] = useState(null);
+  const [menuExp, setMenuExp] = useState(false);
   const colaProxy = useRef({ pedidos:new Set(), cola:[], activos:0 });
   const pedidos = useRef(new Set());
   const est = useRef({}); est.current = { sel, porta, zoom, iman, herramienta };
@@ -90,9 +95,10 @@ export function RandomEditor({ toast }) {
       vista.current && vista.current.sincronizar(reloj.t, 0);
       return;
     }
-    if(!ev.codigo) toast("Exportado: lo tienes en Shorts Listos/RandomEditor (o en Clips, si lo mandaste como clip nuevo)");
+    if(!ev.codigo){ const f = (tareaClonRef.current && tareaClonRef.current.eventos || []).find(e=>e.evento==="fin"); toast("Exportado" + (f && f.salida ? ": " + f.salida : "")); }
   });
 
+  const tareaClonRef = useRef(null); tareaClonRef.current = tareaClon;
   const tarea = tareaClon && ["exportar","guardarclip"].includes(tareaClon.args[0]) ? tareaClon : null;
   const dur = M.total(p);
   const v1 = p.pistas.find(x=>x.id==="v1");
@@ -104,6 +110,7 @@ export function RandomEditor({ toast }) {
   useEffect(()=>{
     consultar(["redmedios"]).then(ev=>setMedios(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
     consultar(["redbiblio"]).then(ev=>setBiblio(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
+    consultar(["redfuentes"]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); if(h){ setFuentes(h.fuentes); setPresets({titulo:h.titulo, normal:h.normal}); } }).catch(()=>{});
     window.studioFS.redLista().then(r=>setProyectos(r.lista||[]));
     const quitar = window.studioFS.onEditorPeticion && window.studioFS.onEditorPeticion(req=>{ if(req && req.carpeta) abrirClip(req.carpeta, req.archivo); });
     window.studioFS.editorListo && window.studioFS.editorListo();
@@ -121,7 +128,7 @@ export function RandomEditor({ toast }) {
   // fotogramas y ondas de lo que hay en la línea de tiempo
   useEffect(()=>{
     p.pistas.forEach(pi=>pi.clips.forEach(c=>{
-      if(pedidos.current.has(c.ruta)) return;
+      if(!c.ruta || pedidos.current.has(c.ruta)) return;
       pedidos.current.add(c.ruta);
       consultar(["redonda", c.ruta]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); setOndas(o=>({...o, [c.ruta]: h ? h.picos : []})); }).catch(()=>{});
       if(pi.tipo==="video") consultar(["redtira", c.ruta]).then(ev=>{
@@ -201,6 +208,31 @@ export function RandomEditor({ toast }) {
       cambiar(prev=>({...prev, pistas: M.colocarAudio(prev.pistas, {...c, en: en==null ? reloj.t : Math.max(0, en)}, pistaId)}));
     }
   };
+  // 28/10: meter un texto (el de los títulos dura todo lo que hay; el normal, 3 s) en el cabezal
+  const meterTexto = (cual, en, pistaId) => {
+    if(!presets){ toast("Cargando los estilos de texto…"); return; }
+    const titulo = cual === "titulo";
+    const W = pRef.current.ancho || 1080, H = pRef.current.alto || 1920;
+    const estilo = {...(titulo ? presets.titulo : presets.normal), x: W / 2, ...(titulo && H > W ? {} : {y: H / 2})};
+    const t0 = M.cuantiza(en == null ? reloj.t : en, fps);
+    const tot = M.total(pRef.current);
+    const dur = titulo && tot - t0 > 1 ? tot - t0 : 3;
+    const c = M.nuevoTexto(titulo ? "Título del Short" : "Texto", estilo, t0, dur, titulo ? "titulo" : null);
+    cambiar(q=>({...q, pistas: M.colocar(q.pistas, c, pistaId, "texto")}));
+    setSel(new Set([c.id]));
+    setTimeout(()=>{ const ta = document.querySelector(".rd-insp textarea"); if(ta){ ta.focus(); ta.select(); } }, 80);
+  };
+  const textosElegidos = () => todos.filter(c=>est.current.sel.has(c.id) && c.tipo === "texto");
+  const cambiarEstilo = (patch, gesto) => {
+    const ids = new Set(textosElegidos().map(c=>c.id)); if(!ids.size) return;
+    const f = q => ({...q, pistas: q.pistas.map(pi=>pi.tipo!=="texto" ? pi : {...pi, clips: pi.clips.map(c=>ids.has(c.id) ? {...c, estilo:{...c.estilo, ...patch}} : c)})});
+    if(gesto) alGesto("durante", f(pRef.current)); else cambiar(f);
+  };
+  const cambiarTexto = v => {
+    const ids = new Set(textosElegidos().map(c=>c.id)); if(!ids.size) return;
+    if(!gesto.current) alGesto("inicio");
+    alGesto("durante", {...pRef.current, pistas: pRef.current.pistas.map(pi=>pi.tipo!=="texto" ? pi : {...pi, clips: pi.clips.map(c=>ids.has(c.id) ? {...c, texto:v, nombre:v.split("\n")[0] || "Texto"} : c)})});
+  };
   const meterArchivos = async () => {
     for(const r of await window.studioFS.redElegirArchivos()){
       try { const ev = await consultar(["redinfo", r]); const a = (ev.find(e=>e.evento==="hecho")||{}).archivos[0];
@@ -275,9 +307,19 @@ export function RandomEditor({ toast }) {
   };
   const nuevo = () => { if(sucio.current && !window.confirm("Hay cambios sin guardar. ¿Empezar uno nuevo?")) return; cargarProyecto(M.nuevoProyecto()); };
   const exportar = async como => {
+    setMenuExp(false);
     if(!v1 || !v1.clips.length){ toast("La pista principal está vacía"); return; }
-    const ruta = await guardar(); if(!ruta) return;
-    try { await lanzar(["exportar", ruta, como, ...(como==="clip" ? [pRef.current.nombre] : [])]); } catch(e){ toast(e.message); }
+    let destino = null;
+    if(como === "ruta"){
+      destino = await window.studioFS.redElegirDestino((pRef.current.nombre || "Sin título").replace(/^\d+ - /, ""));
+      if(!destino) return;
+    }
+    // (con un clip abierto, o sin nombre, el proyecto va a un temporal: no se guarda en la lista)
+    let ruta;
+    if(pRef.current.clip || !pRef.current.nombre.trim()){
+      const r = await window.studioFS.redGuardarTmp({...pRef.current, nombre: pRef.current.nombre.trim() || "Sin título"}); if(r.error){ toast(r.error); return; } ruta = r.ruta;
+    } else { ruta = await guardar(); if(!ruta) return; }
+    try { await lanzar(["exportar", ruta, como, ...(como==="clip" ? [pRef.current.nombre] : como==="ruta" ? [destino] : [])]); } catch(e){ toast(e.message); }
   };
   const abrirClip = async (carpeta, archivo) => {
     if(sucio.current && !window.confirm("Hay cambios sin guardar. ¿Abrir el clip igualmente?")) return;
@@ -324,8 +366,10 @@ export function RandomEditor({ toast }) {
       else if(ctrl && K==="d"){ ok(); duplicar(); }
       else if(ctrl && K==="a"){ ok(); setSel(new Set(todos.map(c=>c.id))); }
       else if(ctrl && K==="s"){ ok(); pRef.current.clip ? guardarCambios() : guardar(); }
+      else if(ctrl && e.shiftKey && K==="e"){ ok(); exportar("ruta"); }
       else if(ctrl && K==="e"){ ok(); exportar("listos"); }
       else if(ctrl && K==="i"){ ok(); meterArchivos(); }
+      else if(ctrl && K==="t"){ ok(); meterTexto("normal"); }
       else if(ctrl && (k==="+"||k==="=")){ ok(); setZoom(z=>Math.min(2000, z*1.4)); }
       else if(ctrl && (k==="-"||k==="_")){ ok(); setZoom(z=>Math.max(0.5, z/1.4)); }
       else if(ctrl && k==="ArrowLeft"){ ok(); ir([...puntos].reverse().find(x=>x < t - 0.01) ?? 0); }
@@ -361,7 +405,8 @@ export function RandomEditor({ toast }) {
   const ocupado = !!(tarea && !tarea.cerrada);
   const elegidos = todos.filter(c=>sel.has(c.id));
   const uno = elegidos.length === 1 ? elegidos[0] : null;
-  const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista}/>;
+  const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista} reloj={reloj} sel={sel}
+    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto}/>;
   const menuEl = menu && createPortal(
     <div onMouseDown={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:2000}}>
       <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:Math.min(menu.x, window.innerWidth-230), top:Math.min(menu.y, window.innerHeight-300)}}>
@@ -391,18 +436,24 @@ export function RandomEditor({ toast }) {
         <span style={{flex:1}}/>
         <button onClick={()=>setAjustesAb(x=>!x)} className={"rd-ico"+(ajustesAb?" on":"")} title="Rendimiento, proxies y contador de FPS">{I.ajustes}</button>
         <button onClick={quitarAire} className="rd-btn" title="Quita los silencios largos de la pista principal (Ctrl+Z para deshacer)">{I.aire} Quitar el aire</button>
-        {p.clip ? <>
-          <button onClick={volverAlOriginal} disabled={ocupado} className="rd-btn">Volver al original</button>
-          <button onClick={guardarCambios} disabled={ocupado} className="rd-btn primario" title="Ctrl+S · rehace el clip con estos cambios, en su sitio">Guardar cambios</button>
-        </> : <>
-          <button onClick={()=>exportar("clip")} disabled={ocupado} className="rd-btn" title="Como clip recortado NUEVO para montarlo con el clon">Exportar como clip nuevo</button>
-          <button onClick={()=>exportar("listos")} disabled={ocupado} className="rd-btn primario" title="Ctrl+E · a Shorts Listos/RandomEditor">Exportar</button>
-        </>}
+        {p.clip && <button onClick={volverAlOriginal} disabled={ocupado} className="rd-btn">Volver al original</button>}
+        <div style={{position:"relative",display:"flex"}}>
+          <button onClick={()=>exportar("listos")} disabled={ocupado} className={"rd-btn"+(p.clip ? "" : " primario")} style={{borderTopRightRadius:0,borderBottomRightRadius:0}}
+            title="Ctrl+E · como vídeo, a Shorts Listos/RandomEditor">{I.exportar} Exportar vídeo</button>
+          <button onClick={()=>setMenuExp(x=>!x)} disabled={ocupado} className={"rd-btn"+(p.clip ? "" : " primario")} style={{borderTopLeftRadius:0,borderBottomLeftRadius:0,borderLeft:"1px solid rgba(0,0,0,0.25)",padding:"6px 7px"}} title="Más formas de exportar">▾</button>
+          {menuExp && createPortal(<div onMouseDown={()=>setMenuExp(false)} style={{position:"fixed",inset:0,zIndex:2000}}>
+            <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{right:p.clip ? 150 : 12,top:44}}>
+              <button onClick={()=>exportar("listos")}><span>Exportar vídeo a Shorts Listos</span><kbd>Ctrl+E</kbd></button>
+              <button onClick={()=>exportar("ruta")}><span>Exportar vídeo en…</span><kbd>Ctrl+Shift+E</kbd></button>
+              <button onClick={()=>exportar("clip")}><span>Exportar como clip recortado nuevo</span><kbd></kbd></button>
+            </div></div>, document.body)}
+        </div>
+        {p.clip && <button onClick={guardarCambios} disabled={ocupado} className="rd-btn primario" title="Ctrl+S · rehace el clip con estos cambios, en su sitio">Guardar cambios</button>}
       </div>
       {tarea && <div style={{padding:"0 10px"}}><PanelTarea tarea={tarea} onCerrar={cerrarTarea}/></div>}
       {/* biblioteca · previsualización · propiedades */}
       <div className="rd-medio-fila">
-        <Biblioteca medios={medios} biblio={biblio} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos}/>
+        <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}/>
         <div className="rd-panel" style={{display:"flex",flexDirection:"column",minWidth:0,background:"#0b0b0b"}}>
           <div style={{position:"relative",flex:1,minHeight:0,display:"flex",alignItems:"stretch",justifyContent:"center",padding:10,gap:6}}>
             {verFps && <Fps vista={vista} jugando={jugando}/>}
@@ -427,15 +478,16 @@ export function RandomEditor({ toast }) {
             <button onClick={()=>setCompleta(true)} className="rd-ico" title="Pantalla completa (Ctrl+Shift+F)">{I.completa}</button>
           </div>
         </div>
-        <div className="rd-panel" style={{padding:12,display:"flex",flexDirection:"column",gap:10,fontSize:12.5,overflowY:"auto"}}>
+        <div className="rd-panel rd-insp" style={{padding:12,display:"flex",flexDirection:"column",gap:10,fontSize:12.5,overflowY:"auto"}}>
           <b style={{fontSize:13}}>{elegidos.length ? (uno ? uno.nombre : `${elegidos.length} elegidos`) : "Propiedades"}</b>
           {!elegidos.length && <div style={{color:"#888",lineHeight:1.6}}>Elige un clip para ver y cambiar sus propiedades.<br/>Todos los atajos, en Configuración del Studio.</div>}
+          {uno && uno.tipo === "texto" && <InspectorTexto c={uno} fuentes={fuentes} presets={presets} alGesto={alGesto} cambiarEstilo={cambiarEstilo} cambiarTexto={cambiarTexto} W={p.ancho} H={p.alto}/>}
           {uno && <div style={{color:"#aaa",lineHeight:1.7,fontFamily:"ui-monospace, Consolas, monospace",fontSize:11.5}}>
-            <div>Archivo · {tc(uno.desde, fps)} → {tc(uno.hasta, fps)}</div>
+            {uno.tipo !== "texto" && <div>Archivo · {tc(uno.desde, fps)} → {tc(uno.hasta, fps)}</div>}
             <div>Línea · {tc(uno.en, fps)} → {tc(fin(uno), fps)}</div>
             <div>Dura · {tc(largo(uno), fps)}</div>
           </div>}
-          {elegidos.length>0 && <>
+          {elegidos.length>0 && !elegidos.every(c=>c.tipo==="texto") && <>
             {[["Volumen","vol",0,2,0.01,v=>Math.round(v*100)+"%"],["Fundido de entrada","fade_in",0,3,0.05,v=>v.toFixed(2)+" s"],["Fundido de salida","fade_out",0,3,0.05,v=>v.toFixed(2)+" s"]].map(([n,campo,a,b,st,fmt])=>{
               const v = elegidos[0][campo] ?? (campo==="vol" ? 1 : 0);
               return <label key={campo} style={{display:"flex",flexDirection:"column",gap:4}}><span style={{display:"flex",justifyContent:"space-between"}}>{n}<span style={{color:"#999"}}>{fmt(v)}</span></span>
@@ -483,7 +535,7 @@ export function RandomEditor({ toast }) {
         <LineaTiempo proyecto={p} zoom={zoom} setZoom={setZoom} sel={sel} setSel={setSel} herramienta={herramienta} iman={iman}
           reloj={reloj} jugando={jugandoRef} tiras={tiras} ondas={ondas}
           onIr={t=>{ setJugando(0); ir(t); }} onGesto={alGesto} onDividirEn={dividirEn}
-          onSoltarMedio={(m, pi, t)=>meter(m, pi.tipo==="video" ? "video" : "audio", t, pi.id)}
+          onSoltarMedio={(m, pi, t)=>m.texto ? meterTexto(m.texto, t, pi.tipo==="texto" ? pi.id : null) : meter(m, pi.tipo==="video" ? "video" : "audio", t, pi.id)}
           onMenu={(e, c, pi)=>{ e.preventDefault(); if(!sel.has(c.id)) setSel(new Set([c.id])); setMenu({x:e.clientX, y:e.clientY}); }}
           onPista={accionPista}/>
       </div>
@@ -525,5 +577,7 @@ const CSS = `
 .rd-menu button { display:flex; justify-content:space-between; gap:16px; width:100%; padding:7px 10px; border-radius:5px; font-size:12.5px; color:#e5e5e5; background:transparent; border:0; cursor:pointer; text-align:left; }
 .rd-menu button:hover { background:#2a2a2a; }
 .rd-menu kbd { font-size:11px; color:#888; font-family:ui-monospace, Consolas, monospace; }
+.rd-fuente { display:block; width:100%; text-align:left; padding:5px 9px; border:0; cursor:pointer; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.rd-fuente:hover { background:#1f1f1f !important; }
 .rd-app input[type=range] { accent-color: var(--gold); }
 `;
