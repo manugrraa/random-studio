@@ -4,6 +4,8 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, nativeTheme, Menu } = require("electron");
 const fs = require("fs");
 const path = require("path");
+// el icono de las ventanas (y de la barra de tareas); va dentro del paquete (build.files)
+const ICONO = path.join(__dirname, "..", "build", "icon.png");
 const https = require("https");
 
 app.setAppUserModelId("com.rderandom.studio");
@@ -124,7 +126,7 @@ ipcMain.on("studio-clear", () => {
 ipcMain.handle("studio-oauth", (ev, url, redirect, opts) => new Promise((resolve) => {
   const silent = !!(opts && opts.silent);
   let win = new BrowserWindow({
-    width: 540, height: 680,
+    width: 540, height: 680, icon: ICONO,
     show: false,
     parent: mainWindow || undefined,
     autoHideMenuBar: true,
@@ -530,7 +532,7 @@ function abrirEditor(req) {
   editorListo = false; editorPendiente = conClip; editorSucio = false;
   editorWin = new BrowserWindow({
     width: v.width || 1600, height: v.height || 960, x: v.x, y: v.y, minWidth: 1100, minHeight: 680,
-    backgroundColor: "#0e0e0e", title: "RandomEditor", show: false, autoHideMenuBar: true,
+    backgroundColor: "#0e0e0e", title: "RandomEditor", show: false, autoHideMenuBar: true, icon: ICONO,
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false,
       backgroundThrottling: !process.env.STUDIO_CAPTURA }
   });
@@ -596,7 +598,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: v.width || 1440, height: v.height || 900, x: v.x, y: v.y,
     minWidth: 900, minHeight: 600,
-    backgroundColor: "#000000",
+    backgroundColor: "#000000", icon: ICONO,
     title: "RandomStudio",
     show: !process.env.STUDIO_CAPTURA,
     autoHideMenuBar: true,

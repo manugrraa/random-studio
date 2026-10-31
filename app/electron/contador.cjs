@@ -84,6 +84,7 @@ async function aplicar() {
 function abrir() {
   if (win && !win.isDestroyed()) { win.show(); return win; }
   win = new BrowserWindow({ width: 560, height: 300, title: "Contador de suscriptores", backgroundColor: "#FF00FF", autoHideMenuBar: true,
+    icon: path.join(__dirname, "..", "build", "icon.png"),
     show: !process.env.STUDIO_CAPTURA,
     webPreferences: { partition: "persist:contador-youtube", contextIsolation: true, nodeIntegration: false, sandbox: true } });
   // (Google no deja iniciar sesión en un navegador que se presenta como Electron: se presenta como Chrome)
