@@ -151,8 +151,8 @@ export const YT_SCOPES = [
   "https://www.googleapis.com/auth/youtube",
   "https://www.googleapis.com/auth/youtube.force-ssl",
   "https://www.googleapis.com/auth/drive.readonly",
-  // v3.30: subir los Shorts a tu Drive (solo ve y toca lo que sube la propia app)
-  "https://www.googleapis.com/auth/drive.file",
+  // OJO: drive.file NO puede ir aquí: Google no deja pedirlo junto a drive.readonly («cannot be requested together»)
+  // y bloquea el inicio de sesión entero. Drive para subir se conecta aparte (driveConectar, más abajo).
   // Analíticas (visitas e ingresos) para el panel de Objetivos
   "https://www.googleapis.com/auth/yt-analytics.readonly",
   "https://www.googleapis.com/auth/yt-analytics-monetary.readonly"
@@ -227,6 +227,41 @@ export async function ytExchangeCode(code){
   const prev = ytGetTokens() || {};
   ytSaveTokens({ ...t, refresh_token: t.refresh_token || prev.refresh_token || null });
   return true;
+}
+
+/* v3.31.1: Drive para SUBIR va con su propia sesión (solo «drive.file»: la app solo ve lo que ella sube), separada
+ * de la de YouTube. Solo en el escritorio, que es quien sube. */
+export const DRIVE_TOKEN_KEY = "rds_drive_tokens";
+const driveTok = () => { try { return JSON.parse(localStorage.getItem(DRIVE_TOKEN_KEY) || "null"); } catch(e){ return null; } };
+export function driveConectado(){ const t = driveTok(); return !!(t && t.refresh_token); }
+export async function driveConectar(){
+  if(!(window.studioFS && window.studioFS.oauth)) throw new Error("Drive se conecta desde RandomStudio de escritorio");
+  const params = new URLSearchParams({
+    client_id: YT_CLIENT_ID, redirect_uri: YT_REDIRECT, response_type: "code", access_type: "offline",
+    scope: "https://www.googleapis.com/auth/drive.file", include_granted_scopes: "false", prompt: "consent", state: "rs_drive"
+  });
+  const ret = String(await window.studioFS.oauth("https://accounts.google.com/o/oauth2/v2/auth?" + params.toString(), YT_REDIRECT, {}) || "");
+  const code = new URLSearchParams(ret.replace(/^[?#]/,"")).get("code");
+  if(!code) throw new Error("No se completó la conexión con Drive");
+  const t = await ytCanjear(code);
+  if(!t || !t.access_token) throw new Error("Google no dio acceso a Drive");
+  try { localStorage.setItem(DRIVE_TOKEN_KEY, JSON.stringify(t)); } catch(e){}
+  return true;
+}
+export function driveDesconectar(){ try { localStorage.removeItem(DRIVE_TOKEN_KEY); } catch(e){} }
+export async function driveToken(){
+  const t = driveTok();
+  if(!t) throw new Error("Conecta Drive en Historias → Ajustes");
+  if(t.access_token && t.expires_at && Date.now() < t.expires_at - 120000) return t.access_token;
+  if(!t.refresh_token) throw new Error("Vuelve a conectar Drive");
+  const res = await fetch(YT_BACKEND + "/api/auth/refresh", { method:"POST",
+    headers:{ "Content-Type":"application/json", ...(await cabecerasEquipo("POST", "/api/auth/refresh")) }, body: JSON.stringify({ refreshToken: t.refresh_token }) });
+  const data = await res.json().catch(()=>({}));
+  if(res.status === 401){ driveDesconectar(); throw new Error("Vuelve a conectar Drive"); }
+  if(!res.ok || !data.access_token) throw new Error("No se pudo renovar Drive");
+  const nuevo = { ...t, access_token: data.access_token, expires_at: Date.now() + (data.expires_in||3600)*1000 };
+  try { localStorage.setItem(DRIVE_TOKEN_KEY, JSON.stringify(nuevo)); } catch(e){}
+  return nuevo.access_token;
 }
 
 /** v3.30: iniciar sesión con OTRA cuenta de Google desde la pantalla de perfiles (eligiendo la cuenta).

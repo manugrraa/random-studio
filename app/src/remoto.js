@@ -6,7 +6,7 @@
  * También sube solo a Drive los Shorts entregados (y lo que espera revisión, para poder verlo desde el móvil).
  * En la WEB/móvil: remotoApi() lee ese estado y manda órdenes (lo usa la vista de Historias).
  */
-import { YT_BACKEND, cloudToken } from "./datos";
+import { YT_BACKEND, cloudToken, driveConectado, driveToken } from "./datos";
 import { cabecerasEquipo } from "./seguridad";
 import { PERFILES, perfilActual } from "./perfiles";
 
@@ -38,7 +38,7 @@ async function ejecutar(o) {
     case "ideas_generar": return s.estudioIdeasGenerar(Number(a.n) || 5, String(a.pista || ""));
     case "idea_poner": return s.estudioIdeaPoner(a.id, { estado: a.estado });
     case "crear": return s.estudioCrear(a.id, { nn: Number.isInteger(a.nn) ? a.nn : undefined, idea: a.idea });
-    case "drive_subir": return s.estudioDriveSubir(a.id, await cloudToken(), nombrePerfil(), a.que || "short");
+    case "drive_subir": return s.estudioDriveSubir(a.id, await driveToken(), nombrePerfil(), a.que || "short");
     case "ajustes": return s.estudioAjustes(a.nuevos || {});
   }
   throw new Error("Orden desconocida");
@@ -58,7 +58,7 @@ export function iniciarRemotoEscritorio(toast) {
     // sin el proyecto de historias (p. ej. el ordenador antes de prepararlo) se publica igual: así se ve que está encendido
     const l = l0 && l0.ok ? l0 : { ok: true, historias: [] };
     // Drive: el Short entregado (si está activado) y lo que espera revisión de voces o animatic, de uno en uno
-    if (!subiendo) {
+    if (!subiendo && driveConectado()) {
       const lista = aj.ajustes.driveAuto && l.historias.find(h => !h.legado && h.entregada && !h.drive);
       const pend = lista ? { h: lista, que: "short" } : null;
       const rev = !pend && l.historias.map(h => ({ h, e: (h.etapas || []).find(x => x.estado === "revisar" && (x.id === "voces" || x.id === "animatic")) }))
@@ -66,9 +66,9 @@ export function iniciarRemotoEscritorio(toast) {
       const tarea = pend || (rev && { h: rev.h, que: rev.e.id });
       if (tarea) {
         subiendo = true;
-        s.estudioDriveSubir(tarea.h.id, token, nombrePerfil(), tarea.que)
+        driveToken().then(dt => s.estudioDriveSubir(tarea.h.id, dt, nombrePerfil(), tarea.que))
           .then(r => { if (r.ok && tarea.que === "short" && toast) toast("☁️ «" + tarea.h.titulo + "» ya está en tu Drive"); })
-          .finally(() => { subiendo = false; });
+          .catch(() => {}).finally(() => { subiendo = false; });
       }
     }
     const historias = [];

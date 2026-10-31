@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useCallback, useRef } = React;
 import { Icons } from "./base";
 import { equiposDual, numeroSiguiente, ordenA, remotoApi } from "./remoto";
-import { cloudToken } from "./datos";
+import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
  * Todo el proceso de RandomHistorias dentro del Studio, con una «carpeta» por historia:
@@ -331,7 +331,11 @@ function AjustesEstudio({ toast }) {
   const [clave, setClave] = useState("");
   const [drive, setDrive] = useState(null);
   const cargar = useCallback(async () => setA(await SF().estudioAjustes()), []);
-  useEffect(() => { cargar(); cloudToken().then(t => SF().driveEspacio(t)).then(setDrive).catch(e => setDrive({ ok: false, error: e.message })); }, [cargar]);
+  const mirarDrive = useCallback(() => {
+    if (!driveConectado()) return setDrive({ ok: false, sin: true });
+    driveToken().then(t => SF().driveEspacio(t)).then(setDrive).catch(e => setDrive({ ok: false, error: e.message }));
+  }, []);
+  useEffect(() => { cargar(); mirarDrive(); }, [cargar, mirarDrive]);
   if (!a) return <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Cargando…</div>;
   const poner = async (nuevos, txt) => { setA(await SF().estudioAjustes(nuevos)); toast(txt); };
   const Interruptor = ({ on, onClick, titulo, ayuda }) => (
@@ -368,11 +372,16 @@ function AjustesEstudio({ toast }) {
       <div style={{ ...tarjeta }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8 }}>Google Drive</div>
         {!drive && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Mirando tu espacio…</div>}
-        {drive && !drive.ok && <div style={{ fontSize: 12.5, color: "#F59E0B" }}>{/permiso|scope/i.test(drive.error || "") ? "Falta el permiso de Drive: vuelve a conectar Google en Configuración (solo una vez)." : "No se pudo leer el espacio: " + drive.error}</div>}
+        {drive && !drive.ok && (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12.5, color: "#F59E0B" }}>{drive.sin ? "Drive sin conectar: los Shorts no se suben todavía." : "No se pudo leer Drive: " + drive.error}</span>
+            <button onClick={async () => { try { await driveConectar(); toast("☁️ Drive conectado"); mirarDrive(); } catch (e) { toast(e.message); } }} className="grad-gold" style={botonOro}>Conectar Drive</button>
+          </div>)}
         {drive && drive.ok && (<>
           <div style={{ fontSize: 13, fontWeight: 700 }}>{(drive.usado / 1e9).toFixed(1)} GB usados de {drive.limite ? (drive.limite / 1e9).toFixed(0) + " GB" : "sin límite"}</div>
           {drive.limite > 0 && <div style={{ marginTop: 6 }}><Barra valor={drive.usado / drive.limite} alto={8} /></div>}
-          <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 6, lineHeight: 1.5 }}>Todo va a «RandomStudio / {"<perfil>"} / Historias». Desde el móvil se descarga desde ahí aunque el portátil esté apagado.</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 6, lineHeight: 1.5 }}>Todo va a «RandomStudio / {"<perfil>"} / Historias». Desde el móvil se descarga desde ahí aunque el portátil esté apagado.
+            {" "}<button onClick={() => { driveDesconectar(); mirarDrive(); toast("Drive desconectado"); }} style={{ fontSize: 11.5, color: "var(--text-3)", textDecoration: "underline" }}>Desconectar</button></div>
         </>)}
       </div>
     </div>);
