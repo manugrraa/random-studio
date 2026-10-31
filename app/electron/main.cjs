@@ -258,12 +258,18 @@ ipcMain.handle("studio-yt-upload", async (e, args) => {
 // editorial. Aquí solo se lanza y se lee.
 const { spawn } = require("child_process");
 const CLON_DIR = process.env.RANDOMCLON_DIR || "E:\\A RdeRandom\\RandomClon";
+// v3.27 (1/11): los procesos del clon, el ranking y el convertidor usan las CARPETAS DEL PERFIL activo
+// (RS_CARPETAS = su carpetas.json; lo lee RandomClon/perfil_carpetas.py)
+const perfilC = () => require("./carpetas.cjs");
+const envPerfil = () => ({ ...process.env, PYTHONIOENCODING: "utf-8", RS_CARPETAS: perfilC().archivoCarpetas() });
+// rutas que se pueden abrir: las del clon y las de cualquier carpeta del perfil
+const dePerfil = r => !!r && (r.startsWith(CLON_DIR) || Object.values(perfilC().carpetasDe()).some(c => c && r.toLowerCase().startsWith(String(c).toLowerCase())));
 const RANKING_PY = () => path.join(CLON_DIR, "ranking_studio.py");
 let rankingProc = null;
 
 function correrPython(args) {
   return new Promise((resolve, reject) => {
-    const p = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+    const p = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: envPerfil(), windowsHide: true });
     let out = "", err = "";
     p.stdout.on("data", d => out += d); p.stderr.on("data", d => err += d);
     p.on("error", reject);
@@ -324,7 +330,7 @@ ipcMain.handle("ranking-analizar", async (e, opts) => {
   if (o.todo) args.push("--todo");
   if (["claude-opus-5-5", "claude-sonnet-5-5"].includes(o.modelo)) args.push("--modelo", o.modelo);
   const wc = e.sender;
-  rankingProc = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+  rankingProc = spawn("python", [RANKING_PY(), ...args], { cwd: CLON_DIR, env: envPerfil(), windowsHide: true });
   let resto = "";
   rankingProc.stdout.on("data", d => {
     resto += d; const lineas = resto.split("\n"); resto = lineas.pop();
@@ -345,7 +351,7 @@ ipcMain.handle("ranking-cancelar", async () => {
 });
 
 ipcMain.handle("ranking-abrir", async (e, carpeta) => {
-  if (carpeta && carpeta.startsWith(CLON_DIR) && fs.existsSync(carpeta)) await shell.openPath(carpeta);
+  if (dePerfil(carpeta) && fs.existsSync(carpeta)) await shell.openPath(carpeta);
   return { ok: true };
 });
 
@@ -368,7 +374,7 @@ ipcMain.handle("clon-consultar", async (e, args) => {
   if (!Array.isArray(args) || !CONSULTAS.has(args[0]) || !args.every(a => typeof a === "string")) return { error: "Orden no válida" };
   if (!fs.existsSync(CLON_PY())) return { error: "No encuentro " + CLON_PY() };
   return await new Promise(resolve => {
-    const p = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+    const p = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: envPerfil(), windowsHide: true });
     let out = "", err = "";
     p.stdout.on("data", d => out += d); p.stderr.on("data", d => err += d);
     p.on("error", x => resolve({ error: x.message }));
@@ -383,7 +389,7 @@ ipcMain.handle("clon-consultar", async (e, args) => {
 ipcMain.handle("clon-tarea", async (e, args) => {
   if (tarea) return { error: "Ya hay una tarea del clon en marcha: " + tarea.args.slice(0, 2).join(" ") };
   if (!Array.isArray(args) || !TAREAS.has(args[0]) || !args.every(a => typeof a === "string")) return { error: "Tarea no válida" };
-  const proc = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+  const proc = spawn("python", [CLON_PY(), ...args], { cwd: CLON_DIR, env: envPerfil(), windowsHide: true });
   tarea = { proc, args, eventos: [], inicio: Date.now() };
   const enviar = ev => { tarea && (tarea.eventos.push(ev), tarea.eventos.length > 400 && tarea.eventos.shift()); BrowserWindow.getAllWindows().forEach(w => { try { w.webContents.send("clon-progreso", ev); } catch (x) {} }); };
   let resto = "", err = "";
@@ -406,7 +412,7 @@ ipcMain.handle("clon-cancelar", async () => {
 });
 
 ipcMain.handle("clon-abrir", async (e, ruta) => {
-  if (ruta && ruta.startsWith(CLON_DIR) && fs.existsSync(ruta)) await shell.openPath(ruta);
+  if (dePerfil(ruta) && fs.existsSync(ruta)) await shell.openPath(ruta);
   return { ok: true };
 });
 
@@ -417,12 +423,12 @@ const CONVERTIDOR_DIR = process.env.CONVERTIDOR_DIR || "E:\\A RdeRandom\\Convert
 const RAIZ_RDR = "E:\\A RdeRandom";
 let ytProc = null;
 
-ipcMain.handle("yt-destinos", async () => ([
-  ["Descargas del convertidor", path.join(CONVERTIDOR_DIR, "Descargas")],
-  ["Música de la biblioteca", path.join(CLON_DIR, "Biblioteca", "Música")],
-  ["SFX de la biblioteca", path.join(CLON_DIR, "Biblioteca", "SFX")],
-  ["VODs (para clipear)", path.join(CLON_DIR, "VODs")],
-]));
+ipcMain.handle("yt-destinos", async () => { const c = perfilC().carpetasDe(); return [
+  ["Descargas del convertidor", c.descargas || path.join(CONVERTIDOR_DIR, "Descargas")],
+  ["Música de la biblioteca", path.join(c.biblioteca || path.join(CLON_DIR, "Biblioteca"), "Música")],
+  ["SFX de la biblioteca", path.join(c.biblioteca || path.join(CLON_DIR, "Biblioteca"), "SFX")],
+  ["VODs (para clipear)", c.vods || path.join(CLON_DIR, "VODs")],
+]; });
 
 ipcMain.handle("yt-descargar", async (e, o) => {
   if (ytProc) return { error: "Ya hay una descarga en marcha" };
@@ -432,8 +438,9 @@ ipcMain.handle("yt-descargar", async (e, o) => {
   const args = [path.join(CONVERTIDOR_DIR, "convertidor.py"), "--cli", url, formato,
     "--altura", String(parseInt(o.altura) || 1080), "--kbps", String(parseInt(o.kbps) || 192)];
   if (o.destino && String(o.destino).startsWith(RAIZ_RDR)) args.push("--destino", o.destino);
+  else if (perfilC().carpetasDe().descargas) { fs.mkdirSync(perfilC().carpetasDe().descargas, { recursive: true }); args.push("--destino", perfilC().carpetasDe().descargas); }
   const wc = e.sender;
-  ytProc = spawn("python", args, { cwd: CONVERTIDOR_DIR, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+  ytProc = spawn("python", args, { cwd: CONVERTIDOR_DIR, env: envPerfil(), windowsHide: true });
   let resto = "";
   ytProc.stdout.on("data", d => { resto += d; const ls = resto.split("\n"); resto = ls.pop();
     leerEventos(ls.join("\n")).forEach(ev => { try { wc.send("yt-progreso", ev); } catch (x) {} }); });
@@ -513,7 +520,7 @@ ipcMain.handle("red-elegir-archivos", async (e) => {
 
 ipcMain.handle("clon-elegir-carpeta", async () => {
   const r = await dialog.showOpenDialog(mainWindow || undefined, { properties: ["openDirectory"], title: "Carpeta de los VODs",
-    defaultPath: path.join(CLON_DIR, "VODs") });
+    defaultPath: perfilC().carpetasDe().vods || path.join(CLON_DIR, "VODs") });
   return (r.canceled || !r.filePaths.length) ? null : r.filePaths[0];
 });
 
@@ -733,7 +740,11 @@ function chatPeticion(method, ruta, body) {
 async function chatEstado() {
   const r = await chatPeticion("GET", "/studio/estado");
   if (r.apagado) return { encendido: false };
-  if (r.status === 200 && r.data) return { encendido: true, nuestro: true, ...r.data };
+  if (r.status === 200 && r.data) {
+    const quiere = String(perfilC().carpetasDe().chat || CHAT_DIR).toLowerCase().replace(/[\\/]+$/, "");
+    const tiene = String(r.data.datos || CHAT_DIR).toLowerCase().replace(/[\\/]+$/, "");
+    return { encendido: true, nuestro: true, ...r.data, otroPerfil: quiere !== tiene };
+  }
   // Responde pero sin aceptar la clave: una versión antigua del chat (sin rutas /studio)
   return { encendido: true, nuestro: false, error: r.error };
 }
@@ -755,7 +766,8 @@ ipcMain.handle("chat-encender", async () => {
     // Terminal: ahora lo lanza un PowerShell oculto con Start-Process -WindowStyle Hidden (sin
     // ventana ni pestaña, y fuera del árbol de Studio, así que sigue vivo al cerrarlo)
     const ps = `Start-Process -FilePath 'cmd.exe' -ArgumentList '/d','/c','.\\arrancar.cmd' -WorkingDirectory '${CHAT_DIR.replace(/'/g, "''")}' -WindowStyle Hidden`;
-    const p = spawn("powershell", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps], { windowsHide: true, stdio: "ignore" });
+    const p = spawn("powershell", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps], { windowsHide: true, stdio: "ignore",
+      env: { ...process.env, RANDOMCHAT_DATOS: perfilC().carpetasDe().chat || CHAT_DIR, RANDOMCHAT_CANAL: perfilC().canalDe(perfilC().perfilActivo()) } });
     let fallo = null;
     p.on("error", e => { fallo = e; });
     p.unref();

@@ -143,6 +143,11 @@ export function RandomChatView({ toast }) {
         </div>
         {e && e.falta && <div style={{fontSize:13,color:"var(--red)"}}>No encuentro el chat en {e.falta}</div>}
         {on && !e.nuestro && <div style={{fontSize:13,color:"#fbbf24"}}>Está encendido con una versión antigua del chat: apágalo y vuelve a encenderlo desde aquí.</div>}
+        {/* v3.27: cada perfil tiene sus datos del chat (carpeta «chat» de Ajustes › Carpetas) y su canal */}
+        {on && e.nuestro && e.otroPerfil && <div style={{fontSize:13,color:"#fbbf24",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          Está encendido con los datos de otro perfil (otro canal).
+          <button disabled={!!ocupado} onClick={()=>accion("encender", async()=>{ await window.studioFS.chatApagar(); return window.studioFS.chatEncender(); }, "Chat reiniciado con este perfil")}
+            style={{...boton(true),padding:"4px 10px",fontSize:12}}>Reiniciar con este perfil</button></div>}
         {!on && e && !e.falta && <div style={{fontSize:13,color:"var(--text-2)"}}>También se enciende solo al abrir OBS con tu lanzador. Si cierras Studio, el chat sigue funcionando.</div>}
         {on && obs && <div style={{fontSize:13,color:"var(--text-2)"}}>
           OBS: {obs.overlays ? `${obs.overlays} overlay${obs.overlays>1?"s":""} conectado${obs.overlays>1?"s":""}` : "sin overlays conectados"}

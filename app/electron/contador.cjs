@@ -12,12 +12,22 @@ const fs = require("fs");
 
 const CANAL = "UCF-3SarqM5bvy3sBT_avssQ";
 const url = canal => process.env.STUDIO_CONTADOR_URL || `https://studio.youtube.com/channel/${canal}/analytics/tab-overview/period-default/explore?entity_type=CHANNEL&entity_id=${canal}&time_period=4_weeks&explore_type=SUBSCRIBERS`;
-const opcionesFile = () => path.join(app.getPath("userData"), "contador.json");
+// v3.27: por perfil (su canal, sus opciones y su sesión de Google); RDeRandom conserva lo de antes
+const perfilC = () => require("./carpetas.cjs");
+const perfil = () => perfilC().perfilActivo();
+const opcionesFile = () => path.join(perfilC().dirDatos(), "contador.json");
+const particion = () => perfil() === "rderandom" ? "persist:contador-youtube" : "persist:contador-" + perfil();
 // formato «fraccion» (él, 31/10: "el contador lo quiero estilo 34.345/100.000"): la meta al lado, con la misma letra;
 // «debajo»: un texto libre debajo del número
 const OP0 = { canal: CANAL, formato: "fraccion", meta: 100000, texto: "META: 10.000 SUBS", escala: 1, tamMeta: 30, colorMeta: "#ffffff", verMeta: true };
-let win = null, op = { ...OP0 };
-try { op = { ...OP0, ...JSON.parse(fs.readFileSync(opcionesFile(), "utf8")) }; } catch (e) {}
+let win = null, winPerfil = null, op = { ...OP0 }, opPerfil = null;
+function cargarOp() {
+  if (opPerfil === perfil()) return;
+  opPerfil = perfil();
+  op = { ...OP0, canal: perfilC().canalDe(opPerfil) };
+  try { op = { ...op, ...JSON.parse(fs.readFileSync(opcionesFile(), "utf8")), canal: perfilC().canalDe(opPerfil) }; } catch (e) {}
+}
+const guardarOp = () => { try { fs.mkdirSync(path.dirname(opcionesFile()), { recursive: true }); fs.writeFileSync(opcionesFile(), JSON.stringify(op)); } catch (x) {} };
 
 // su CSS (el de la extensión, tal cual) + lo que esconde el resto de la página y coloca el contador y la meta
 const CSS = `
@@ -82,11 +92,13 @@ async function aplicar() {
 }
 
 function abrir() {
+  if (win && !win.isDestroyed() && winPerfil !== perfil()) win.close();     // (era la de otro perfil)
   if (win && !win.isDestroyed()) { win.show(); return win; }
+  winPerfil = perfil();
   win = new BrowserWindow({ width: 560, height: 300, title: "Contador de suscriptores", backgroundColor: "#FF00FF", autoHideMenuBar: true,
     icon: path.join(__dirname, "..", "build", "icon.png"),
     show: !process.env.STUDIO_CAPTURA,
-    webPreferences: { partition: "persist:contador-youtube", contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    webPreferences: { partition: particion(), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   // (Google no deja iniciar sesión en un navegador que se presenta como Electron: se presenta como Chrome)
   win.webContents.setUserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`);
   win.on("page-title-updated", e => e.preventDefault());
@@ -102,7 +114,8 @@ function abrir() {
   };
   win.webContents.on("did-finish-load", mirar);
   win.webContents.on("did-navigate-in-page", mirar);
-  win.on("closed", () => { win = null; });
+  const esta = win;
+  win.on("closed", () => { if (win === esta) win = null; });   // (al cambiar de perfil se cierra la vieja y ya hay otra)
   if (process.env.STUDIO_CAPTURA) {      // (pruebas: en la pantalla del portátil, nunca en la suya)
     const pri = screen.getPrimaryDisplay(), d = screen.getAllDisplays().find(x => x.id !== pri.id) || pri;
     win.setPosition(d.workArea.x + 40, d.workArea.y + 40);
@@ -113,14 +126,17 @@ function abrir() {
 }
 
 ipcMain.handle("contador-abrir", async (e, nuevas) => {
-  op = { ...op, ...(nuevas || {}) };
-  try { fs.writeFileSync(opcionesFile(), JSON.stringify(op)); } catch (x) {}
+  cargarOp();
+  op = { ...op, ...(nuevas || {}), canal: perfilC().canalDe(perfil()) };
+  guardarOp();
   abrir();
   return { ok: true, op };
 });
 ipcMain.handle("contador-meta", async (e, nuevas) => {
-  op = { ...op, ...(nuevas || {}) };
-  try { fs.writeFileSync(opcionesFile(), JSON.stringify(op)); } catch (x) {}
-  return { ok: true, abierta: !!(win && !win.isDestroyed()), contador: await aplicar(), op };
+  cargarOp();
+  op = { ...op, ...(nuevas || {}), canal: perfilC().canalDe(perfil()) };
+  guardarOp();
+  const mia = !!(win && !win.isDestroyed() && winPerfil === perfil());
+  return { ok: true, abierta: mia, contador: mia ? await aplicar() : false, op };
 });
-ipcMain.handle("contador-estado", async () => ({ abierta: !!(win && !win.isDestroyed()), enStudio: !!enStudio(), op }));
+ipcMain.handle("contador-estado", async () => { cargarOp(); return { abierta: !!(win && !win.isDestroyed() && winPerfil === perfil()), enStudio: !!enStudio(), op }; });
