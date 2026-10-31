@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   contadorAbrir: (op) => ipcRenderer.invoke("contador-abrir", op),
   contadorMeta: (op) => ipcRenderer.invoke("contador-meta", op),
   contadorEstado: () => ipcRenderer.invoke("contador-estado"),
+  contadorVentana: (ver) => ipcRenderer.invoke("contador-ventana", ver),
   onHistoriasProgreso: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("historias-progreso", h);

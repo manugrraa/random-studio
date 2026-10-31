@@ -4,8 +4,12 @@
    Una ventana de Studio con la página en tiempo real de YouTube Studio (la única con el número EXACTO): se le
    pone SU estilo (el de su extensión: Komika Axis, borde negro de 8 px, croma magenta, el dígito que sube
    deslizándose), se esconde todo lo demás y debajo va el texto de la meta. En OBS: «Captura de ventana» +
-   filtro «Clave de croma» magenta. La sesión de Google se inicia una vez en esa ventana (la pone él) y se
-   queda guardada en su partición, aparte del resto de Studio. */
+   filtro «Clave de croma» magenta.
+   v3.28 (1/11), él: "que use la sesión iniciada de mi canal de YouTube y que se actualice aunque esté minimizado, en
+   segundo, tercer o cuarto plano": usa la MISMA sesión que el resto de Studio (la de «Conectar Google»), la página
+   se cree siempre visible (contador-preload.cjs) y sin frenos en segundo plano, y el número se lee cada segundo y
+   va al RandomChat, que lo sirve en http://localhost:7470/suscriptores como fuente de navegador transparente
+   (OBS no puede capturar una ventana minimizada; una fuente de navegador, sí). */
 const { app, BrowserWindow, ipcMain, screen } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -16,7 +20,38 @@ const url = canal => process.env.STUDIO_CONTADOR_URL || `https://studio.youtube.
 const perfilC = () => require("./carpetas.cjs");
 const perfil = () => perfilC().perfilActivo();
 const opcionesFile = () => path.join(perfilC().dirDatos(), "contador.json");
-const particion = () => perfil() === "rderandom" ? "persist:contador-youtube" : "persist:contador-" + perfil();
+// el número de la página: el valor NUEVO de cada posición (como su CSS: al subir, el [last]; al bajar, el primero)
+const LEER = `(() => { const c = document.querySelector(".counter.yta-smooth-counter"); if (!c) return null;
+  const sube = c.hasAttribute("is-value-increasing"); let s = "";
+  const recorrer = el => { for (const h of el.childNodes) {
+    if (h.nodeType === 3) { s += h.textContent; continue; } if (h.nodeType !== 1) continue;
+    if (h.classList.contains("counter-sequence-inner")) { const v = [...h.children].filter(x => x.classList.contains("counter-value"));
+      const x = sube ? v.find(y => y.hasAttribute("last")) || v[v.length - 1] : v[0]; if (x) s += x.textContent; continue; }
+    if (h.classList.contains("counter-value")) continue;
+    recorrer(h); } };
+  recorrer(c);
+  const d = s.replace(/[^0-9]/g, ""); return d ? Number(d) : null; })()`;
+const CHAT_DIR = process.env.RANDOMCHAT_DIR || "E:\\A RdeRandom\\RandomChat";
+let ultimo = null, enviado = 0, chatOk = null;
+// al RandomChat (/suscriptores): si cambia, y cada 15 s aunque no cambie (por si el chat se encendió después)
+function mandarAlChat(n) {
+  let clave = "";
+  try { clave = fs.readFileSync(path.join(CHAT_DIR, "studio.key"), "utf8").trim(); } catch (e) {}
+  const txt = JSON.stringify({ n, op });
+  const req = require("http").request({ host: "127.0.0.1", port: 7470, path: "/studio/suscriptores", method: "POST", timeout: 2000,
+    headers: { "x-studio-key": clave, "content-type": "application/json", "content-length": Buffer.byteLength(txt) } },
+    res => { chatOk = res.statusCode === 200; res.resume(); });
+  req.on("timeout", () => req.destroy());
+  req.on("error", () => { chatOk = false; });
+  req.end(txt);
+}
+setInterval(async () => {
+  if (!win || win.isDestroyed() || !enStudio()) return;
+  let n = null;
+  try { n = await win.webContents.executeJavaScript(LEER); } catch (e) {}
+  if (n == null) return;
+  if (n !== ultimo || Date.now() - enviado > 15000) { ultimo = n; enviado = Date.now(); mandarAlChat(n); }
+}, 1000);
 // formato «fraccion» (él, 31/10: "el contador lo quiero estilo 34.345/100.000"): la meta al lado, con la misma letra;
 // «debajo»: un texto libre debajo del número
 const OP0 = { canal: CANAL, formato: "fraccion", meta: 100000, texto: "META: 10.000 SUBS", escala: 1, tamMeta: 30, colorMeta: "#ffffff", verMeta: true };
@@ -43,6 +78,9 @@ const CSS = `
 .counter.yta-smooth-counter[is-value-increasing].counter-animating .counter-sequence-inner:has(> .counter-value:not([last])) > .counter-value[last] { animation: rdr-sube 0.45s cubic-bezier(0.22, 1, 0.36, 1) both !important; }
 @keyframes rdr-espera { from, to { opacity: 0; } }
 @keyframes rdr-sube { from { transform: translateY(60%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+/* (1/11, él: "animaciones cuando suban o bajen, típico slide como el de YouTube") BAJADA: el dígito nuevo entra por arriba */
+.counter.yta-smooth-counter:not([is-value-increasing]).counter-animating .counter-sequence-inner:has(> .counter-value:not([last])) > .counter-value:first-child { animation: rdr-baja 0.45s cubic-bezier(0.22, 1, 0.36, 1) both !important; }
+@keyframes rdr-baja { from { transform: translateY(-60%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 html, body { background: #FF00FF !important; }
 #counter-area, .small-counter-area, .large-counter-area { background: #FF00FF !important; }
 .counter.yta-smooth-counter .counter-value { -webkit-text-stroke: 8px #000; paint-order: stroke fill; }
@@ -98,19 +136,22 @@ function abrir() {
   win = new BrowserWindow({ width: 560, height: 300, title: "Contador de suscriptores", backgroundColor: "#FF00FF", autoHideMenuBar: true,
     icon: path.join(__dirname, "..", "build", "icon.png"),
     show: !process.env.STUDIO_CAPTURA,
-    webPreferences: { partition: particion(), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    // la sesión de siempre de Studio (la de «Conectar Google»: ya está dentro con su cuenta); sin frenos en segundo plano
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false,
+      preload: path.join(__dirname, "contador-preload.cjs") } });
   // (Google no deja iniciar sesión en un navegador que se presenta como Electron: se presenta como Chrome)
   win.webContents.setUserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`);
   win.on("page-title-updated", e => e.preventDefault());
   // fuera de Studio (la página de Google para entrar) la ventana se hace grande; en el contador, a su tamaño
   const mirar = () => {
     if (!win || win.isDestroyed()) return;
-    if (enStudio()) { aplicar(); setTimeout(aplicar, 1500); setTimeout(aplicar, 5000); }
-    if (process.env.STUDIO_CAPTURA && enStudio()) setTimeout(async () => {      // (pruebas: su captura)
-      try { const img = await win.webContents.capturePage(); fs.mkdirSync(process.env.STUDIO_CAPTURA, { recursive: true });
-        fs.writeFileSync(path.join(process.env.STUDIO_CAPTURA, "contador.png"), img.toPNG()); } catch (x) {}
-    }, 2500);
-    else { const [w, h] = win.getSize(); if (w < 800) win.setSize(900, 720); }
+    if (enStudio()) {
+      aplicar(); setTimeout(aplicar, 1500); setTimeout(aplicar, 5000);
+      if (process.env.STUDIO_CAPTURA) setTimeout(async () => {      // (pruebas: su captura)
+        try { const img = await win.webContents.capturePage(); fs.mkdirSync(process.env.STUDIO_CAPTURA, { recursive: true });
+          fs.writeFileSync(path.join(process.env.STUDIO_CAPTURA, "contador.png"), img.toPNG()); } catch (x) {}
+      }, 2500);
+    } else { const [w] = win.getSize(); if (w < 800) win.setSize(900, 720); }   // (la página de Google para entrar)
   };
   win.webContents.on("did-finish-load", mirar);
   win.webContents.on("did-navigate-in-page", mirar);
@@ -139,4 +180,7 @@ ipcMain.handle("contador-meta", async (e, nuevas) => {
   const mia = !!(win && !win.isDestroyed() && winPerfil === perfil());
   return { ok: true, abierta: mia, contador: mia ? await aplicar() : false, op };
 });
-ipcMain.handle("contador-estado", async () => { cargarOp(); return { abierta: !!(win && !win.isDestroyed() && winPerfil === perfil()), enStudio: !!enStudio(), op }; });
+ipcMain.handle("contador-estado", async () => { cargarOp(); const mia = !!(win && !win.isDestroyed() && winPerfil === perfil());
+  return { abierta: mia, enStudio: mia && !!enStudio(), n: mia ? ultimo : null, chat: chatOk, visible: mia && win.isVisible(), op }; });
+// esconder / mostrar la ventana (con la fuente de navegador /suscriptores no hace falta verla)
+ipcMain.handle("contador-ventana", async (e, ver) => { if (win && !win.isDestroyed()) { if (ver) { win.show(); win.focus(); } else win.hide(); } return { ok: true }; });

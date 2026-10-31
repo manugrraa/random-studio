@@ -49,7 +49,9 @@ export function useSesionChat(toast) {
 function Contador({ toast }) {
   const [op, setOp] = useState(null);
   const [abierta, setAbierta] = useState(false);
-  useEffect(()=>{ window.studioFS.contadorEstado().then(r=>{ setOp(r.op); setAbierta(r.abierta); }).catch(()=>{}); },[]);
+  const [vivo, setVivo] = useState(null);       // { n, chat, enStudio, visible }: lo que lee la ventana ahora
+  useEffect(()=>{ window.studioFS.contadorEstado().then(r=>{ setOp(r.op); setAbierta(r.abierta); setVivo(r); }).catch(()=>{}); },[]);
+  useEffect(()=>{ if(!abierta) return; const t = setInterval(()=>window.studioFS.contadorEstado().then(r=>{ setAbierta(r.abierta); setVivo(r); }).catch(()=>{}), 2000); return ()=>clearInterval(t); },[abierta]);
   const cambiar = patch => { const n = {...op, ...patch}; setOp(n); window.studioFS.contadorMeta(n).then(r=>setAbierta(r.abierta)).catch(()=>{}); };
   if(!op) return null;
   const fila = {display:"flex",alignItems:"center",gap:10,fontSize:13,flexWrap:"wrap"};
@@ -58,8 +60,20 @@ function Contador({ toast }) {
       <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
         <span style={{fontWeight:700,fontSize:14}}>Contador de suscriptores</span>
         <span style={{fontSize:12.5,color:"var(--text-3)"}}>el de YouTube Studio en tiempo real, solo el número, con tu estilo</span>
-        <span style={{marginLeft:"auto"}}><button onClick={async()=>{ const r = await window.studioFS.contadorAbrir(op); if(r.ok){ setAbierta(true); toast && toast("Ventana del contador abierta"); } }} style={boton(true)}>
+        <span style={{marginLeft:"auto",display:"flex",gap:8}}>
+          {abierta && vivo && vivo.visible && window.studioFS.contadorVentana && <button onClick={()=>window.studioFS.contadorVentana(false)} style={boton(false)} title="Sigue leyendo el número escondida">Esconder la ventana</button>}
+          <button onClick={async()=>{ const r = await window.studioFS.contadorAbrir(op); if(r.ok){ setAbierta(true); toast && toast("Ventana del contador abierta"); } }} style={boton(true)}>
           {abierta ? "Mostrar la ventana" : "Abrir la ventana del contador"}</button></span>
+      </div>
+      {abierta && <div style={{...fila,fontSize:13}}>
+        <b style={{minWidth:150}}>Ahora</b>
+        {vivo && vivo.n != null ? <span style={{fontSize:18,fontWeight:800}}>{Number(vivo.n).toLocaleString("es-ES")}</span>
+          : <span style={{color:"#fbbf24"}}>{vivo && vivo.enStudio ? "Esperando el número…" : "Inicia sesión con la cuenta del canal en la ventana (o con «Conectar Google» de Studio)"}</span>}
+        {vivo && vivo.n != null && <span style={{color: vivo.chat ? "#4ade80" : "#fbbf24"}}>{vivo.chat ? "✓ llega a OBS por el RandomChat" : "el RandomChat está apagado: enciéndelo para la fuente de OBS"}</span>}
+      </div>}
+      <div style={{...fila,fontSize:13}}><b style={{minWidth:150}}>Fuente de OBS</b>
+        <code style={{color:"var(--text-2)"}}>http://localhost:7470/suscriptores</code>
+        <button onClick={()=>{ try { navigator.clipboard.writeText("http://localhost:7470/suscriptores"); toast && toast("Copiado"); } catch(x){} }} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Copiar</button>
       </div>
       <div style={fila}><b style={{minWidth:150}}>Formato</b>
         <button onClick={()=>cambiar({formato:"fraccion"})} style={{...boton(op.formato!=="debajo"),padding:"5px 12px",fontSize:12.5}}>34.345/{Number(op.meta||100000).toLocaleString("es-ES")}</button>
@@ -81,9 +95,10 @@ function Contador({ toast }) {
         <span style={{color:"var(--text-3)",minWidth:42}}>{op.tamMeta||30} px</span>
         <input type="color" value={op.colorMeta||"#ffffff"} onChange={ev=>cambiar({colorMeta:ev.target.value})} title="Color de la meta"/></label>}
       <div style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.5}}>
-        La primera vez, inicia sesión con la cuenta de Google del canal dentro de esa ventana: se queda guardada.
-        En OBS: <b>Captura de ventana</b> → «Contador de suscriptores», con el filtro <b>Clave de croma</b> en magenta (#FF00FF).
-        Los cambios de aquí salen al momento en la ventana.
+        Usa la sesión de Google de Studio («Conectar Google» con la cuenta del canal); si te la pide, inicia sesión una vez en esa ventana.
+        En OBS: <b>Fuente de navegador</b> con la URL de arriba (transparente, sin croma; con el RandomChat encendido). Así se actualiza
+        aunque la ventana esté minimizada, escondida o detrás de otras. (La captura de ventana con croma magenta sigue valiendo, pero no
+        funciona con la ventana minimizada.)
       </div>
     </div>);
 }
