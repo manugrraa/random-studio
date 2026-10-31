@@ -4,8 +4,8 @@ import { AVATAR_HISTORIAS, AVATAR_RDR } from "./perfiles_img";
 import { YT_BACKEND } from "./datos";
 
 /* ============================ PERFILES (v3.21) ============================
- * Pantalla de inicio: eliges con qué perfil (canal) entras. Por ahora solo RDeRandom; RandomHistorias
- * llegará para subir los Shorts desde el mismo sitio en que se hacen.
+ * Pantalla de inicio: eliges con qué perfil (canal) entras. RDeRandom (la app de siempre) o RandomHistorias
+ * (v3.25: su propio espacio con las Historias; después, la subida de Shorts).
  * «Entrar siempre con este perfil» la salta en los siguientes arranques (se vuelve con Ajustes → Cambiar de perfil).
  * v3.24: la foto de cada perfil es la del canal de YouTube (el servidor la lee de la página pública del canal,
  * /api/avatar); se puede subir otra con el lápiz y volver a la del canal. El logo incrustado es solo el respaldo.
@@ -13,7 +13,7 @@ import { YT_BACKEND } from "./datos";
 
 export const PERFILES = [
   { id: "rderandom", nombre: "RDeRandom", lema: "Canal principal", activo: true, avatar: AVATAR_RDR },
-  { id: "randomhistorias", nombre: "RandomHistorias", lema: "Próximamente", activo: false, avatar: AVATAR_HISTORIAS },
+  { id: "randomhistorias", nombre: "RandomHistorias", lema: "Historias animadas", activo: true, avatar: AVATAR_HISTORIAS },
 ];
 
 const K_PERFIL = "rs_perfil", K_SIEMPRE = "rs_perfil_siempre";
