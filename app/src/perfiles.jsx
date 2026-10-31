@@ -1,23 +1,32 @@
 import React from "react";
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 import { AVATAR_HISTORIAS, AVATAR_RDR } from "./perfiles_img";
-import { YT_BACKEND } from "./datos";
+import { YT_BACKEND, googleElegirCuenta, ytCanjear } from "./datos";
 import { fijarPerfilEnUso } from "./perfil_estado";
+import { accesoApi, olvidarEquipo } from "./seguridad";
 
-/* ============================ PERFILES (v3.21) ============================
- * Pantalla de inicio: eliges con qué perfil (canal) entras. RDeRandom (la app de siempre) o RandomHistorias
- * (v3.25: su propio espacio con las Historias; después, la subida de Shorts).
- * «Entrar siempre con este perfil» la salta en los siguientes arranques (se vuelve con Ajustes → Cambiar de perfil).
- * v3.24: la foto de cada perfil es la del canal de YouTube (el servidor la lee de la página pública del canal,
- * /api/avatar); se puede subir otra con el lápiz y volver a la del canal. El logo incrustado es solo el respaldo.
+/* ============================ PERFILES (v3.21; v3.30 cuentas con permiso) ============================
+ * Pantalla de inicio. Cada perfil es una cuenta de Google con canal de YouTube (su foto es la del canal).
+ * No hay perfiles predeterminados: el servidor dice qué cuentas puede abrir ESTE equipo (/api/acceso).
+ *  - Aprobada: se entra.
+ *  - Pendiente: sale con candado hasta que el portátil (o un administrador) da permiso; se comprueba sola cada 4 s.
+ *  - «Añadir cuenta»: inicia sesión con Google y pide permiso para esa cuenta en este equipo.
+ *  - Si la conexión está bloqueada, solo se ve la pantalla de acceso bloqueado.
+ * «Entrar siempre con este perfil» la salta en los siguientes arranques, pero solo si el servidor sigue dando permiso.
  */
 
-export const PERFILES = [
-  { id: "rderandom", nombre: "RDeRandom", lema: "Canal principal", activo: true, avatar: AVATAR_RDR },
-  { id: "randomhistorias", nombre: "RandomHistorias", lema: "Historias animadas", activo: true, avatar: AVATAR_HISTORIAS },
-];
+const RESPALDO = { rderandom: AVATAR_RDR, randomhistorias: AVATAR_HISTORIAS };
+const LEMAS = { rderandom: "Canal principal", randomhistorias: "Historias animadas" };
 
-const K_PERFIL = "rs_perfil", K_SIEMPRE = "rs_perfil_siempre";
+/** Las cuentas que conoce este equipo (se rellena desde el servidor; los demás módulos la leen tal cual). */
+export const PERFILES = [];
+function ponerPerfiles(lista) {
+  PERFILES.splice(0, PERFILES.length, ...lista.map(p => ({ ...p, lema: LEMAS[p.id] || "Canal de YouTube",
+    avatar: RESPALDO[p.id] || inicial(p.nombre), activo: p.permiso === "aprobado" })));
+  guardar(K_CUENTAS, JSON.stringify(lista));
+}
+
+const K_PERFIL = "rs_perfil", K_SIEMPRE = "rs_perfil_siempre", K_CUENTAS = "rs_perfil_cuentas";
 let _sesion = null;                       // perfil elegido en esta ejecución
 
 export function perfilActual() { return _sesion; }
@@ -26,15 +35,16 @@ export function perfilActual() { return _sesion; }
  * Google, código de sincronización, ajustes de cada apartado...) van aparte: en cualquier perfil que no sea
  * RDeRandom, las claves de localStorage llevan delante «perfil:<id>:». RDeRandom usa las de siempre (no se
  * mueve nada). Son comunes a todos los perfiles: el propio perfil, la llave del equipo, el tema, la barra
- * plegada, la clave de Gemini y las preferencias del RandomEditor (módulo aparte). */
-const GLOBALES = /^(rs_perfil|rs_disp_id|rds_theme|rds_barra_plegada|rds_gemini_|red_)/;
+ * plegada y las preferencias del RandomEditor (módulo aparte). */
+const GLOBALES = /^(rs_perfil|rs_disp_id|rds_theme|rds_barra_plegada|red_)/;
+const clavePerfil = (id, key) => id === "rderandom" ? key : "perfil:" + id + ":" + key;
 let _almacen = false;
 function separarAlmacen(id) {
   if (_almacen || id === "rderandom") return;
   _almacen = true;
-  const ls = window.localStorage, proto = Object.getPrototypeOf(ls), pre = "perfil:" + id + ":";
+  const ls = window.localStorage, proto = Object.getPrototypeOf(ls);
   const get = proto.getItem, set = proto.setItem, quitar = proto.removeItem;
-  const k = (s, key) => (s === ls && !GLOBALES.test(String(key))) ? pre + key : key;
+  const k = (s, key) => (s === ls && !GLOBALES.test(String(key))) ? clavePerfil(id, key) : key;
   proto.getItem = function (key) { return get.call(this, k(this, key)); };
   proto.setItem = function (key, v) { return set.call(this, k(this, key), v); };
   proto.removeItem = function (key) { return quitar.call(this, k(this, key)); };
@@ -45,16 +55,20 @@ export async function entrarEnPerfil(id) {
   _sesion = id;
   fijarPerfilEnUso(id);
   separarAlmacen(id);
-  try { if (window.studioFS && window.studioFS.perfilPoner) await window.studioFS.perfilPoner(id); } catch (e) {}
+  const p = PERFILES.find(x => x.id === id);
+  try { if (window.studioFS && window.studioFS.perfilPoner) await window.studioFS.perfilPoner(id, p ? { nombre: p.nombre, canal: p.canal_id } : null); } catch (e) {}
 }
 
 // ------------------------------------------------------------------ fotos de perfil
 const kFoto = (id) => "rs_perfil_foto_" + id;          // la que subiste tú (data URL)
-const kCanal = (id) => "rs_perfil_canal_" + id;        // la del canal de YouTube (URL, se refresca al abrir)
 const leer = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const guardar = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
 
-export function fotoPerfil(p) { return leer(kFoto(p.id)) || leer(kCanal(p.id)) || p.avatar; }
+function inicial(nombre) {
+  const l = String(nombre || "?").trim().charAt(0).toUpperCase();
+  return "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFD700"/><stop offset="1" stop-color="#B8860B"/></linearGradient></defs><rect width="100" height="100" fill="#141414"/><text x="50" y="66" font-family="Arial" font-weight="800" font-size="52" text-anchor="middle" fill="url(#g)">${l}</text></svg>`);
+}
+export function fotoPerfil(p) { return leer(kFoto(p.id)) || p.foto || p.avatar; }
 
 function recortar(file) {
   return new Promise((ok, ko) => {
@@ -70,15 +84,27 @@ function recortar(file) {
     img.src = URL.createObjectURL(file);
   });
 }
-export function perfilAlArrancar() {
-  try {
-    if (localStorage.getItem(K_SIEMPRE) === "1") {
-      const p = PERFILES.find(x => x.id === localStorage.getItem(K_PERFIL) && x.activo);
-      if (p) return p.id;
-    }
-  } catch (e) {}
-  return null;
+
+/**
+ * Al arrancar: pregunta al servidor qué cuentas puede abrir este equipo.
+ * Devuelve { bloqueado, ip } | { auto: id } (entrar directo) | { lista }.
+ */
+export async function comprobarAcceso() {
+  let j;
+  try { j = await accesoApi(YT_BACKEND, "estado"); }
+  catch (e) {
+    // sin conexión: las que ya estaban aprobadas en este equipo (los datos de la nube siguen protegidos en el servidor)
+    let cache = [];
+    try { cache = JSON.parse(leer(K_CUENTAS) || "[]"); } catch (x) {}
+    ponerPerfiles(cache);
+    return { lista: PERFILES, sinConexion: true };
+  }
+  if (j.baneado) return { bloqueado: true, ip: j.ip };
+  ponerPerfiles(j.perfiles || []);
+  const auto = leer(K_SIEMPRE) === "1" && PERFILES.find(p => p.id === leer(K_PERFIL) && p.activo);
+  return auto ? { auto: auto.id } : { lista: PERFILES, dispositivo: j.dispositivo };
 }
+
 export function cambiarPerfil() {
   try { localStorage.removeItem(K_SIEMPRE); } catch (e) {}
   location.reload();
@@ -89,6 +115,9 @@ const CSS = `
 @keyframes rsp-brillo { 0%,100% { opacity: .55; transform: translate(-50%,-50%) scale(1) } 50% { opacity: .85; transform: translate(-50%,-50%) scale(1.08) } }
 @keyframes rsp-flota { 0% { transform: translateY(0); opacity: 0 } 15% { opacity: .9 } 100% { transform: translateY(-110vh); opacity: 0 } }
 @keyframes rsp-sale { to { opacity: 0; transform: scale(1.04); filter: blur(6px) } }
+@keyframes rsp-late { 0%,100% { transform: scale(1); opacity: .9 } 50% { transform: scale(1.08); opacity: 1 } }
+@keyframes rsp-abre { 0% { transform: scale(1) rotate(0) } 40% { transform: scale(1.25) rotate(-12deg) } 100% { transform: scale(0) rotate(20deg); opacity: 0 } }
+@keyframes rsp-gira { to { transform: rotate(360deg) } }
 .rsp-carta { transition: transform .22s cubic-bezier(.2,.8,.2,1), filter .22s; }
 .rsp-carta:hover .rsp-avatar, .rsp-carta:focus-visible .rsp-avatar { transform: translateY(-8px) scale(1.04);
   box-shadow: 0 0 0 3px #D4AF37, 0 18px 60px -10px rgba(212,175,55,.55); }
@@ -101,41 +130,144 @@ const CSS = `
 .rsp-lapiz:hover { transform: scale(1.1); }
 .rsp-op { text-align: left; font-size: 13px; font-weight: 600; color: #F5F5F5; padding: 9px 12px; border-radius: 8px; background: none; border: none; cursor: pointer; }
 .rsp-op:hover:not(:disabled) { background: rgba(212,175,55,.12); color: #FFD700; }
+.rsp-nueva:hover .rsp-avatar { border-color: #D4AF37 !important; color: #FFD700 !important; transform: translateY(-8px); }
 `;
 
-function Particulas() {
+const Candado = ({ s = 12 }) => (
+  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>);
+
+function Particulas({ color = "#D4AF37" }) {
   const ps = Array.from({ length: 22 }, (_, i) => ({
     left: (i * 37) % 100, delay: (i * 1.7) % 12, dur: 10 + (i * 3) % 9, size: 2 + (i % 3),
   }));
   return ps.map((p, i) => (
     <span key={i} style={{ position: "absolute", bottom: -10, left: p.left + "%", width: p.size, height: p.size, borderRadius: 9,
-      background: "#D4AF37", boxShadow: "0 0 8px #D4AF37", animation: `rsp-flota ${p.dur}s linear ${p.delay}s infinite`, opacity: 0 }} />));
+      background: color, boxShadow: "0 0 8px " + color, animation: `rsp-flota ${p.dur}s linear ${p.delay}s infinite`, opacity: 0 }} />));
 }
 
-export function PantallaPerfiles({ onElegir }) {
+function Fondo({ children, saliendo, rojo }) {
+  const c = rojo ? "220,38,38" : "212,175,55";
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#000", color: "#F5F5F5", overflow: "auto",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 16px 60px",
+      animation: saliendo ? "rsp-sale .42s ease forwards" : "none" }}>
+      <style>{CSS}</style>
+      <div style={{ position: "fixed", left: "50%", top: "38%", width: "90vmax", height: "90vmax", borderRadius: "50%",
+        background: `radial-gradient(circle, rgba(${c},.20) 0%, rgba(${c},.06) 35%, transparent 65%)`, animation: "rsp-brillo 7s ease-in-out infinite", pointerEvents: "none" }} />
+      <div style={{ position: "fixed", inset: 0, pointerEvents: "none" }}><Particulas color={rojo ? "#DC2626" : "#D4AF37"} /></div>
+      <div style={{ position: "fixed", top: 26, left: 0, right: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 10 }}>
+        <div className="grad-gold gold-glow" style={{ width: 34, height: 34, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#000" }}>
+          <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16 }}>R</span>
+        </div>
+        <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 17, letterSpacing: "-.01em" }}>Random<span className="gold-text">Studio</span></div>
+      </div>
+      {children}
+    </div>);
+}
+
+/** Conexión bloqueada: no se puede hacer nada hasta que el portátil lo revise. */
+export function PantallaBloqueo({ ip }) {
+  return (
+    <Fondo rojo>
+      <div style={{ position: "relative", textAlign: "center", maxWidth: 440, animation: "rsp-entra .6s ease both" }}>
+        <div style={{ width: 92, height: 92, margin: "0 auto 22px", borderRadius: 26, display: "flex", alignItems: "center", justifyContent: "center",
+          background: "rgba(220,38,38,.12)", border: "1px solid rgba(220,38,38,.5)", color: "#F87171", animation: "rsp-late 2.4s ease-in-out infinite" }}>
+          <Candado s={40} />
+        </div>
+        <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(24px,4vw,34px)", letterSpacing: "-.02em" }}>Acceso bloqueado</div>
+        <div style={{ fontSize: 14, color: "#A3A3A3", marginTop: 10, lineHeight: 1.6 }}>
+          Esta conexión no tiene permiso para entrar en RandomStudio. El administrador revisará el bloqueo.
+        </div>
+        {ip && <div style={{ marginTop: 18, fontSize: 12, color: "#6B6B6B", fontFamily: "ui-monospace,Consolas,monospace" }}>IP {ip}</div>}
+      </div>
+    </Fondo>);
+}
+
+export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
+  const [lista, setLista] = useState(() => [...PERFILES]);
+  const [disp, setDisp] = useState(ini && ini.dispositivo || null);
+  const [bloqueo, setBloqueo] = useState(null);
   const [siempre, setSiempre] = useState(false);
   const [saliendo, setSaliendo] = useState(null);
+  const [abriendo, setAbriendo] = useState(null);      // perfil que acaba de recibir permiso (animación del candado)
+  const [ocupado, setOcupado] = useState(codigo ? "Comprobando tu cuenta de Google…" : "");
+  const [error, setError] = useState(ini && ini.sinConexion ? "Sin conexión con el servidor: solo puedes entrar en las cuentas ya aprobadas." : "");
   const [, refrescar] = useState(0);
-  const [menu, setMenu] = useState(null);             // perfil con el menú del lápiz abierto
-  const subir = React.useRef(null);
-  const size = Math.min(170, Math.max(112, Math.round(window.innerWidth / 7)));
+  const [menu, setMenu] = useState(null);
+  const subir = useRef(null);
+  const antes = useRef(new Set(PERFILES.filter(p => p.activo).map(p => p.id)));
+  const size = Math.min(160, Math.max(108, Math.round(window.innerWidth / 7.5)));
+
+  const actualizar = async () => {
+    try {
+      const j = await accesoApi(YT_BACKEND, "estado");
+      if (j.baneado) { setBloqueo(j.ip || ""); return; }
+      ponerPerfiles(j.perfiles || []);
+      const nuevos = PERFILES.filter(p => p.activo && !antes.current.has(p.id));
+      nuevos.forEach(p => antes.current.add(p.id));
+      if (nuevos.length) { setAbriendo(nuevos[0].id); setTimeout(() => setAbriendo(null), 1400); }
+      setLista([...PERFILES]); setDisp(j.dispositivo || null); setError("");
+    } catch (e) { setError("Sin conexión con el servidor"); }
+  };
+
+  // con alguna cuenta esperando permiso, se comprueba sola cada 4 s
+  const hayPendientes = lista.some(p => !p.activo);
+  useEffect(() => {
+    if (!hayPendientes) return;
+    const t = setInterval(actualizar, 4000);
+    return () => clearInterval(t);
+  }, [hayPendientes]);
+
+  // vuelta de Google en la web (?code=...&state=rs_entrar)
+  useEffect(() => { if (codigo) conCodigo(codigo); }, []);
+
+  async function conCodigo(code) {
+    setOcupado("Comprobando tu cuenta de Google…"); setError("");
+    try {
+      const t = await ytCanjear(code);
+      if (t && t.baneado) { setBloqueo(""); return; }
+      if (!t || !t.access_token) throw new Error("No se pudo completar el inicio de sesión con Google");
+      const j = await accesoApi(YT_BACKEND, "solicitar", t.access_token);
+      if (j.baneado) { setBloqueo(j.ip || ""); return; }
+      // la sesión de Google se queda guardada en ESE perfil
+      guardar(clavePerfil(j.perfil.id, "rds_yt_tokens"), JSON.stringify(t));
+      await actualizar();
+    } catch (e) { setError(e.message || String(e)); }
+    setOcupado("");
+  }
+
+  const nuevaCuenta = async () => {
+    if (ocupado) return;
+    setError("");
+    try {
+      const code = await googleElegirCuenta();     // en la web se va a Google y vuelve
+      if (code) await conCodigo(code);
+    } catch (e) { setError(e.message || String(e)); }
+  };
+
+  const volverAPedir = async () => {
+    await olvidarEquipo();
+    setDisp(null); ponerPerfiles([]); setLista([]);
+    nuevaCuenta();
+  };
 
   const elegir = (p) => {
-    if (!p.activo || saliendo) return;
+    if (!p || !p.activo || saliendo) return;
     try { localStorage.setItem(K_PERFIL, p.id); localStorage.setItem(K_SIEMPRE, siempre ? "1" : "0"); } catch (e) {}
     setSaliendo(p.id);
     setTimeout(() => entrarEnPerfil(p.id).then(() => onElegir(p.id)), 420);
   };
 
-  // la foto del canal de YouTube: se pide al abrir y se guarda (la próxima vez sale al instante)
   useEffect(() => {
-    PERFILES.forEach(p => fetch(YT_BACKEND + "/api/avatar?canal=" + p.id).then(r => r.json()).then(j => {
-      if (j && j.success && j.url && j.url !== leer(kCanal(p.id))) { guardar(kCanal(p.id), j.url); refrescar(n => n + 1); }
-    }).catch(() => {}));
     const cerrar = () => setMenu(null);
     window.addEventListener("click", cerrar);
     return () => window.removeEventListener("click", cerrar);
   }, []);
+  useEffect(() => {
+    const f = (e) => { if (e.key === "Enter" && !menu) elegir(lista.find(p => p.activo)); };
+    window.addEventListener("keydown", f);
+    return () => window.removeEventListener("keydown", f);
+  });
 
   const elegirFoto = async (e) => {
     const f = e.target.files && e.target.files[0];
@@ -145,85 +277,106 @@ export function PantallaPerfiles({ onElegir }) {
     setMenu(null);
   };
 
-  useEffect(() => {
-    const f = (e) => { if (e.key === "Enter" && !menu) elegir(PERFILES[0]); };
-    window.addEventListener("keydown", f);
-    return () => window.removeEventListener("keydown", f);
-  });
+  if (bloqueo !== null) return <PantallaBloqueo ip={bloqueo} />;
+
+  const rechazado = disp && disp.estado === "revocado";
+  const primera = lista.find(p => p.activo);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#000", color: "#F5F5F5", overflow: "hidden",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px",
-      animation: saliendo ? "rsp-sale .42s ease forwards" : "none" }}>
-      <style>{CSS}</style>
-      {/* luz dorada de fondo y motas */}
-      <div style={{ position: "absolute", left: "50%", top: "38%", width: "90vmax", height: "90vmax", borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(212,175,55,.20) 0%, rgba(212,175,55,.06) 35%, transparent 65%)", animation: "rsp-brillo 7s ease-in-out infinite", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(120% 80% at 50% 120%, rgba(212,175,55,.10), transparent 60%)", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", inset: 0, pointerEvents: "none" }}><Particulas /></div>
-
-      <div style={{ position: "absolute", top: 26, left: 0, right: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 10 }}>
-        <div className="grad-gold gold-glow" style={{ width: 34, height: 34, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#000" }}>
-          <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16 }}>R</span>
-        </div>
-        <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 17, letterSpacing: "-.01em" }}>Random<span className="gold-text">Studio</span></div>
-      </div>
-
+    <Fondo saliendo={saliendo}>
       <div style={{ position: "relative", textAlign: "center", animation: "rsp-entra .6s ease both" }}>
-        <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(26px,4vw,40px)", letterSpacing: "-.03em" }}>¿Con qué perfil entras?</div>
-        <div style={{ fontSize: 14, color: "#A3A3A3", marginTop: 8 }}>Cada perfil es un canal, con sus vídeos y su forma de trabajar</div>
+        <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(26px,4vw,40px)", letterSpacing: "-.03em" }}>
+          {lista.length ? "¿Con qué cuenta entras?" : "Bienvenido a RandomStudio"}</div>
+        <div style={{ fontSize: 14, color: "#A3A3A3", marginTop: 8, maxWidth: 520, lineHeight: 1.5 }}>
+          {lista.length ? "Cada perfil es una cuenta de Google con su canal de YouTube"
+            : "Inicia sesión con tu cuenta de Google. El portátil tendrá que darte permiso antes de entrar."}</div>
       </div>
 
-      <div style={{ position: "relative", display: "flex", gap: "clamp(22px,5vw,56px)", marginTop: 44, flexWrap: "wrap", justifyContent: "center" }}>
-        {PERFILES.map((p, i) => (
-          <div key={p.id} role="button" tabIndex={p.activo ? 0 : -1} onClick={() => elegir(p)} className={"rsp-carta" + (p.activo ? "" : " bloq")}
-            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, cursor: p.activo ? "pointer" : "default", position: "relative",
-              animation: `rsp-entra .6s ease ${0.12 + i * 0.1}s both`, outline: "none", background: "none", border: "none", color: "inherit" }}>
-            <div className="rsp-avatar" style={{ position: "relative", borderRadius: size * 0.2, boxShadow: "0 0 0 1px #2a2a2a",
-              transform: saliendo === p.id ? "scale(1.08)" : undefined }}>
-              <img src={fotoPerfil(p)} alt="" referrerPolicy="no-referrer"
-                onError={(e) => { if (e.currentTarget.src !== p.avatar) e.currentTarget.src = p.avatar; }}
-                style={{ width: size, height: size, borderRadius: size * 0.2, display: "block", objectFit: "cover",
-                  filter: p.activo ? "none" : "grayscale(.85) brightness(.45)" }} />
-              {/* lápiz: subir otra foto o volver a la del canal */}
-              <button className="rsp-lapiz" title="Cambiar la foto" onClick={(e) => { e.stopPropagation(); setMenu(m => m === p.id ? null : p.id); }}
-                style={{ position: "absolute", right: -6, bottom: -6, width: 32, height: 32, borderRadius: 99, display: "flex", alignItems: "center",
-                  justifyContent: "center", background: "#141414", border: "1px solid #3a3119", color: "#D4AF37", boxShadow: "0 4px 14px rgba(0,0,0,.6)", zIndex: 2 }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-              </button>
-              {menu === p.id && (
-                <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 12px)", left: "50%", transform: "translateX(-50%)", zIndex: 5,
-                  minWidth: 236, whiteSpace: "nowrap", background: "#141414", border: "1px solid #3a3119", borderRadius: 12, padding: 6, boxShadow: "0 18px 50px rgba(0,0,0,.7)",
-                  display: "flex", flexDirection: "column", gap: 2, animation: "rsp-entra .18s ease both" }}>
-                  <button onClick={() => subir.current && subir.current.click()} className="rsp-op">Subir una foto…</button>
-                  <button disabled={!leer(kFoto(p.id))} onClick={() => { guardar(kFoto(p.id), null); refrescar(n => n + 1); setMenu(null); }}
-                    className="rsp-op" style={{ opacity: leer(kFoto(p.id)) ? 1 : 0.4 }}>Usar la del canal de YouTube</button>
-                </div>)}
-              {!p.activo && (
-                <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 800, letterSpacing: ".08em", color: "#FFD700",
-                    background: "rgba(0,0,0,.72)", border: "1px solid #3a3119", borderRadius: 999, padding: "6px 12px", backdropFilter: "blur(4px)" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-                    PRÓXIMAMENTE
-                  </div>
-                </div>)}
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <div className="rsp-nombre" style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 18, color: p.activo ? "#F5F5F5" : "#8a8a8a", transition: "color .2s" }}>{p.nombre}</div>
-              <div style={{ fontSize: 12, color: p.activo ? "#D4AF37" : "#6B6B6B", marginTop: 3, fontWeight: 600 }}>{p.lema}</div>
-            </div>
-          </div>))}
+      {rechazado && (
+        <div style={{ position: "relative", marginTop: 26, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "center",
+          background: "rgba(220,38,38,.08)", border: "1px solid rgba(220,38,38,.4)", borderRadius: 12, padding: "10px 14px", fontSize: 13 }}>
+          <span style={{ color: "#F87171", fontWeight: 700 }}>El portátil rechazó este equipo.</span>
+          <button onClick={volverAPedir} className="rsp-op" style={{ color: "#FFD700", border: "1px solid #3a3119" }}>Volver a pedir permiso</button>
+        </div>)}
+
+      <div style={{ position: "relative", display: "flex", gap: "clamp(22px,5vw,52px)", marginTop: 40, flexWrap: "wrap", justifyContent: "center" }}>
+        {lista.map((p, i) => {
+          const bloq = !p.activo;
+          return (
+            <div key={p.id} role="button" tabIndex={bloq ? -1 : 0} onClick={() => elegir(p)} className={"rsp-carta" + (bloq ? " bloq" : "")}
+              title={bloq ? "Esperando permiso del portátil" : "Entrar como " + p.nombre}
+              style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, cursor: bloq ? "default" : "pointer", position: "relative",
+                animation: `rsp-entra .6s ease ${0.12 + i * 0.1}s both`, outline: "none", width: size + 30 }}>
+              <div className="rsp-avatar" style={{ position: "relative", borderRadius: size * 0.2, boxShadow: abriendo === p.id ? "0 0 0 3px #22C55E, 0 0 60px rgba(34,197,94,.5)" : "0 0 0 1px #2a2a2a",
+                transform: saliendo === p.id ? "scale(1.08)" : undefined }}>
+                <img src={fotoPerfil(p)} alt="" referrerPolicy="no-referrer"
+                  onError={(e) => { if (e.currentTarget.src !== p.avatar) e.currentTarget.src = p.avatar; }}
+                  style={{ width: size, height: size, borderRadius: size * 0.2, display: "block", objectFit: "cover",
+                    filter: bloq ? "grayscale(.85) brightness(.4)" : "none", transition: "filter .6s" }} />
+                {!bloq && (
+                  <button className="rsp-lapiz" title="Cambiar la foto" onClick={(e) => { e.stopPropagation(); setMenu(m => m === p.id ? null : p.id); }}
+                    style={{ position: "absolute", right: -6, bottom: -6, width: 32, height: 32, borderRadius: 99, display: "flex", alignItems: "center",
+                      justifyContent: "center", background: "#141414", border: "1px solid #3a3119", color: "#D4AF37", boxShadow: "0 4px 14px rgba(0,0,0,.6)", zIndex: 2 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                  </button>)}
+                {menu === p.id && (
+                  <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 12px)", left: "50%", transform: "translateX(-50%)", zIndex: 5,
+                    minWidth: 236, whiteSpace: "nowrap", background: "#141414", border: "1px solid #3a3119", borderRadius: 12, padding: 6, boxShadow: "0 18px 50px rgba(0,0,0,.7)",
+                    display: "flex", flexDirection: "column", gap: 2, animation: "rsp-entra .18s ease both" }}>
+                    <button onClick={() => subir.current && subir.current.click()} className="rsp-op">Subir una foto…</button>
+                    <button disabled={!leer(kFoto(p.id))} onClick={() => { guardar(kFoto(p.id), null); refrescar(n => n + 1); setMenu(null); }}
+                      className="rsp-op" style={{ opacity: leer(kFoto(p.id)) ? 1 : 0.4 }}>Usar la del canal de YouTube</button>
+                  </div>)}
+                {(bloq || abriendo === p.id) && (
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: 54, height: 54, borderRadius: 99, display: "flex", alignItems: "center", justifyContent: "center",
+                      background: "rgba(0,0,0,.75)", border: "1px solid " + (abriendo === p.id ? "#22C55E" : "#3a3119"), color: abriendo === p.id ? "#22C55E" : "#FFD700",
+                      backdropFilter: "blur(4px)", animation: abriendo === p.id ? "rsp-abre 1.2s ease forwards" : "rsp-late 2s ease-in-out infinite" }}>
+                      <Candado s={24} />
+                    </div>
+                  </div>)}
+              </div>
+              <div style={{ textAlign: "center" }}>
+                <div className="rsp-nombre" style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 17, color: bloq ? "#8a8a8a" : "#F5F5F5", transition: "color .2s" }}>{p.nombre}</div>
+                <div style={{ fontSize: 12, color: bloq ? "#D4AF37" : "#A3A3A3", marginTop: 3, fontWeight: 600, display: "flex", alignItems: "center", gap: 5, justifyContent: "center" }}>
+                  {bloq ? <><span style={{ width: 10, height: 10, border: "2px solid #D4AF37", borderTopColor: "transparent", borderRadius: 99, animation: "rsp-gira 1s linear infinite" }} />Esperando permiso del portátil</> : p.lema}
+                </div>
+              </div>
+            </div>);
+        })}
+
+        {/* añadir otra cuenta de Google */}
+        <div role="button" tabIndex={0} onClick={nuevaCuenta} className="rsp-carta rsp-nueva" title="Iniciar sesión con otra cuenta de Google"
+          style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, cursor: ocupado ? "wait" : "pointer", width: size + 30,
+            animation: `rsp-entra .6s ease ${0.12 + lista.length * 0.1}s both`, outline: "none" }}>
+          <div className="rsp-avatar" style={{ width: size, height: size, borderRadius: size * 0.2, border: "2px dashed #3a3a3a", color: "#8a8a8a",
+            display: "flex", alignItems: "center", justifyContent: "center", transition: "all .22s" }}>
+            {ocupado
+              ? <span style={{ width: 34, height: 34, border: "3px solid #D4AF37", borderTopColor: "transparent", borderRadius: 99, animation: "rsp-gira .9s linear infinite" }} />
+              : <svg width={size * 0.3} height={size * 0.3} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>}
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <div className="rsp-nombre" style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 17, transition: "color .2s" }}>{lista.length ? "Añadir cuenta" : "Iniciar sesión"}</div>
+            <div style={{ fontSize: 12, color: "#A3A3A3", marginTop: 3, fontWeight: 600 }}>{ocupado || "con Google"}</div>
+          </div>
+        </div>
       </div>
       <input ref={subir} type="file" accept="image/*" style={{ display: "none" }} onChange={elegirFoto} />
 
-      <label style={{ position: "relative", marginTop: 44, display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#A3A3A3", cursor: "pointer",
-        animation: "rsp-entra .6s ease .35s both" }}>
-        <span onClick={() => setSiempre(s => !s)} style={{ width: 38, height: 22, borderRadius: 99, padding: 3, display: "flex",
-          background: siempre ? "linear-gradient(135deg,#FFD700,#D4AF37)" : "#262626", transition: "background .2s" }}>
-          <span style={{ width: 16, height: 16, borderRadius: 99, background: siempre ? "#000" : "#6B6B6B", transform: siempre ? "translateX(16px)" : "none", transition: "transform .2s" }} />
-        </span>
-        <span onClick={() => setSiempre(s => !s)}>Entrar siempre con este perfil</span>
-      </label>
-      <div style={{ position: "absolute", bottom: 18, fontSize: 11.5, color: "#555" }}>Pulsa Intro para entrar con RDeRandom</div>
-    </div>);
+      {error && <div style={{ position: "relative", marginTop: 26, fontSize: 13, color: "#F87171", textAlign: "center", maxWidth: 480 }}>{error}</div>}
+
+      {primera && (
+        <label style={{ position: "relative", marginTop: 40, display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#A3A3A3", cursor: "pointer",
+          animation: "rsp-entra .6s ease .35s both" }}>
+          <span onClick={() => setSiempre(s => !s)} style={{ width: 38, height: 22, borderRadius: 99, padding: 3, display: "flex",
+            background: siempre ? "linear-gradient(135deg,#FFD700,#D4AF37)" : "#262626", transition: "background .2s" }}>
+            <span style={{ width: 16, height: 16, borderRadius: 99, background: siempre ? "#000" : "#6B6B6B", transform: siempre ? "translateX(16px)" : "none", transition: "transform .2s" }} />
+          </span>
+          <span onClick={() => setSiempre(s => !s)}>Entrar siempre con este perfil</span>
+        </label>)}
+      <div style={{ position: "fixed", bottom: 16, left: 0, right: 0, textAlign: "center", fontSize: 11.5, color: "#555" }}>
+        {disp ? <>Este equipo: <b style={{ color: "#8a8a8a" }}>{disp.nombre}</b>{disp.rol === "dueno" ? " · manda en todo" : disp.rol === "admin" ? " · administrador" : ""}</> : "Equipo sin registrar"}
+        {primera ? " · Pulsa Intro para entrar con " + primera.nombre : ""}
+      </div>
+    </Fondo>);
 }

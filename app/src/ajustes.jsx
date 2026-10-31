@@ -2,7 +2,7 @@ import React from "react";
 import { ATAJOS_EDITOR } from "./random_editor";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { Icons, STATUSES } from "./base";
-import { geminiGetKey, geminiSaveKey, ytClearTokens, ytIsConnected } from "./datos";
+import { ytClearTokens, ytIsConnected } from "./datos";
 import { Field, inputStyle } from "./videos";
 import { ingresosEstimadosActivos } from "./youtube";
 import { SeguridadPanel } from "./acceso";
@@ -27,7 +27,6 @@ export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExp
   const [colorDia, setColorDiaCfg] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_dia")!=="0"; } catch(e){ return true; } });
   const [colorMes, setColorMesCfg] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_mes")!=="0"; } catch(e){ return true; } });
   const [carpeta, setCarpeta] = useState(()=>{ try { return localStorage.getItem("rds_video_folder")||""; } catch(e){ return ""; } });
-  const [gemKey, setGemKey] = useState(geminiGetKey());
   const esEscritorio = !!(typeof window!=="undefined" && window.studioFS);
   const fileRef = useRef(null);
   const conectado = ytIsConnected();
@@ -135,16 +134,6 @@ export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExp
 
         <SeguridadPanel caja={caja} tituloZona={tituloZona} toast={toast}/>
 
-        <div style={caja}>
-          <div style={tituloZona}>IA (Gemini)</div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{display:"flex",gap:8}}>
-              <input type="password" value={gemKey} onChange={e=>setGemKey(e.target.value)} placeholder="AIza…" style={{...inputStyle,flex:1}}/>
-              <button onClick={()=>{ geminiSaveKey(gemKey.trim()); toast(gemKey.trim()?"Clave de Gemini guardada":"Clave borrada"); }} className="grad-gold" style={{flexShrink:0,color:"#000",fontWeight:700,fontSize:12.5,padding:"9px 14px",borderRadius:9}}>Guardar</button>
-            </div>
-            <div style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5}}>Gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style={{color:"var(--gold)"}}>aistudio.google.com/apikey</a>. Se usa para descripciones, comentarios fijados y respuestas a comentarios.</div>
-          </div>
-        </div>
 
         {esEscritorio && (
           <div style={caja}>

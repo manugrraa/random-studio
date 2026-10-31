@@ -5,6 +5,7 @@
  * Se registra solo con require("./historias.cjs") desde main.cjs.
  */
 const { ipcMain, nativeImage, shell } = require("electron");
+require("./claude.cjs");             // v3.30: la IA del Studio (Claude Code)
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");

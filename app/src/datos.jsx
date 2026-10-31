@@ -156,142 +156,24 @@ export const YT_SCOPES = [
   "https://www.googleapis.com/auth/yt-analytics-monetary.readonly"
 ].join(" ");
 
-/* ============================ GEMINI (IA gratuita, opcional) ============================ */
-// La clave la genera el usuario gratis en https://aistudio.google.com/apikey y se guarda local.
-export const GEMINI_KEY_STORE = "rds_gemini_key";
-export const GEMINI_MODEL_STORE = "rds_gemini_model"; // modelo que el usuario prefiere / que funcionó
-export const GEMINI_SYSTEM_STORE = "rds_gemini_system"; // instrucciones de sistema (tipo "Gem")
-// Modelos gratuitos a probar, del mejor al más compatible. gemini-flash-latest es un alias
-// estable que apunta siempre al Flash vigente (evita errores 404 por nombres caducados).
-// Modelos gratuitos ESTABLES y vigentes (jul 2026), del mejor al de respaldo.
-// Notas: gemini-2.0-flash se discontinuó (jun 2026); gemini-2.5-flash-lite pasó a ser
-// SOLO de pago para cuentas nuevas; gemini-flash-latest es experimental (límites muy bajos).
-export const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-3.5-flash"];
-
-export function geminiGetKey(){ try { return localStorage.getItem(GEMINI_KEY_STORE) || ""; } catch(e){ return ""; } }
-export function geminiSaveKey(k){ try { localStorage.setItem(GEMINI_KEY_STORE, k||""); } catch(e){} }
-export function geminiHasKey(){ return !!geminiGetKey(); }
-export function geminiGetModel(){
-  try {
-    const m = localStorage.getItem(GEMINI_MODEL_STORE) || "";
-    // Ignorar modelos ya retirados o experimentales que guardaron versiones anteriores,
-    // para que no se usen como preferidos y provoquen 404/429.
-    const obsoletos = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"];
-    if(obsoletos.includes(m)){ localStorage.removeItem(GEMINI_MODEL_STORE); return ""; }
-    return m;
-  } catch(e){ return ""; }
-}
-export function geminiSaveModel(m){ try { if(m) localStorage.setItem(GEMINI_MODEL_STORE, m); } catch(e){} }
-export function geminiGetSystem(){ try { return localStorage.getItem(GEMINI_SYSTEM_STORE) || ""; } catch(e){ return ""; } }
-export function geminiSaveSystem(s){ try { localStorage.setItem(GEMINI_SYSTEM_STORE, s||""); } catch(e){} }
-
-// Llama a un modelo concreto de Gemini. Devuelve {ok, text, status, error}.
-export async function geminiCall(model, prompt, system){
-  const key = geminiGetKey();
-  const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + encodeURIComponent(key);
-  const build = (maxTok) => {
-    const b = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.9,
-        maxOutputTokens: maxTok
-      }
-    };
-    // El "thinking" consume tokens de la salida y puede dejar la respuesta vacía.
-    // Los modelos 2.5 aceptan thinkingBudget (número); los de la serie 3 usan
-    // thinkingLevel (texto). Enviar el campo equivocado da error 400, así que adaptamos.
-    if(/^gemini-2\.5/.test(model)){
-      b.generationConfig.thinkingConfig = { thinkingBudget: 0 };
-    } else if(/^gemini-3/.test(model)){
-      b.generationConfig.thinkingConfig = { thinkingLevel: "minimal" };
-    }
-    if(system && system.trim()) b.systemInstruction = { parts: [{ text: system.trim() }] };
-    return b;
-  };
-  const doPost = async (maxTok, sinThinking) => {
-    try {
-      const b = build(maxTok);
-      if(sinThinking && b.generationConfig.thinkingConfig) delete b.generationConfig.thinkingConfig;
-      const res = await fetch(url, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(b) });
-      const data = await res.json().catch(()=>({}));
-      return { res, data };
-    } catch(e){ return { res:{ok:false,status:0}, data:{} }; }
-  };
-
-  let { res, data } = await doPost(2048);
-
-  // Si el modelo rechaza el campo de thinking (400 con mención a thinking), reintentar sin él
-  if(!res.ok && res.status===400 && /think/i.test(data?.error?.message||"")){
-    const retry = await doPost(8192, true);
-    res = retry.res; data = retry.data;
-  }
-
-  // Si la respuesta salió vacía por MAX_TOKENS (thinking), reintentar UNA vez con más espacio.
-  const emptyByMaxTokens = (rr, dd) => rr.ok && !(dd?.candidates?.[0]?.content?.parts?.some(p=>p.text))
-    && dd?.candidates?.[0]?.finishReason==="MAX_TOKENS";
-  if(emptyByMaxTokens(res, data)){
-    const retry = await doPost(8192);
-    res = retry.res; data = retry.data;
-  }
-
-  if(res.ok){
-    const cand = data?.candidates?.[0];
-    const text = cand?.content?.parts?.map(p=>p.text).filter(Boolean).join("") || "";
-    if(text) return { ok:true, text: text.trim() };
-    // Respuesta vacía: distinguir la causa real
-    const reason = cand?.finishReason;
-    if(reason==="MAX_TOKENS"){
-      return { ok:false, status:200, error:"La respuesta se quedó sin espacio. Prueba un prompt más corto." };
-    }
-    if(reason==="SAFETY" || reason==="PROHIBITED_CONTENT"){
-      return { ok:false, status:200, error:"Gemini bloqueó la respuesta por seguridad. Reformula el prompt." };
-    }
-    if(!data?.candidates || data.candidates.length===0){
-      const block = data?.promptFeedback?.blockReason;
-      if(block) return { ok:false, status:200, error:"Gemini bloqueó la petición ("+block+"). Reformula el prompt." };
-    }
-    return { ok:false, status:200, error: reason ? ("Gemini no generó texto ("+reason+")") : "Gemini no devolvió texto" };
-  }
-  const msg = data?.error?.message || "";
-  return { ok:false, status:res.status, error: msg || ("Error "+res.status), notFound: res.status===404 };
-}
-
-// Genera texto probando modelos hasta que uno funcione. Recuerda el que funcionó.
-export async function geminiGenerate(prompt, systemOverride){
-  const key = geminiGetKey();
-  if(!key) throw new Error("Falta la clave de Gemini. Configúrala en el apartado Agente.");
-  const system = (systemOverride!=null ? systemOverride : geminiGetSystem());
-
-  // Orden de modelos: primero el que el usuario haya fijado, luego los estables por defecto.
-  const preferred = geminiGetModel();
-  const models = [preferred, ...GEMINI_MODELS].filter((m,i,arr)=> m && arr.indexOf(m)===i);
-
-  let lastErr = "No se pudo generar la descripción";
-  for(const model of models){
-    const r = await geminiCall(model, prompt, system);
-    if(r.ok){ geminiSaveModel(model); return r.text; }
-
-    // Errores DEFINITIVOS → parar de inmediato (no malgastar más peticiones ni cuota):
-    if(r.status===400 && /API[ _]?key/i.test(r.error))
-      throw new Error("La clave de Gemini no es válida. Revísala en el apartado Agente.");
-    if(r.status===403)
-      throw new Error("Gemini rechazó la clave (403). Habilita la API «Generative Language» para tu clave en Google AI Studio.");
-    if(r.status===429)
-      // MUY IMPORTANTE: no seguimos probando otros modelos, porque cada intento consume
-      // más cuota del minuto y agrava el bloqueo. Paramos y avisamos.
-      throw new Error("Límite gratuito de Gemini alcanzado (máx. ~15 por minuto). Espera un minuto y vuelve a intentarlo.");
-    if(r.status===200 && /seguridad|bloqueó/i.test(r.error))
-      throw new Error(r.error); // bloqueo de contenido: cambiar de modelo no ayuda
-
-    // Modelo retirado para esta cuenta → olvidarlo como preferido y probar el siguiente
-    if(/no longer available|not available/i.test(r.error||"")){
-      try { if(model === localStorage.getItem(GEMINI_MODEL_STORE)) localStorage.removeItem(GEMINI_MODEL_STORE); } catch(e){}
-    }
-
-    // Errores recuperables (404 modelo no disponible, 5xx puntual, sin texto) → probar el siguiente
-    lastErr = r.error || lastErr;
-  }
-  throw new Error(lastErr + ". Prueba de nuevo en un momento o elige otro modelo en el apartado Agente.");
+/* ============================ IA: CLAUDE (v3.30) ============================
+ * La IA del Studio es Claude Code del portátil (`claude -p`, plan Max), sustituye a Gemini.
+ * Las «instrucciones del agente» (lo que antes era el Gem) se guardan por perfil. */
+export const IA_SISTEMA_STORE = "rds_ia_sistema";
+export function iaDisponible(){ return !!(window.studioFS && window.studioFS.claude); }
+export function iaGetSistema(){ try { return localStorage.getItem(IA_SISTEMA_STORE) || ""; } catch(e){ return ""; } }
+// Gemini ya no se usa: se pasan sus instrucciones a Claude y se borran su clave y su modelo de este equipo
+try {
+  const viejo = localStorage.getItem("rds_gemini_system");
+  if(viejo && !localStorage.getItem(IA_SISTEMA_STORE)) localStorage.setItem(IA_SISTEMA_STORE, viejo);
+  Object.keys(localStorage).filter(k=>/rds_gemini_/.test(k)).forEach(k=>localStorage.removeItem(k));
+} catch(e){}
+export function iaSaveSistema(s){ try { localStorage.setItem(IA_SISTEMA_STORE, s||""); } catch(e){} }
+export async function iaGenerar(prompt, sistema){
+  if(!iaDisponible()) throw new Error("La IA (Claude) funciona en el portátil: abre RandomStudio allí.");
+  const r = await window.studioFS.claude(prompt, { sistema: sistema!=null ? sistema : iaGetSistema() });
+  if(!r || !r.ok) throw new Error((r && r.error) || "Claude no respondió");
+  return r.texto;
 }
 
 // Lee/guarda los tokens de Google en localStorage
@@ -324,29 +206,48 @@ export function ytTokenValid(){
 /* ——— Sesión PERMANENTE: flujo con código + refresh token ———
    Te logueas UNA vez; el backend guarda el client_secret y canjea/renueva.
    El refresh token vive en este dispositivo hasta que pulses Desconectar. */
-export async function ytExchangeCode(code){
+// v3.30: canjea el código y DEVUELVE los tokens (la pantalla de perfiles los guarda en el perfil que toque)
+export async function ytCanjear(code){
   try {
     const res = await fetch(YT_BACKEND + "/api/auth/exchange", {
-      method:"POST", headers:{ "Content-Type":"application/json" },
+      method:"POST", headers:{ "Content-Type":"application/json", ...(await cabecerasEquipo("POST", "/api/auth/exchange")) },
       body: JSON.stringify({ code, redirectUri: YT_REDIRECT })
     });
     const data = await res.json().catch(()=>({}));
-    if(!res.ok || !data.success || !data.access_token) return false;
-    const prev = ytGetTokens() || {};
-    ytSaveTokens({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token || prev.refresh_token || null,
-      expires_at: Date.now() + (data.expires_in||3600)*1000
-    });
-    return true;
-  } catch(e){ return false; }
+    if(data.baneado) return { baneado: true };
+    if(!res.ok || !data.success || !data.access_token) return null;
+    return { access_token: data.access_token, refresh_token: data.refresh_token || null, expires_at: Date.now() + (data.expires_in||3600)*1000 };
+  } catch(e){ return null; }
+}
+export async function ytExchangeCode(code){
+  const t = await ytCanjear(code);
+  if(!t || !t.access_token) return false;
+  const prev = ytGetTokens() || {};
+  ytSaveTokens({ ...t, refresh_token: t.refresh_token || prev.refresh_token || null });
+  return true;
+}
+
+/** v3.30: iniciar sesión con OTRA cuenta de Google desde la pantalla de perfiles (eligiendo la cuenta).
+ * En el escritorio devuelve el código; en la web se va a Google y vuelve con ?code=...&state=rs_entrar. */
+export async function googleElegirCuenta(){
+  const params = new URLSearchParams({
+    client_id: YT_CLIENT_ID, redirect_uri: YT_REDIRECT, response_type: "code", access_type: "offline",
+    scope: YT_SCOPES, include_granted_scopes: "true", prompt: "select_account consent", state: "rs_entrar"
+  });
+  const authUrl = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
+  if(window.studioFS && window.studioFS.oauth){
+    const ret = String(await window.studioFS.oauth(authUrl, YT_REDIRECT, {}) || "");
+    return new URLSearchParams(ret.replace(/^[?#]/,"")).get("code");
+  }
+  window.location.href = authUrl;
+  return null;
 }
 export async function ytRefreshWithToken(){
   const t = ytGetTokens();
   if(!t || !t.refresh_token) return false;
   try {
     const res = await fetch(YT_BACKEND + "/api/auth/refresh", {
-      method:"POST", headers:{ "Content-Type":"application/json" },
+      method:"POST", headers:{ "Content-Type":"application/json", ...(await cabecerasEquipo("POST", "/api/auth/refresh")) },
       body: JSON.stringify({ refreshToken: t.refresh_token })
     });
     const data = await res.json().catch(()=>({}));

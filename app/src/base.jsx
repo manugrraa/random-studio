@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 
-export const APP_VERSION = "3.29.0";
+export const APP_VERSION = "3.30.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -107,6 +107,7 @@ export const Icon = ({d, size=18, fill="none", stroke="currentColor", sw=1.8, st
   <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={style}>{d}</svg>
 );
 export const Icons = {
+  shield: <Icon d={<><path d="M12 2l8 3v6c0 5-3.5 9.3-8 11-4.5-1.7-8-6-8-11V5l8-3z"/><rect x="9" y="11" width="6" height="5" rx="1"/><path d="M10 11V9a2 2 0 014 0v2"/></>}/>,
   calendar: <Icon d={<><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></>}/>,
   kanban: <Icon d={<><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="10" y="3" width="6" height="12" rx="1"/><rect x="17" y="3" width="4" height="8" rx="1"/></>}/>,
   tag: <Icon d={<><path d="M2 10V4a2 2 0 012-2h6l10 10-8 8L2 10z"/><circle cx="7" cy="7" r="1.4" fill="currentColor" stroke="none"/></>}/>,

@@ -6,6 +6,7 @@ import { DirectosView, ClipsView } from "./clon";
 import { ConvertidorView } from "./convertidor";
 import { HistoriasView } from "./historias";
 import { useModulosOff } from "./modulos";
+import { AdminView, esAdmin, useRolEquipo, useSolicitudesPendientes } from "./admin";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { BarraLateral } from "./navegacion";
@@ -763,6 +764,9 @@ export function App() {
   };
 
   const modulosOff = useModulosOff();
+  // v3.30: el panel de administración solo sale en el portátil y en los equipos a los que dé ese poder
+  const rolEquipo = useRolEquipo();
+  const solicitudes = useSolicitudesPendientes(esAdmin(rolEquipo));
   const todasTabs = [
     {id:"calendar", label:"Calendario", icon:Icons.calendar, primary:true, grupo:"plan"},
     {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban, primary:true, grupo:"plan"},
@@ -784,6 +788,7 @@ export function App() {
     {id:"convertidor", label:"Convertidor", icon:Icons.download, primary:true, grupo:"produccion", pc:true},
     {id:"randomchat", label:"RandomChat", icon:Icons.chat, grupo:"produccion", pc:true},
     {id:"agent", label:"Agente", icon:Icons.sparkles, grupo:"asistente"},
+    ...(esAdmin(rolEquipo) ? [{id:"admin", label:"Administración", icon:Icons.shield, grupo:"abajo", badge:solicitudes}] : []),
     {id:"config", label:"Configuración", icon:Icons.gear, grupo:"abajo"},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length, grupo:"abajo"},
   ];
@@ -1237,6 +1242,7 @@ export function App() {
         {view==="clips" && <ClipsView toast={toast}/>}
         {view==="ranking" && <RankingView toast={toast}/>}
         {view==="historias" && <HistoriasView toast={toast}/>}
+        {view==="admin" && esAdmin(rolEquipo) && <AdminView toast={toast}/>}
         {view==="convertidor" && <ConvertidorView toast={toast}/>}
         {view==="randomchat" && <RandomChatView toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}

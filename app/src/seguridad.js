@@ -12,7 +12,7 @@ const DB = "rs-seguridad", STORE = "llave", ID_KEY = "rs_disp_id";
 let _llave = null;            // { id, privada, publicaJwk }
 let _hola = null;             // promesa del «inicio de sesión» de esta ejecución
 let _urgente = null;          // cabeceras firmadas de reserva para el guardado al cerrar
-export let estadoEquipo = { estado: null, modo: null, nombre: null, error: null };
+export let estadoEquipo = { estado: null, rol: null, nombre: null, error: null };
 
 function idb() {
   return new Promise((ok, ko) => {
@@ -102,7 +102,7 @@ export function asegurarEquipo(backend, token, nombre) {
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
-    estadoEquipo = { estado: j.estado, modo: j.modo, nombre: j.nombre, error: null };
+    estadoEquipo = { estado: j.estado, rol: j.rol || null, nombre: j.nombre, error: null };
     renovarUrgente();
     setInterval(renovarUrgente, 2 * 60 * 1000);
     avisar();
@@ -126,4 +126,30 @@ export async function seguridadApi(backend, token, metodo, cuerpo) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
   return j;
+}
+
+// ------------------------------------------------------------------ v3.30: pantalla de perfiles
+/** /api/acceso: «estado» (qué perfiles puede abrir este equipo) o «solicitar» (pedir entrar con una cuenta). */
+export async function accesoApi(backend, accion, token) {
+  const k = await llave();
+  const cuerpo = { accion };
+  if (accion === "solicitar" && !k.id) { cuerpo.nombre = nombrePorDefecto(); cuerpo.clave_publica = k.publicaJwk; }
+  const r = await fetch(backend + "/api/acceso", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(await firmar("POST", "/api/acceso")) },
+    body: JSON.stringify(cuerpo),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (j.baneado) return { baneado: true, ip: j.ip, error: j.error };
+  if (!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
+  if (j.id && !k.id) { k.id = j.id; await idbPut("par", k); try { localStorage.setItem(ID_KEY, j.id); } catch (e) {} }
+  if (j.olvidado) await olvidarEquipo();
+  return j;
+}
+
+/** El servidor ya no conoce este equipo (lo borraste o lo rechazaste): llave nueva para poder volver a pedir. */
+export async function olvidarEquipo() {
+  try { await idbPut("par", null); } catch (e) {}
+  _llave = null; _hola = null;
+  try { localStorage.removeItem(ID_KEY); } catch (e) {}
 }

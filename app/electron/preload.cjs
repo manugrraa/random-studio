@@ -83,7 +83,9 @@ contextBridge.exposeInMainWorld("studioFS", {
     return () => ipcRenderer.removeListener("studio-upload-progress", h);
   },
   // Perfiles y carpetas (v3.26)
-  perfilPoner: (id) => ipcRenderer.invoke("perfil-poner", id),
+  perfilPoner: (id, info) => ipcRenderer.invoke("perfil-poner", id, info),
+  claude: (prompt, opts) => ipcRenderer.invoke("claude-generar", prompt, opts),
+  claudeDisponible: () => ipcRenderer.invoke("claude-disponible"),
   carpetasLeer: (id) => ipcRenderer.invoke("carpetas-leer", id),
   carpetasGuardar: (id, clave, ruta) => ipcRenderer.invoke("carpetas-guardar", id, clave, ruta),
   carpetasElegir: (actual) => ipcRenderer.invoke("carpetas-elegir", actual),

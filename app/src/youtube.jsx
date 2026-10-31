@@ -3,7 +3,7 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { PinnedCommentPanel } from "./agente";
 import { FormatPill, Icon, Icons, makeVideo } from "./base";
 import { ChannelHeroCard } from "./canal";
-import { clasificarFormato, fechaISO, fireNotification, geminiGenerate, geminiHasKey, ytAnalyticsQuery, ytAuthHeader, ytCheckVideos, ytDeleteVideo, ytExpireAccess, ytFetchDiario, ytFetchRpmReal, ytIsConnected, ytListChannelComments, ytListUploadsFull, ytPostComment, ytReplyComment, ytTokenValid, ytViewCounts } from "./datos";
+import { clasificarFormato, fechaISO, fireNotification, iaDisponible, iaGenerar, ytAnalyticsQuery, ytAuthHeader, ytCheckVideos, ytDeleteVideo, ytExpireAccess, ytFetchDiario, ytFetchRpmReal, ytIsConnected, ytListChannelComments, ytListUploadsFull, ytPostComment, ytReplyComment, ytTokenValid, ytViewCounts } from "./datos";
 import { Field, inputStyle } from "./videos";
 
 export const BarraProgreso = ({pct, alto=8, color}) => (
@@ -570,11 +570,11 @@ export function ComentariosPanel({ videos, onConnect, toast }) {
   const sinResponder = hilos.filter(h=>!h.yaRespondido).length;
 
   const generarIA = async (h) => {
-    if(!geminiHasKey()){ toast("Configura la IA (Gemini) en el apartado Agente"); return; }
+    if(!iaDisponible()){ toast("La IA (Claude) funciona en el portátil"); return; }
     setAiBusy(true);
     try {
       const prompt = `Eres RDeRandom, youtuber español de RIVALS (Roblox), cercano y con humor. Responde BREVE (1-2 frases, puedes usar 1 emoji) a este comentario de ${h.autor} en tu vídeo «${tituloDe(h.videoId)||"un vídeo"}»: "${h.texto}". Devuelve solo la respuesta, sin comillas.`;
-      const out = await geminiGenerate(prompt);
+      const out = await iaGenerar(prompt);
       setRespuesta((out||"").trim());
     } catch(e){ toast("❌ "+e.message); }
     finally { setAiBusy(false); }

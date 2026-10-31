@@ -1,25 +1,18 @@
 import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { Icons } from "./base";
-import { geminiGenerate, geminiGetKey, geminiGetModel, geminiGetSystem, geminiHasKey, geminiSaveKey, geminiSaveModel, geminiSaveSystem } from "./datos";
+import { iaDisponible, iaGenerar, iaGetSistema, iaSaveSistema } from "./datos";
 import { Field, inputStyle } from "./videos";
 
 export function AgentView({ promptTemplates, setPromptTemplates, toast }) {
-  const [aiKey, setAiKey] = useState(geminiGetKey());
-  const [aiModel, setAiModel] = useState(geminiGetModel() || "gemini-2.5-flash");
-  const [aiSystem, setAiSystem] = useState(geminiGetSystem());
+  const [aiSystem, setAiSystem] = useState(iaGetSistema());
   const [editing, setEditing] = useState(null);
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [testing, setTesting] = useState(false);
   const [testOut, setTestOut] = useState("");
 
-  const saveKey = () => {
-    geminiSaveKey(aiKey.trim());
-    geminiSaveModel(aiModel);
-    geminiSaveSystem(aiSystem);
-    toast(aiKey.trim()?"Configuración de IA guardada":"Clave borrada");
-  };
+  const saveKey = () => { iaSaveSistema(aiSystem); toast("Instrucciones guardadas"); };
   const startNew = () => { setEditing("new"); setName(""); setPrompt(""); setTestOut(""); };
   const startEdit = (t) => { setEditing(t.id); setName(t.name); setPrompt(t.prompt); setTestOut(""); };
   const cancel = () => { setEditing(null); setName(""); setPrompt(""); setTestOut(""); };
@@ -40,12 +33,12 @@ export function AgentView({ promptTemplates, setPromptTemplates, toast }) {
   const remove = (id) => { setPromptTemplates(prev=>(prev||[]).filter(t=>t.id!==id)); if(editing===id) cancel(); toast("Plantilla eliminada"); };
 
   const test = async () => {
-    if(!geminiHasKey()){ toast("Configura primero la clave de Gemini"); return; }
+    if(!iaDisponible()){ toast("La IA (Claude) funciona en el portátil"); return; }
     if(!prompt.trim()){ toast("Escribe un prompt para probar"); return; }
     setTesting(true); setTestOut("");
     try {
       const demo = prompt.replace(/\{titulo\}/gi,"Cómo conseguí la skin secreta").replace(/\{juego\}/gi,"Roblox").replace(/\{etiquetas\}/gi,"roblox, gaming, skins");
-      const out = await geminiGenerate(demo);
+      const out = await iaGenerar(demo);
       setTestOut(out);
     } catch(e){ toast("❌ "+e.message); }
     finally { setTesting(false); }
@@ -55,42 +48,25 @@ export function AgentView({ promptTemplates, setPromptTemplates, toast }) {
     <div className="fade-in">
       <div style={{marginBottom:18}}>
         <h2 style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:9}}><span style={{color:"var(--gold)",display:"flex"}}>{Icons.sparkles}</span> Agente de IA</h2>
-        <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Crea plantillas de prompt para generar descripciones con Gemini. Luego elígelas en cada vídeo.</p>
+        <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Crea plantillas de prompt para generar descripciones con Claude. Luego elígelas en cada vídeo.</p>
       </div>
 
       <div style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:14,padding:18,marginBottom:16}}>
-        <div style={{fontSize:13.5,fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:8}}>{Icons.sparkles} Conexión con Gemini (gratis)</div>
-        <div style={{fontSize:12,color:"var(--text-3)",marginBottom:12,lineHeight:1.5}}>
-          Consigue tu clave gratuita en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style={{color:"var(--gold)"}}>aistudio.google.com/apikey</a> (sin tarjeta). Se guarda solo en este dispositivo.
+        <div style={{fontSize:13.5,fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:8}}>{Icons.sparkles} Claude (tu plan Max)</div>
+        <div style={{fontSize:12,color:iaDisponible()?"var(--green)":"var(--text-3)",marginBottom:12,lineHeight:1.5}}>
+          {iaDisponible() ? "✅ Lista: usa el Claude Code de este equipo, sin claves ni límites por minuto." : "La IA funciona en el portátil (usa su Claude Code). Desde aquí puedes preparar las plantillas."}
         </div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
-          <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)} placeholder="AIza…" style={{...inputStyle,flex:1,minWidth:200}}/>
-        </div>
-
-        <Field label="Modelo de Gemini">
-          <select value={aiModel} onChange={e=>setAiModel(e.target.value)} style={inputStyle}>
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (recomendado)</option>
-            <option value="gemini-3.5-flash">Gemini 3.5 Flash (más nuevo)</option>
-          </select>
-        </Field>
-        <div style={{fontSize:11,color:"var(--text-3)",marginTop:6,marginBottom:12}}>
-          Modelos gratuitos actuales de Google. Si uno falla puntualmente, la app prueba el otro sola. El plan gratis permite ~15 generaciones por minuto.
-        </div>
-
-        <Field label="Instrucciones del agente (tu «Gem»)">
+        <Field label="Instrucciones del agente">
           <textarea value={aiSystem} onChange={e=>setAiSystem(e.target.value)} rows={4}
-            placeholder={"Pega aquí las instrucciones de tu Gem: cómo quieres que escriba, tono, estructura, reglas fijas…\n\nEjemplo: Eres el gestor del canal RDeRandom. Escribe descripciones en español, cercanas, con emojis moderados y siempre 5 hashtags al final."}
+            placeholder={"Escribe aquí las instrucciones: cómo quieres que escriba, tono, estructura, reglas fijas…\n\nEjemplo: Eres el gestor del canal RDeRandom. Escribe descripciones en español, cercanas, con emojis moderados y siempre 5 hashtags al final."}
             style={{...inputStyle,resize:"vertical",lineHeight:1.55,fontSize:12.5}}/>
         </Field>
         <div style={{fontSize:11,color:"var(--text-3)",marginTop:6,lineHeight:1.5}}>
-          Estas instrucciones se aplican a todas las generaciones (como las «instrucciones» de un Gem).
+          Estas instrucciones se aplican a todas las generaciones .
         </div>
 
         <div style={{display:"flex",gap:8,marginTop:14}}>
-          <button onClick={saveKey} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 18px",borderRadius:10}}>Guardar configuración</button>
-        </div>
-        <div style={{fontSize:11,color:geminiHasKey()?"var(--green)":"var(--text-3)",marginTop:10}}>
-          {geminiHasKey()?"✅ Clave configurada · la IA está lista":"Sin clave · configúrala para usar la generación"}
+          <button onClick={saveKey} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 18px",borderRadius:10}}>Guardar instrucciones</button>
         </div>
       </div>
 
@@ -211,4 +187,4 @@ export function PinnedCommentPanel({ programados, onUpdateVideo, toast }){
   );
 }
 
-/* ============================ OBJETIVOS (dinero → visitas, con RPM real) ============================ */
+/* ============================ OBJETIVOS (dinero → visitas, con RPM real) ============================ */

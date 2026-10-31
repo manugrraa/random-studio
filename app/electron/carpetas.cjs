@@ -35,7 +35,9 @@ const DEFS = [
 ];
 
 const userData = () => app.getPath("userData");
-const valido = (id) => Object.prototype.hasOwnProperty.call(PERFILES, id);
+// v3.30: las cuentas las decide el servidor; aquí se apuntan las que se van abriendo (nombre y canal)
+try { Object.assign(PERFILES, JSON.parse(fs.readFileSync(path.join(userData(), "perfiles.json"), "utf8"))); } catch (e) {}
+const valido = (id) => /^[a-z0-9][a-z0-9-]{1,39}$/.test(String(id));
 const dirPerfil = (id) => path.join(userData(), "perfiles", id);
 
 let activo = "rderandom";
@@ -76,8 +78,12 @@ function elegidasDe(id) {
 function carpetasDe(id = activo) { return resolver(id, elegidasDe(id)); }
 
 // ------------------------------------------------------------------ llamadas
-ipcMain.handle("perfil-poner", async (e, id) => {
+ipcMain.handle("perfil-poner", async (e, id, info) => {
   if (!valido(id)) throw new Error("perfil no válido");
+  if (info && info.canal && (!PERFILES[id] || PERFILES[id].canal !== info.canal)) {
+    PERFILES[id] = { nombre: String(info.nombre || id).slice(0, 80), canal: String(info.canal).slice(0, 40) };
+    try { fs.writeFileSync(path.join(userData(), "perfiles.json"), JSON.stringify(PERFILES, null, 1)); } catch (x) {}
+  }
   activo = id;
   try { fs.writeFileSync(path.join(userData(), "perfil.json"), JSON.stringify({ perfil: id })); } catch (x) {}
   archivoCarpetas(id);

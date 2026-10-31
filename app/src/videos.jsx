@@ -1,7 +1,7 @@
 import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { FormatPill, Icons, STATUSES, StatusDot, clone, dnd, sortedFormats, touchDrag } from "./base";
-import { YT_CATEGORIES, fechaISO, geminiGenerate, geminiGetKey, geminiHasKey, geminiSaveKey, ytAddToPlaylist, ytEnsureToken, ytGetTokens, ytGetVideoDetails, ytIsConnected, ytListMyVideos, ytListPlaylists, ytPostComment, ytSearchDrive, ytStartAuth, ytUpdateVideoMeta, ytUploadViaBackend, ytVideoDiario, ytVideoStats } from "./datos";
+import { YT_CATEGORIES, fechaISO, iaDisponible, iaGenerar, ytAddToPlaylist, ytEnsureToken, ytGetTokens, ytGetVideoDetails, ytIsConnected, ytListMyVideos, ytListPlaylists, ytPostComment, ytSearchDrive, ytStartAuth, ytUpdateVideoMeta, ytUploadViaBackend, ytVideoDiario, ytVideoStats } from "./datos";
 import { BarraProgreso, ingresosEstimadosActivos } from "./youtube";
 
 export const ExpandCtx = React.createContext(false);
@@ -239,12 +239,12 @@ export function VideoModal({v, allVideos, goals, onClose, onSave, onDelete, onDu
 
   // Generar la descripción con IA usando el prompt (ya adaptado) de la tarjeta
   const genDesc = async () => {
-    if(!geminiHasKey()){ toast && toast("Configura la IA en el apartado Agente"); return; }
+    if(!iaDisponible()){ toast && toast("La IA (Claude) funciona en el portátil"); return; }
     const finalPrompt = (promptDraft||"").trim();
     if(!finalPrompt){ toast && toast("Elige una plantilla o escribe un prompt"); return; }
     setAiBusy(true);
     try {
-      const out = await geminiGenerate(finalPrompt);
+      const out = await iaGenerar(finalPrompt);
       set("description", out);
       toast && toast("Descripción generada con IA");
     } catch(e){ toast && toast("❌ "+e.message); }
@@ -608,9 +608,7 @@ export function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTempl
   const [copyFields, setCopyFields] = useState({ description:true, tags:true, category:true });
   const [showTagMgr, setShowTagMgr] = useState(false);
   const [newTplName, setNewTplName] = useState("");
-  // IA (Gemini)
-  const [aiKey, setAiKey] = useState(geminiGetKey());
-  const [showAiKey, setShowAiKey] = useState(false);
+  // IA (Claude)
   const [aiBusy, setAiBusy] = useState(null); // "desc" | "comment" | null
 
   // Buscar en Drive (usa el término editable)
@@ -688,33 +686,32 @@ export function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTempl
   };
   const deleteTagTemplate = (id) => setTagTemplates(prev=>(prev||[]).filter(t=>t.id!==id));
 
-  // ——— Generación con IA (Gemini) ———
-  const saveAiKey = () => { geminiSaveKey(aiKey.trim()); toast(aiKey.trim()?"Clave de Gemini guardada":"Clave borrada"); setShowAiKey(false); };
+  // ——— Generación con IA (Claude) ———
   const genDescription = async () => {
-    if(!geminiHasKey()){ setShowAiKey(true); toast("Añade tu clave gratuita de Gemini"); return; }
+    if(!iaDisponible()){ toast("La IA (Claude) funciona en el portátil"); return; }
     setAiBusy("desc");
     try {
       const prompt = `Eres un experto en YouTube. Escribe una descripción atractiva y optimizada para SEO en español para un vídeo de YouTube titulado "${title}".`
         + (gameTitle?` El vídeo trata sobre el juego ${gameTitle}.`:"")
         + (tags?` Palabras clave relacionadas: ${tags}.`:"")
         + ` La descripción debe tener 2-3 párrafos cortos, un gancho al principio, y terminar con 3-5 hashtags relevantes. No uses markdown ni asteriscos. Devuelve solo la descripción, sin explicaciones.`;
-      const out = await geminiGenerate(prompt);
+      const out = await iaGenerar(prompt);
       setDesc(out);
       toast("Descripción generada con IA");
-    } catch(e){ toast("❌ "+e.message); if(/clave/i.test(e.message)) setShowAiKey(true); }
+    } catch(e){ toast("❌ "+e.message); }
     finally { setAiBusy(null); }
   };
   const genComment = async () => {
-    if(!geminiHasKey()){ setShowAiKey(true); toast("Añade tu clave gratuita de Gemini"); return; }
+    if(!iaDisponible()){ toast("La IA (Claude) funciona en el portátil"); return; }
     setAiBusy("comment");
     try {
       const prompt = `Eres un creador de YouTube. Escribe un comentario fijado breve, cercano y que invite a la interacción (preguntar algo o pedir opinión) en español para tu vídeo titulado "${title}".`
         + (gameTitle?` Es un vídeo de ${gameTitle}.`:"")
         + ` Máximo 2 frases. Puedes usar 1-2 emojis. Devuelve solo el comentario.`;
-      const out = await geminiGenerate(prompt);
+      const out = await iaGenerar(prompt);
       setPinnedComment(out);
       toast("Comentario generado con IA");
-    } catch(e){ toast("❌ "+e.message); if(/clave/i.test(e.message)) setShowAiKey(true); }
+    } catch(e){ toast("❌ "+e.message); }
     finally { setAiBusy(null); }
   };
 
@@ -936,7 +933,7 @@ export function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTempl
             <div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
                 <span style={labelStyle}>Descripción</span>
-                <button onClick={genDescription} disabled={aiBusy==="desc"} title="Generar con IA (Gemini)" style={{
+                <button onClick={genDescription} disabled={aiBusy==="desc"} title="Generar con IA (Claude)" style={{
                   display:"flex",alignItems:"center",gap:6,fontSize:11.5,fontWeight:600,color:"var(--gold)",padding:"4px 10px",
                   border:"1px solid var(--border-gold)",borderRadius:7,background:"rgba(212,175,55,0.05)",opacity:aiBusy==="desc"?0.6:1
                 }}>
@@ -1025,7 +1022,7 @@ export function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTempl
             <div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
                 <span style={labelStyle}>Comentario fijado (opcional)</span>
-                <button onClick={genComment} disabled={aiBusy==="comment"} title="Generar con IA (Gemini)" style={{
+                <button onClick={genComment} disabled={aiBusy==="comment"} title="Generar con IA (Claude)" style={{
                   display:"flex",alignItems:"center",gap:6,fontSize:11.5,fontWeight:600,color:"var(--gold)",padding:"4px 10px",
                   border:"1px solid var(--border-gold)",borderRadius:7,background:"rgba(212,175,55,0.05)",opacity:aiBusy==="comment"?0.6:1
                 }}>
@@ -1036,24 +1033,6 @@ export function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTempl
               <textarea value={pinnedComment} onChange={e=>setPinnedComment(e.target.value)} rows={2} placeholder="Se publicará y fijará al subir el vídeo" style={{...inputStyle, resize:"vertical"}}/>
             </div>
 
-            {/* Gestor de clave de Gemini */}
-            {showAiKey && (
-              <div className="fade-in" style={{padding:14,background:"var(--card)",borderRadius:11,border:"1px solid var(--border-gold)"}}>
-                <div style={{fontSize:12.5,fontWeight:600,color:"var(--text)",marginBottom:6}}>Clave de Gemini (IA gratuita)</div>
-                <div style={{fontSize:11.5,color:"var(--text-3)",marginBottom:10,lineHeight:1.5}}>
-                  Consíguela gratis en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener" style={{color:"var(--gold)"}}>aistudio.google.com/apikey</a> (sin tarjeta). Se guarda solo en este dispositivo.
-                </div>
-                <div style={{display:"flex",gap:7}}>
-                  <input type="password" value={aiKey} onChange={e=>setAiKey(e.target.value)} placeholder="AIza…" style={{...inputStyle,flex:1,fontSize:12.5,padding:"8px 10px"}}/>
-                  <button onClick={saveAiKey} className="grad-gold" style={{flexShrink:0,color:"#000",fontWeight:700,fontSize:12.5,padding:"8px 14px",borderRadius:8}}>Guardar</button>
-                </div>
-              </div>
-            )}
-            {!showAiKey && (
-              <button onClick={()=>setShowAiKey(true)} style={{alignSelf:"flex-start",fontSize:11.5,color:"var(--text-3)",display:"flex",alignItems:"center",gap:5,marginTop:-6}}>
-                {Icons.sparkles} {geminiHasKey()?"Cambiar clave de IA":"Configurar IA (Gemini gratis)"}
-              </button>
-            )}
 
             {/* Visibilidad + programación */}
             <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
@@ -1105,4 +1084,4 @@ export function YouTubeUploadModal({ video, allVideos, tagTemplates, setTagTempl
 }
 
 
-/* ============================ GESTOR DE FORMATOS ============================ */
+/* ============================ GESTOR DE FORMATOS ============================ */
