@@ -349,7 +349,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "redefectos", "redefecto", "pesoclips", "borrarclips", "borrardescartados", "borrarshorts", "oficializar", "mover", "retencion", "aprender"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "redefectos", "redefecto", "pesoclips", "borrarclips", "borrardescartados", "borrarshorts", "oficializar", "mover", "redvoces", "redtts", "redvozproc", "redsubsguardar", "redsubsborrar", "retencion", "aprender"]);
 const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip", "redsubs"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
@@ -817,3 +817,5 @@ ipcMain.handle("chat-abrir", async (e, que) => {
 
 // RandomHistorias dentro de Studio (v3.21): sus llamadas viven en historias.cjs
 require("./historias.cjs");
+// el contador de suscriptores de YouTube Studio para OBS (v3.23)
+require("./contador.cjs");

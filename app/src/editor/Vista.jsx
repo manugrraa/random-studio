@@ -92,7 +92,7 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
       if(Math.abs(v.currentTime - local) > (adelante ? 0.2 : 0.005) || (!adelante && v._pend != null)) saltar(v, local);
       v.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c.velocidad || 1)));
       v.preservesPitch = !c.tono;
-      v.volume = volumenEn(c, t, v1.muda);
+      v.volume = c.voz && c.voz.ruta ? 0 : volumenEn(c, t, v1.muda);
       // (mover, escalar, girar y opacidad, con sus fotogramas clave)
       v.style.transform = transformCss(c, t - c.en, kRef.current);
       aplicar(v, c, t); o.style.opacity = 0;
@@ -121,16 +121,20 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
         const lc = local(c2, t);
         if(Math.abs(el.currentTime - lc) > (adelante ? 0.2 : 0.01)) { try { el.currentTime = lc + 0.001; } catch(e){} }
         el.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c2.velocidad || 1)));
-        el.preservesPitch = !c2.tono; el.volume = volumenEn(c2, t, false);
+        el.preservesPitch = !c2.tono; el.volume = c2.voz && c2.voz.ruta ? 0 : volumenEn(c2, t, false);
         if(adelante && el.paused) el.play().catch(()=>{});
         if(!adelante && !el.paused) el.pause();
       }
     });
-    pr.pistas.filter(pi=>pi.tipo==="audio").forEach(pi=>{
-      let a = auds.current[pi.id]; if(!a){ a = new Audio(); auds.current[pi.id] = a; }
-      const c2 = clipEn(pi.clips, t);
+    // (31/10: «Mejorar voz» / «Aislar voz»: en las pistas de vídeo suena su audio limpio, que dura lo mismo que el vídeo)
+    pr.pistas.filter(pi=>pi.tipo==="audio" || pi.tipo==="video").forEach(pi=>{
+      const esV = pi.tipo === "video", id = esV ? "voz_" + pi.id : pi.id;
+      let a = auds.current[id]; if(!a){ a = new Audio(); auds.current[id] = a; }
+      let c2 = clipEn(pi.clips, t);
+      if(esV && c2 && !(c2.voz && c2.voz.ruta)) c2 = null;
       if(!c2 || pi.muda){ if(!a.paused) a.pause(); return; }
-      if(a.dataset.ruta !== c2.ruta){ a.dataset.ruta = c2.ruta; a.src = fileUrl(c2.ruta); }
+      const ruta = esV ? c2.voz.ruta : ((c2.voz && c2.voz.ruta) || c2.ruta);
+      if(a.dataset.ruta !== ruta){ a.dataset.ruta = ruta; a.src = fileUrl(ruta); }
       const lc = local(c2, t);
       if(Math.abs(a.currentTime - lc) > (adelante ? 0.25 : 0.03)) { try { a.currentTime = lc; } catch(e){} }
       a.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c2.velocidad || 1)));

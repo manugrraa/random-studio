@@ -37,6 +37,16 @@ export function itemsDe(c, modo) {
   }
   return out;
 }
+// 31/10: varias sombras difuminadas (las de los estilos de texto de CapCut) → text-shadow; k = px de pantalla por px del lienzo
+export function sombrasCss(e, info, px, k) {
+  if(!e.sombras || !e.sombras.length) return undefined;
+  const spx = info ? info.sombra_px : 0.975;
+  return e.sombras.map(s=>{ const d = s.distance * spx * k, a = s.angle * Math.PI / 180, h = (s.color || "#000000").replace("#", "");
+    const rgb = [0, 2, 4].map(i=>parseInt(h.slice(i, i + 2), 16) || 0).join(",");
+    return `${(d * Math.cos(a)).toFixed(2)}px ${(-d * Math.sin(a)).toFixed(2)}px ${((s.feather || 0) * px * k * 1.6).toFixed(2)}px rgba(${rgb},${s.alpha})`; }).join(", ");
+}
+const sesgo = e => e.cursiva ? ` skewX(${-e.cursiva}deg)` : "";
+const suave = s => s <= 0 ? 0.9 : s >= 0.25 ? 1 : 0.9 + 0.1 * (1 - Math.pow(1 - s / 0.25, 3));
 const muelle = u => u <= 0 ? 0.05 : u >= 1 ? 1 : Math.max(0.05, Math.exp(-7 * u) * Math.sin((u - 0.075) * 2 * Math.PI / 0.3) + 1);
 const pop = s => s < 0.0333 ? 0.62 + 0.27 * s / 0.0333 : s < 0.0667 ? 0.89 + 0.09 * (s - 0.0333) / 0.0334 : s < 0.1 ? 0.98 + 0.02 * (s - 0.0667) / 0.0333 : 1;
 
@@ -56,8 +66,8 @@ export function CapaSubtitulos({ proyecto, reloj, info }) {
     const it = items.find(x=>t >= x.a && t < x.b);
     if(!it){ e.style.visibility = "hidden"; return; }
     if(e.textContent !== it.w) e.textContent = it.w;
-    const s = pl.anim === "muelle" ? muelle((t - it.a) / Math.max(0.01, it.b - it.a)) : pl.anim === "pop" ? pop(t - it.a) : 1;
-    e.style.transform = `translate(-50%,-50%) scale(${s})`;
+    const s = pl.anim === "muelle" ? muelle((t - it.a) / Math.max(0.01, it.b - it.a)) : pl.anim === "pop" ? pop(t - it.a) : pl.anim === "suave" ? suave(t - it.a) : 1;
+    e.style.transform = `translate(-50%,-50%) scale(${s})${sesgo(pl.estilo)}`;
     e.style.visibility = "visible";
   };
   useEffect(()=>reloj.oir(pintar),[reloj]);
@@ -68,7 +78,8 @@ export function CapaSubtitulos({ proyecto, reloj, info }) {
   const p = estiloPx(pl.estilo, info, W, H);
   return (
     <div ref={caja} style={{position:"absolute",inset:0,pointerEvents:"none",overflow:"hidden"}}>
-      <div ref={el} style={{position:"absolute",left:p.cx * esc,top:p.cy * esc,transform:"translate(-50%,-50%)",whiteSpace:"nowrap",visibility:"hidden",
+      <div ref={el} style={{position:"absolute",left:p.cx * esc,top:p.cy * esc,transform:"translate(-50%,-50%)",whiteSpace:pl.modo === "palabra" ? "nowrap" : "normal",
+        width:pl.modo === "palabra" ? undefined : W * 0.82 * esc,textAlign:"center",visibility:"hidden",textShadow:sombrasCss(pl.estilo, info, p.px, esc),
         fontFamily:familiaCss(pl.estilo.fuente),fontSize:p.px * esc,lineHeight:1.15,color:pl.estilo.color,
         WebkitTextStroke: p.borde ? `${p.borde * 2 * esc}px ${pl.estilo.color_contorno || "#000"}` : undefined, paintOrder:"stroke fill",
         filter: pl.estilo.sombra ? `drop-shadow(${p.sdx * esc}px ${p.sdy * esc}px 0 rgba(0,0,0,${p.salpha}))` : undefined}}/>
@@ -79,12 +90,13 @@ export function CapaSubtitulos({ proyecto, reloj, info }) {
 function Muestra({ pl, info }) {
   const p = estiloPx(pl.estilo, info), k = 26 / p.px;
   return <span style={{fontFamily:familiaCss(pl.estilo.fuente),fontSize:26,color:pl.estilo.color,whiteSpace:"nowrap",
+    textShadow:sombrasCss(pl.estilo, info, p.px, k),transform:sesgo(pl.estilo) || undefined,display:"inline-block",
     WebkitTextStroke: p.borde ? `${Math.max(1.5, p.borde * 2 * k)}px ${pl.estilo.color_contorno || "#000"}` : undefined, paintOrder:"stroke fill",
     filter: pl.estilo.sombra ? `drop-shadow(${p.sdx * k}px ${p.sdy * k}px 0 rgba(0,0,0,${p.salpha}))` : undefined}}>{pl.modo === "palabra" ? "palabra" : "una frase"}</span>;
 }
 
 export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setMaxPal, onGenerar, ocupado, generando, onPlantilla, onEstilo, alGesto, onQuitar, fuentes,
-                                  favs = [], onFav, soloFavs, vacioFavs }) {
+                                  favs = [], onFav, soloFavs, vacioFavs, onGuardarPlantilla, onBorrarPlantilla }) {
   if(!info) return <div style={{fontSize:12.5,color:"#888",padding:8}}>Cargando las plantillas…</div>;
   const actual = plantillaDe(info, pista || { plantilla: elegida });
   const e = actual ? actual.estilo : {};
@@ -103,6 +115,8 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
         return (
           <div key={pl.id} style={{position:"relative"}}>
           {onFav && <Estrella on={favs.includes(pl.id)} onClick={()=>onFav(pl.id)} style={{position:"absolute",right:6,top:6,zIndex:1,background:"rgba(0,0,0,0.55)"}}/>}
+          {pl.propia && onBorrarPlantilla && <button onClick={()=>{ if(window.confirm(`¿Quitar tu plantilla «${pl.nombre}»?`)) onBorrarPlantilla(pl.id); }} className="rd-ico"
+            style={{position:"absolute",right:34,top:6,zIndex:1,width:24,height:24,fontSize:12,background:"rgba(0,0,0,0.55)"}} title="Quitar esta plantilla tuya">✕</button>}
           <button onClick={()=>{ setElegida(pl.id); setMaxPal(pl.max_pal); if(pista) onPlantilla(pl.id); }} className="rd-medio"
             style={{width:"100%",flexDirection:"column",alignItems:"stretch",padding:8,gap:6,cursor:"pointer",textAlign:"left",borderColor:on?"rgba(212,175,55,0.7)":undefined,background:on?"rgba(212,175,55,0.08)":undefined}}
             title={pl.ayuda}>
@@ -125,6 +139,7 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
         {desl("Contorno", "contorno", 0, 0.3, 0.005, v=>Number(v).toFixed(3))}
         <div style={fila}><span style={{fontSize:12}}>Color del contorno</span><input type="color" value={e.color_contorno || "#000000"} onChange={ev=>onEstilo({color_contorno:ev.target.value})}/></div>
         <label style={{...fila,cursor:"pointer",fontSize:12}}><span>Sombra</span><input type="checkbox" checked={!!e.sombra} onChange={ev=>onEstilo({sombra:ev.target.checked})}/></label>
+        {desl("Cursiva", "cursiva", 0, 20, 1, v=>v ? v + "°" : "no")}
         {conocidas.length > 0 && <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12}}>Fuente
           <select value={e.fuente} onChange={ev=>onEstilo({fuente:ev.target.value})} className="rd-input">
             {!conocidas.some(f=>f.archivo===e.fuente) && <option value={e.fuente}>{(e.fuente||"").split(/[\\/]/).pop()}</option>}
@@ -134,6 +149,8 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
           <button onClick={()=>onPlantilla(pista.plantilla)} className="rd-btn" style={{flex:1,justifyContent:"center"}} title="Vuelve al estilo de la plantilla">Restablecer estilo</button>
           <button onClick={onQuitar} className="rd-btn" style={{flex:1,justifyContent:"center"}}>Quitar subtítulos</button>
         </div>
+        {onGuardarPlantilla && pista.estilo && Object.keys(pista.estilo).length > 0 && <button onClick={()=>{ const n = window.prompt("Nombre de tu plantilla:", (actual ? actual.nombre : "Mi plantilla") + " (mía)"); if(n && n.trim()) onGuardarPlantilla(n.trim()); }}
+          className="rd-btn primario" style={{justifyContent:"center"}} title="Guarda este estilo como una plantilla más (sale en la lista para los próximos vídeos)">Guardar como plantilla</button>}
       </>}
     </div>);
 }

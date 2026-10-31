@@ -90,6 +90,10 @@ contextBridge.exposeInMainWorld("studioFS", {
   historiasCancelar: () => ipcRenderer.invoke("historias-cancelar"),
   historiasMiniatura: (id, plano, t) => ipcRenderer.invoke("historias-miniatura", id, plano, t),
   historiasAbrir: (id, que) => ipcRenderer.invoke("historias-abrir", id, que),
+  // contador de suscriptores para OBS (v3.23, contador.cjs)
+  contadorAbrir: (op) => ipcRenderer.invoke("contador-abrir", op),
+  contadorMeta: (op) => ipcRenderer.invoke("contador-meta", op),
+  contadorEstado: () => ipcRenderer.invoke("contador-estado"),
   onHistoriasProgreso: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("historias-progreso", h);

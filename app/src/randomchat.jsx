@@ -43,6 +43,51 @@ export function useSesionChat(toast) {
   },[]);
 }
 
+/* v3.23, él: "reproducir la ventana del contador de suscriptores de YouTube Studio, con el contador solo, y poder
+   añadir texto para poner la meta de suscriptores". La ventana la abre Studio (electron/contador.cjs) con su estilo;
+   aquí se elige el texto de la meta y el tamaño, y se cambian en directo. */
+function Contador({ toast }) {
+  const [op, setOp] = useState(null);
+  const [abierta, setAbierta] = useState(false);
+  useEffect(()=>{ window.studioFS.contadorEstado().then(r=>{ setOp(r.op); setAbierta(r.abierta); }).catch(()=>{}); },[]);
+  const cambiar = patch => { const n = {...op, ...patch}; setOp(n); window.studioFS.contadorMeta(n).then(r=>setAbierta(r.abierta)).catch(()=>{}); };
+  if(!op) return null;
+  const fila = {display:"flex",alignItems:"center",gap:10,fontSize:13,flexWrap:"wrap"};
+  return (
+    <div style={tarjeta}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontWeight:700,fontSize:14}}>Contador de suscriptores</span>
+        <span style={{fontSize:12.5,color:"var(--text-3)"}}>el de YouTube Studio en tiempo real, solo el número, con tu estilo</span>
+        <span style={{marginLeft:"auto"}}><button onClick={async()=>{ const r = await window.studioFS.contadorAbrir(op); if(r.ok){ setAbierta(true); toast && toast("Ventana del contador abierta"); } }} style={boton(true)}>
+          {abierta ? "Mostrar la ventana" : "Abrir la ventana del contador"}</button></span>
+      </div>
+      <div style={fila}><b style={{minWidth:150}}>Formato</b>
+        <button onClick={()=>cambiar({formato:"fraccion"})} style={{...boton(op.formato!=="debajo"),padding:"5px 12px",fontSize:12.5}}>34.345/{Number(op.meta||100000).toLocaleString("es-ES")}</button>
+        <button onClick={()=>cambiar({formato:"debajo"})} style={{...boton(op.formato==="debajo"),padding:"5px 12px",fontSize:12.5}}>Texto debajo</button>
+        <label style={{display:"flex",gap:6,alignItems:"center",cursor:"pointer",marginLeft:"auto"}}><input type="checkbox" checked={op.verMeta!==false} onChange={ev=>cambiar({verMeta:ev.target.checked})}/>Mostrar la meta</label>
+      </div>
+      {op.formato!=="debajo" ? <label style={fila}><b style={{minWidth:150}}>Meta de suscriptores</b>
+        <input type="number" min={1} step={1000} value={op.meta||""} onChange={ev=>cambiar({meta:Math.max(0, Math.round(Number(ev.target.value)||0))})}
+          style={{width:160,fontSize:13.5,padding:"7px 10px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/>
+        <span style={{color:"var(--text-3)"}}>sale pegada al número, con la misma letra y el mismo borde</span></label>
+      : <label style={fila}><b style={{minWidth:150}}>Texto de la meta</b>
+        <input value={op.texto||""} onChange={ev=>cambiar({texto:ev.target.value})} placeholder="META: 10.000 SUBS" maxLength={60}
+          style={{flex:"1 1 240px",fontSize:13.5,padding:"7px 10px",borderRadius:9,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}/></label>}
+      <label style={fila}><b style={{minWidth:150}}>Tamaño del contador</b>
+        <input type="range" min={0.5} max={4} step={0.05} value={op.escala||1} onChange={ev=>cambiar({escala:Number(ev.target.value)})} style={{flex:"1 1 200px"}}/>
+        <span style={{color:"var(--text-3)",minWidth:42}}>{Math.round((op.escala||1)*100)} %</span></label>
+      {op.formato==="debajo" && <label style={fila}><b style={{minWidth:150}}>Tamaño de la meta</b>
+        <input type="range" min={14} max={90} step={1} value={op.tamMeta||30} onChange={ev=>cambiar({tamMeta:Number(ev.target.value)})} style={{flex:"1 1 200px"}}/>
+        <span style={{color:"var(--text-3)",minWidth:42}}>{op.tamMeta||30} px</span>
+        <input type="color" value={op.colorMeta||"#ffffff"} onChange={ev=>cambiar({colorMeta:ev.target.value})} title="Color de la meta"/></label>}
+      <div style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.5}}>
+        La primera vez, inicia sesión con la cuenta de Google del canal dentro de esa ventana: se queda guardada.
+        En OBS: <b>Captura de ventana</b> → «Contador de suscriptores», con el filtro <b>Clave de croma</b> en magenta (#FF00FF).
+        Los cambios de aquí salen al momento en la ventana.
+      </div>
+    </div>);
+}
+
 export function RandomChatView({ toast }) {
   const enPC = !!(window.studioFS && window.studioFS.chatEstado);
   const [e, setE] = useState(null);
@@ -79,6 +124,8 @@ export function RandomChatView({ toast }) {
   return (
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:14}}>
       <div>{titulo}<div style={{fontSize:13,color:"var(--text-2)"}}>Chat y alertas de los directos para OBS</div></div>
+
+      {window.studioFS.contadorEstado && <Contador toast={toast}/>}
 
       <div style={tarjeta}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>

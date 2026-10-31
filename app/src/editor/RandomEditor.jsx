@@ -12,6 +12,7 @@ import { InspectorTexto } from "./Textos";
 import { PanelTransformar, PanelVelocidad } from "./Transformar";
 import { PanelColor } from "./PanelColor";
 import { PanelMascara } from "./Mascara";
+import { PanelVoces, SeccionVoz } from "./Voz";
 import { PanelSubtitulos, InspectorSub } from "./Subtitulos";
 export { ATAJOS_EDITOR } from "./atajos";
 const { useState, useEffect, useRef, useMemo } = React;
@@ -95,6 +96,7 @@ export function RandomEditor({ toast }) {
   const [presets, setPresets] = useState(null);
   const [menuExp, setMenuExp] = useState(false);
   const [efectos, setEfectos] = useState(null);
+  const [voces, setVoces] = useState(null);
   const [menuPortada, setMenuPortada] = useState(false);
   const [pestInsp, setPestInsp] = useAjuste("red_pest_insp", "basico");
   // 28/10: los subtítulos (las plantillas, la elegida y cuántas palabras por tarjeta)
@@ -135,6 +137,7 @@ export function RandomEditor({ toast }) {
   useEffect(()=>{
     consultar(["redmedios"]).then(ev=>setMedios(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
     consultar(["redbiblio"]).then(ev=>setBiblio(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
+    consultar(["redvoces"]).then(ev=>setVoces(ev.find(e=>e.evento==="hecho") || null)).catch(()=>{});
     consultar(["redefectos"]).then(ev=>setEfectos((ev.find(e=>e.evento==="hecho") || {}).efectos || [])).catch(()=>{});
     consultar(["redsubsplant"]).then(ev=>setSubsInfo(ev.find(e=>e.evento==="hecho") || null)).catch(()=>{});
     consultar(["redfuentes"]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); if(h){ setFuentes(h.fuentes); setPresets({titulo:h.titulo, normal:h.normal}); } }).catch(()=>{});
@@ -334,6 +337,17 @@ export function RandomEditor({ toast }) {
   const accionPista = (que, id) => cambiar(q=>({...q, pistas: que==="quitar" ? q.pistas.filter(x=>x.id!==id) : q.pistas.map(x=>x.id===id ? {...x, [que]:!x[que]} : x)}));
   // 31/10: un EFECTO (vídeo con transparencia) en una pista superpuesta «Efectos» de arriba; con su sonido,
   // además, su SFX en una pista de audio (cada uno por su lado: se mueven y se borran por separado)
+  // 31/10: la VOZ (texto a voz) en una pista de audio, en el cabezal, con su velocidad y tono; y el sonido
+  // de un clip con la voz mejorada y/o aislada (clon/locucion.py)
+  const deHecho = async args => { try { return (await consultar(args)).find(e=>e.evento==="hecho") || {}; } catch(e){ toast(e.message); throw e; } };
+  const generarVoz = (voz, texto) => deHecho(["redtts", voz, texto]);
+  const procesarVoz = (ruta, mejorar, aislar) => deHecho(["redvozproc", ruta, String(mejorar), aislar ? "si" : "no"]);
+  const meterVoz = (m, velocidad, tono, aviso) => {
+    const c = { id:M.uid(), ruta:m.ruta, nombre:m.nombre, desde:0, hasta:m.dur, dur_src:m.dur, en:reloj.t, vol:1, silencio:false,
+                ...(Math.abs(velocidad - 1) > 0.001 ? {velocidad} : {}), ...(tono ? {tono:true} : {}) };
+    cambiar(prev=>({...prev, pistas: M.colocarAudio(prev.pistas, c, null)}));
+    toast(aviso || "Voz añadida en el cabezal");
+  };
   const meterEfecto = async (e, conSonido, en, pistaId) => {
     const t0 = M.cuantiza(en == null ? reloj.t : en, fps);
     let r;
@@ -560,10 +574,14 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       <div className="rd-medio-fila">
         <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
           efectos={efectos} onEfecto={(e, s)=>meterEfecto(e, s)}
+          panelVoces={<PanelVoces info={voces} generar={generarVoz} onMeter={meterVoz}/>}
           panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
             onGenerar={generarSubs} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
             onPlantilla={pid=>cambiarPistaSubs(()=>({plantilla:pid, estilo:{}}))} onEstilo={(patch, g)=>cambiarPistaSubs(x=>({estilo:{...(x.estilo||{}), ...patch}}), g)}
-            onQuitar={()=>{ cambiar(q=>({...q, pistas: q.pistas.filter(x=>x.tipo!=="subtitulos")})); toast("Subtítulos quitados (Ctrl+Z para recuperarlos)"); }}/>}
+            onQuitar={()=>{ cambiar(q=>({...q, pistas: q.pistas.filter(x=>x.tipo!=="subtitulos")})); toast("Subtítulos quitados (Ctrl+Z para recuperarlos)"); }}
+            onGuardarPlantilla={async nombre=>{ try { const h = await deHecho(["redsubsguardar", nombre, pistaSubs.plantilla, JSON.stringify(pistaSubs.estilo || {}), String(subsMax)]);
+              setSubsInfo(h); cambiarPistaSubs(()=>({plantilla:h.id, estilo:{}})); setSubsPid(h.id); toast(`Plantilla «${nombre}» guardada`); } catch(e){} }}
+            onBorrarPlantilla={async id=>{ try { setSubsInfo(await deHecho(["redsubsborrar", id])); toast("Plantilla quitada"); } catch(e){} }}/>}
           onMeterTodos={async r=>{ for(const m of r.clips) await meter(m, "video"); toast(`${r.clips.length} momentos al final de la principal, en tu orden`); }}/>
         <div className="rd-panel" style={{display:"flex",flexDirection:"column",minWidth:0,background:"#0b0b0b"}}>
           <div style={{position:"relative",flex:1,minHeight:0,display:"flex",alignItems:"stretch",justifyContent:"center",padding:10,gap:6}}>
@@ -629,6 +647,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               <button onClick={duplicar} className="rd-ico" title="Duplicar (Ctrl+D)">{I.duplicar}</button>
               <button onClick={eliminar} className="rd-ico peligro" title="Eliminar (Supr)">{I.borrar}</button>
             </div>
+            {uno && uno.ruta && !uno.imagen && !uno.efecto && <SeccionVoz c={uno} procesar={procesarVoz} cambiarClip={cambiarClip} toast={toast}/>}
           </>}
           </>}
         </div>
