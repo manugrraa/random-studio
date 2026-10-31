@@ -4,6 +4,7 @@ import { AgentView } from "./agente";
 import { RankingView } from "./ranking";
 import { DirectosView, ClipsView } from "./clon";
 import { ConvertidorView } from "./convertidor";
+import { HistoriasView } from "./historias";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { BarraLateral } from "./navegacion";
@@ -777,6 +778,7 @@ export function App() {
     {id:"clips", label:"Clips", icon:Icons.scissors, primary:true, grupo:"produccion", pc:true},
     {id:"editor", label:"RandomEditor", icon:Icons.edit, grupo:"produccion", pc:true},
     {id:"ranking", label:"Ranking de Shorts", icon:Icons.chart, primary:true, grupo:"produccion", pc:true},
+    {id:"historias", label:"Historias", icon:Icons.camera, primary:true, grupo:"produccion", pc:true},
     {id:"convertidor", label:"Convertidor", icon:Icons.download, primary:true, grupo:"produccion", pc:true},
     {id:"randomchat", label:"RandomChat", icon:Icons.chat, grupo:"produccion", pc:true},
     {id:"agent", label:"Agente", icon:Icons.sparkles, grupo:"asistente"},
@@ -1229,6 +1231,7 @@ export function App() {
         {view==="directos" && <DirectosView toast={toast}/>}
         {view==="clips" && <ClipsView toast={toast}/>}
         {view==="ranking" && <RankingView toast={toast}/>}
+        {view==="historias" && <HistoriasView toast={toast}/>}
         {view==="convertidor" && <ConvertidorView toast={toast}/>}
         {view==="randomchat" && <RandomChatView toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}

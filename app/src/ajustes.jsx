@@ -6,6 +6,7 @@ import { geminiGetKey, geminiSaveKey, ytClearTokens, ytIsConnected } from "./dat
 import { Field, inputStyle } from "./videos";
 import { ingresosEstimadosActivos } from "./youtube";
 import { SeguridadPanel } from "./acceso";
+import { PERFILES, cambiarPerfil, perfilActual } from "./perfiles";
 
 const GUIA_ATAJOS = [
   ["En todo RandomStudio", [["Ctrl+1 … Ctrl+9", "Ir a cada apartado (en el orden de la barra)"], ["Ctrl+K", "Buscar vídeos y apartados"],
@@ -114,6 +115,15 @@ export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, se
               {conectado && <button onClick={()=>{ ytClearTokens(); setTick(t=>t+1); toast("Sesión de Google cerrada en este dispositivo"); }} style={{fontSize:12.5,fontWeight:600,color:"var(--red)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:9,padding:"9px 14px"}}>Desconectar</button>}
             </div>
             <div style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5}}>Reconecta si la app pide permisos nuevos (analíticas, comentarios).</div>
+          </div>
+        </div>
+
+        <div style={caja}>
+          <div style={tituloZona}>Perfil</div>
+          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <div style={{fontSize:13,fontWeight:600}}>Has entrado como <span className="gold-text">{(PERFILES.find(p=>p.id===perfilActual())||PERFILES[0]).nombre}</span></div>
+            <span style={{flex:1}}/>
+            <button onClick={cambiarPerfil} style={{fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:9,padding:"9px 14px",background:"rgba(212,175,55,0.05)"}}>Cambiar de perfil</button>
           </div>
         </div>
 

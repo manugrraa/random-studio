@@ -814,3 +814,6 @@ ipcMain.handle("chat-abrir", async (e, que) => {
   else if (que === "carpeta" && fs.existsSync(CHAT_DIR)) await shell.openPath(CHAT_DIR);
   return { ok: true };
 });
+
+// RandomHistorias dentro de Studio (v3.21): sus llamadas viven en historias.cjs
+require("./historias.cjs");

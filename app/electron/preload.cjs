@@ -81,5 +81,18 @@ contextBridge.exposeInMainWorld("studioFS", {
     const h = (e, d) => cb(d);
     ipcRenderer.on("studio-upload-progress", h);
     return () => ipcRenderer.removeListener("studio-upload-progress", h);
+  },
+  // RandomHistorias dentro de Studio (v3.21): estado, cadena con progreso y miniatura
+  historiasLista: () => ipcRenderer.invoke("historias-lista"),
+  historiasDetalle: (id) => ipcRenderer.invoke("historias-detalle", id),
+  historiasTarea: (id, args) => ipcRenderer.invoke("historias-tarea", id, args),
+  historiasTareaEstado: () => ipcRenderer.invoke("historias-tarea-estado"),
+  historiasCancelar: () => ipcRenderer.invoke("historias-cancelar"),
+  historiasMiniatura: (id, plano, t) => ipcRenderer.invoke("historias-miniatura", id, plano, t),
+  historiasAbrir: (id, que) => ipcRenderer.invoke("historias-abrir", id, que),
+  onHistoriasProgreso: (cb) => {
+    const h = (e, d) => cb(d);
+    ipcRenderer.on("historias-progreso", h);
+    return () => ipcRenderer.removeListener("historias-progreso", h);
   }
 });
