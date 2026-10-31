@@ -8,6 +8,7 @@ import { ingresosEstimadosActivos } from "./youtube";
 import { SeguridadPanel } from "./acceso";
 import { PERFILES, cambiarPerfil, perfilActual } from "./perfiles";
 import { CarpetasPanel } from "./carpetas";
+import { ModulosPanel } from "./modulos";
 
 const GUIA_ATAJOS = [
   ["En todo RandomStudio", [["Ctrl+1 … Ctrl+9", "Ir a cada apartado (en el orden de la barra)"], ["Ctrl+K", "Buscar vídeos y apartados"],
@@ -16,7 +17,7 @@ const GUIA_ATAJOS = [
   ["Clips (con un clip abierto)", [["← / →", "Clip anterior / siguiente"], ["A", "Aprobar / quitar el aprobado"], ["E", "Editar el clip en el RandomEditor"], ["Esc", "Cerrar el clip"]]],
 ];
 
-export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, setCardsExpanded, onConnect, onExport, onImport, onReset, toast }) {
+export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExpanded, setCardsExpanded, onConnect, onExport, onImport, onReset, toast }) {
   const cfg = (goals && goals.cfg) || { targetEur:100, shortsPerDay:3, rpmManual:null };
   const [fTarget, setFTarget] = useState(String(cfg.targetEur));
   const [fShorts, setFShorts] = useState(String(cfg.shortsPerDay));
@@ -127,6 +128,8 @@ export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, se
             <button onClick={cambiarPerfil} style={{fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:9,padding:"9px 14px",background:"rgba(212,175,55,0.05)"}}>Cambiar de perfil</button>
           </div>
         </div>
+
+        <ModulosPanel caja={caja} tituloZona={tituloZona} modulos={modulos} toast={toast}/>
 
         <CarpetasPanel caja={caja} tituloZona={tituloZona} toast={toast}/>
 

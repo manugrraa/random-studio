@@ -5,6 +5,7 @@ import { RankingView } from "./ranking";
 import { DirectosView, ClipsView } from "./clon";
 import { ConvertidorView } from "./convertidor";
 import { HistoriasView } from "./historias";
+import { useModulosOff } from "./modulos";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { BarraLateral } from "./navegacion";
@@ -761,7 +762,8 @@ export function App() {
     setEditing(v);
   };
 
-  const tabs = [
+  const modulosOff = useModulosOff();
+  const todasTabs = [
     {id:"calendar", label:"Calendario", icon:Icons.calendar, primary:true, grupo:"plan"},
     {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban, primary:true, grupo:"plan"},
     {id:"tasks", label:"Tareas", icon:Icons.tasks, grupo:"plan", badge: taskLists.reduce((a,l)=>{
@@ -785,6 +787,9 @@ export function App() {
     {id:"config", label:"Configuración", icon:Icons.gear, grupo:"abajo"},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length, grupo:"abajo"},
   ];
+  // v3.29: cada perfil elige sus apartados (Ajustes → Apartados); por defecto, todos
+  const tabs = todasTabs.filter(t=>t.grupo==="abajo" || !modulosOff.has(t.id));
+  useEffect(()=>{ if(modulosOff.has(view)) setView0((tabs[0]||{}).id || "config"); },[modulosOff, view]);
   // v3.11: Ctrl+1…9 salta a cada apartado (en el orden de la barra)
   tabs.filter(t=>t.grupo!=="abajo").forEach((t,i)=>{ if(i<9) t.atajo = i+1; });
   const vistaActual = tabs.find(t=>t.id===view) || tabs[0];
@@ -1235,7 +1240,7 @@ export function App() {
         {view==="convertidor" && <ConvertidorView toast={toast}/>}
         {view==="randomchat" && <RandomChatView toast={toast}/>}
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
-        {view==="config" && <ConfigView goals={goals} setGoals={setGoals} theme={theme} setTheme={setTheme} cardsExpanded={cardsExpanded} setCardsExpanded={setCardsExpanded} onConnect={connectGoogle} onExport={exportData} onImport={importData} onReset={resetAll} toast={toast}/>}
+        {view==="config" && <ConfigView modulos={todasTabs} goals={goals} setGoals={setGoals} theme={theme} setTheme={setTheme} cardsExpanded={cardsExpanded} setCardsExpanded={setCardsExpanded} onConnect={connectGoogle} onExport={exportData} onImport={importData} onReset={resetAll} toast={toast}/>}
 
         <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
