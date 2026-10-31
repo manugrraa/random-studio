@@ -21,7 +21,9 @@ const perfilC = () => require("./carpetas.cjs");
 const perfil = () => perfilC().perfilActivo();
 const opcionesFile = () => path.join(perfilC().dirDatos(), "contador.json");
 // el número de la página: el valor NUEVO de cada posición (como su CSS: al subir, el [last]; al bajar, el primero)
-const LEER = `(() => { const c = document.querySelector(".counter.yta-smooth-counter"); if (!c) return null;
+// (v3.29) de TODOS los contadores de la página, el de la caja del número grande; si no, el primero
+const LEER = `(() => { const cs = [...document.querySelectorAll(".counter.yta-smooth-counter")]; if (!cs.length) return null;
+  const c = cs.find(x => x.closest(".large-counter-area, #counter-area")) || cs[0];
   const sube = c.hasAttribute("is-value-increasing"); let s = "";
   const recorrer = el => { for (const h of el.childNodes) {
     if (h.nodeType === 3) { s += h.textContent; continue; } if (h.nodeType !== 1) continue;
@@ -32,24 +34,55 @@ const LEER = `(() => { const c = document.querySelector(".counter.yta-smooth-cou
   recorrer(c);
   const d = s.replace(/[^0-9]/g, ""); return d ? Number(d) : null; })()`;
 const CHAT_DIR = process.env.RANDOMCHAT_DIR || "E:\\A RdeRandom\\RandomChat";
-let ultimo = null, enviado = 0, chatOk = null;
+let ultimo = null, enviado = 0, chatOk = null, leidoA = 0;
+// lo que hay en la página, para afinar la lectura si YouTube cambia (contador-diag.json en los datos del perfil)
+const DIAG = `(() => ({ t: Date.now(), url: location.href.slice(0, 90), vis: document.visibilityState,
+  contadores: [...document.querySelectorAll(".counter.yta-smooth-counter")].map(c => ({ clase: c.className,
+    zona: (c.closest("[class*=counter-area], #counter-area") || {}).className || "", sube: c.hasAttribute("is-value-increasing"),
+    texto: c.textContent.replace(/\\s+/g, " ").slice(0, 200), html: c.outerHTML.slice(0, 3000) })) }))()`;
 // al RandomChat (/suscriptores): si cambia, y cada 15 s aunque no cambie (por si el chat se encendió después)
 function mandarAlChat(n) {
   let clave = "";
   try { clave = fs.readFileSync(path.join(CHAT_DIR, "studio.key"), "utf8").trim(); } catch (e) {}
   const txt = JSON.stringify({ n, op });
-  const req = require("http").request({ host: "127.0.0.1", port: 7470, path: "/studio/suscriptores", method: "POST", timeout: 2000,
+  const req = require("http").request({ host: "127.0.0.1", port: Number(process.env.RANDOMCHAT_PORT) || 7470, path: "/studio/suscriptores", method: "POST", timeout: 2000,
     headers: { "x-studio-key": clave, "content-type": "application/json", "content-length": Buffer.byteLength(txt) } },
     res => { chatOk = res.statusCode === 200; res.resume(); });
   req.on("timeout", () => req.destroy());
   req.on("error", () => { chatOk = false; });
   req.end(txt);
 }
+let lector = null, lectorPerfil = null, diagA = 0;
+const enStudioWc = wc => /studio\.youtube\.com|^file:/.test(wc.getURL());
+function abrirLector() {
+  if (lector && !lector.isDestroyed() && lectorPerfil === perfil()) return lector;
+  if (lector && !lector.isDestroyed()) lector.destroy();
+  lectorPerfil = perfil();
+  lector = new BrowserWindow({ show: false, width: 1280, height: 800,
+    webPreferences: { offscreen: true, backgroundThrottling: false, contextIsolation: true, nodeIntegration: false, sandbox: true,
+      preload: path.join(__dirname, "contador-preload.cjs") } });
+  lector.webContents.setFrameRate(10);
+  lector.webContents.setUserAgent(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`);
+  lector.webContents.setAudioMuted(true);
+  const este = lector;
+  lector.on("closed", () => { if (lector === este) lector = null; });
+  lector.loadURL(url(op.canal || CANAL)).catch(() => {});
+  return lector;
+}
 setInterval(async () => {
-  if (!win || win.isDestroyed() || !enStudio()) return;
+  // se lee del lector (si no, de la ventana visible); cada 30 s se recarga si lleva 2 min sin leer nada
+  const wc = lector && !lector.isDestroyed() && enStudioWc(lector.webContents) ? lector.webContents
+    : win && !win.isDestroyed() && enStudio() ? win.webContents : null;
+  if (lector && !lector.isDestroyed() && leidoA && Date.now() - leidoA > 120000 && enStudioWc(lector.webContents)) { leidoA = Date.now(); lector.webContents.reload(); }
+  if (!wc) return;
   let n = null;
-  try { n = await win.webContents.executeJavaScript(LEER); } catch (e) {}
+  try { n = await wc.executeJavaScript(LEER); } catch (e) {}
+  if (Date.now() - diagA > 30000) {
+    diagA = Date.now();
+    try { const d = await wc.executeJavaScript(DIAG); fs.writeFileSync(path.join(perfilC().dirDatos(), "contador-diag.json"), JSON.stringify({ ...d, leido: n, ultimo }, null, 1)); } catch (e) {}
+  }
   if (n == null) return;
+  if (n !== ultimo) leidoA = Date.now(); else if (!leidoA) leidoA = Date.now();
   if (n !== ultimo || Date.now() - enviado > 15000) { ultimo = n; enviado = Date.now(); mandarAlChat(n); }
 }, 1000);
 // formato «fraccion» (él, 31/10: "el contador lo quiero estilo 34.345/100.000"): la meta al lado, con la misma letra;
@@ -154,6 +187,8 @@ function abrir() {
     } else { const [w] = win.getSize(); if (w < 800) win.setSize(900, 720); }   // (la página de Google para entrar)
   };
   win.webContents.on("did-finish-load", mirar);
+  // si en la ventana se acaba de iniciar sesión (de Google a Studio), el lector vuelve a cargar ya con la sesión
+  win.webContents.on("did-navigate", (e, u) => { if (/studio\.youtube\.com/.test(u) && lector && !lector.isDestroyed() && !enStudioWc(lector.webContents)) lector.loadURL(url(op.canal || CANAL)).catch(() => {}); });
   win.webContents.on("did-navigate-in-page", mirar);
   const esta = win;
   win.on("closed", () => { if (win === esta) win = null; });   // (al cambiar de perfil se cierra la vieja y ya hay otra)
@@ -171,6 +206,7 @@ ipcMain.handle("contador-abrir", async (e, nuevas) => {
   op = { ...op, ...(nuevas || {}), canal: perfilC().canalDe(perfil()) };
   guardarOp();
   abrir();
+  abrirLector();
   return { ok: true, op };
 });
 ipcMain.handle("contador-meta", async (e, nuevas) => {
@@ -180,7 +216,9 @@ ipcMain.handle("contador-meta", async (e, nuevas) => {
   const mia = !!(win && !win.isDestroyed() && winPerfil === perfil());
   return { ok: true, abierta: mia, contador: mia ? await aplicar() : false, op };
 });
-ipcMain.handle("contador-estado", async () => { cargarOp(); const mia = !!(win && !win.isDestroyed() && winPerfil === perfil());
-  return { abierta: mia, enStudio: mia && !!enStudio(), n: mia ? ultimo : null, chat: chatOk, visible: mia && win.isVisible(), op }; });
+ipcMain.handle("contador-estado", async () => { cargarOp();
+  const mia = !!((win && !win.isDestroyed() && winPerfil === perfil()) || (lector && !lector.isDestroyed() && lectorPerfil === perfil()));
+  const lee = !!(lector && !lector.isDestroyed() && enStudioWc(lector.webContents)) || !!enStudio();
+  return { abierta: mia, enStudio: mia && lee, n: mia ? ultimo : null, chat: chatOk, visible: !!(win && !win.isDestroyed() && win.isVisible()), op }; });
 // esconder / mostrar la ventana (con la fuente de navegador /suscriptores no hace falta verla)
 ipcMain.handle("contador-ventana", async (e, ver) => { if (win && !win.isDestroyed()) { if (ver) { win.show(); win.focus(); } else win.hide(); } return { ok: true }; });
