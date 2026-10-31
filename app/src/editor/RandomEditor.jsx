@@ -11,6 +11,7 @@ import { Fps, Medidor, AjustesEditor, useAjuste } from "./Rendimiento";
 import { InspectorTexto } from "./Textos";
 import { PanelTransformar, PanelVelocidad } from "./Transformar";
 import { PanelColor } from "./PanelColor";
+import { PanelMascara } from "./Mascara";
 import { PanelSubtitulos, InspectorSub } from "./Subtitulos";
 export { ATAJOS_EDITOR } from "./atajos";
 const { useState, useEffect, useRef, useMemo } = React;
@@ -93,6 +94,8 @@ export function RandomEditor({ toast }) {
   const [fuentes, setFuentes] = useState(null);
   const [presets, setPresets] = useState(null);
   const [menuExp, setMenuExp] = useState(false);
+  const [efectos, setEfectos] = useState(null);
+  const [menuPortada, setMenuPortada] = useState(false);
   const [pestInsp, setPestInsp] = useAjuste("red_pest_insp", "basico");
   // 28/10: los subtítulos (las plantillas, la elegida y cuántas palabras por tarjeta)
   const [subsInfo, setSubsInfo] = useState(null);
@@ -132,6 +135,7 @@ export function RandomEditor({ toast }) {
   useEffect(()=>{
     consultar(["redmedios"]).then(ev=>setMedios(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
     consultar(["redbiblio"]).then(ev=>setBiblio(ev.find(e=>e.evento==="hecho"))).catch(e=>toast(e.message));
+    consultar(["redefectos"]).then(ev=>setEfectos((ev.find(e=>e.evento==="hecho") || {}).efectos || [])).catch(()=>{});
     consultar(["redsubsplant"]).then(ev=>setSubsInfo(ev.find(e=>e.evento==="hecho") || null)).catch(()=>{});
     consultar(["redfuentes"]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); if(h){ setFuentes(h.fuentes); setPresets({titulo:h.titulo, normal:h.normal}); } }).catch(()=>{});
     window.studioFS.redLista().then(r=>setProyectos(r.lista||[]));
@@ -154,7 +158,7 @@ export function RandomEditor({ toast }) {
       if(!c.ruta || pedidos.current.has(c.ruta)) return;
       pedidos.current.add(c.ruta);
       consultar(["redonda", c.ruta]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); setOndas(o=>({...o, [c.ruta]: h ? h.picos : []})); }).catch(()=>{});
-      if(pi.tipo==="video") consultar(["redtira", c.ruta]).then(ev=>{
+      if(pi.tipo==="video" && !c.efecto) consultar(["redtira", c.ruta]).then(ev=>{
         const h = (ev.find(e=>e.evento==="hecho")||{}).tira; if(!h) return;
         const img = new Image(); img.onload = () => setTiras(t=>({...t, [c.ruta]:{...h, img}})); img.src = fileUrl(h.jpg);
       }).catch(()=>{});
@@ -219,7 +223,19 @@ export function RandomEditor({ toast }) {
   const meter = async (m, tipo, en, pistaId) => {
     let info; try { info = await durDe(m); } catch(e){ toast(e.message); return; }
     if(info.video === false) tipo = "audio";
-    const c = { id:M.uid(), ruta:m.ruta, nombre:m.nombre, mini:m.mini, desde:0, hasta:info.dur, dur_src:info.dur, en:0, vol:1, silencio:false };
+    const imagen = M.IMAGEN.test(m.ruta || "");
+    const c = imagen ? { id:M.uid(), ruta:m.ruta, nombre:m.nombre, mini:m.ruta, desde:M.TEXTO0, hasta:M.TEXTO0 + 3, dur_src:1e9, en:0, vol:0, silencio:true, imagen:true }
+                     : { id:M.uid(), ruta:m.ruta, nombre:m.nombre, mini:m.mini, desde:0, hasta:info.dur, dur_src:info.dur, en:0, vol:1, silencio:false };
+    // 31/10: las IMÁGENES y lo que se suelta en una pista de vídeo superpuesta van a una superpuesta (encima)
+    const destino = pistaId && pistaId !== "v1" && (pRef.current.pistas.find(x=>x.id===pistaId) || {}).tipo === "video" ? pistaId : null;
+    if(tipo === "video" && (imagen || destino)){
+      cambiar(prev=>{
+        let ps = prev.pistas, id = destino;
+        if(!id){ const hay = ps.find(x=>x.tipo==="video" && x.id!=="v1"); if(hay) id = hay.id; else { const n = M.nuevaPistaVideo(ps); const i = ps.findIndex(x=>x.id==="v1"); ps = [...ps.slice(0, i), n, ...ps.slice(i)]; id = n.id; } }
+        return {...prev, pistas: M.colocar(ps, {...c, en: Math.max(0, en == null ? reloj.t : en)}, id, "video")};
+      });
+      return;
+    }
     // el primer vídeo de la principal fija los fotogramas por segundo del proyecto (los de verdad)
     let fpsNuevo = null;
     if(tipo === "video" && !(pRef.current.pistas.find(x=>x.id==="v1")||{clips:[]}).clips.length){
@@ -316,7 +332,24 @@ export function RandomEditor({ toast }) {
   const marcador = () => { const t = M.cuantiza(reloj.t, fps), ms = pRef.current.marcadores||[], cerca = ms.find(m=>Math.abs(m-t) < 0.05);
     cambiar(q=>({...q, marcadores: cerca!=null ? ms.filter(m=>m!==cerca) : [...ms, t].sort((a,b)=>a-b)})); };
   const accionPista = (que, id) => cambiar(q=>({...q, pistas: que==="quitar" ? q.pistas.filter(x=>x.id!==id) : q.pistas.map(x=>x.id===id ? {...x, [que]:!x[que]} : x)}));
+  // 31/10: un EFECTO (vídeo con transparencia) en una pista superpuesta «Efectos» de arriba; con su sonido,
+  // además, su SFX en una pista de audio (cada uno por su lado: se mueven y se borran por separado)
+  const meterEfecto = async (e, conSonido, en, pistaId) => {
+    const t0 = M.cuantiza(en == null ? reloj.t : en, fps);
+    let r;
+    try { toast(`Preparando «${e.nombre}»…`); const ev = await consultar(["redefecto", e.id, String(pRef.current.ancho || 1080), String(pRef.current.alto || 1920)]); r = ev.find(x=>x.evento==="hecho"); }
+    catch(x){ toast(x.message); return; }
+    const c = { id:M.uid(), ruta:r.ruta, nombre:e.nombre, efecto:e.id, desde:0, hasta:r.dur, dur_src:r.dur, en:t0, vol:0, silencio:true };
+    cambiar(q=>{
+      let ps = q.pistas, id = pistaId && (ps.find(x=>x.id===pistaId) || {}).tipo === "video" && pistaId !== "v1" ? pistaId : null;
+      if(!id){ const hay = ps.find(x=>x.tipo==="video" && x.nombre==="Efectos"); if(hay) id = hay.id; else { const n = {...M.nuevaPistaVideo(ps), nombre:"Efectos"}; const i = ps.findIndex(x=>x.tipo==="video"); ps = [...ps.slice(0, i), n, ...ps.slice(i)]; id = n.id; } }
+      ps = M.colocar(ps, c, id, "video");
+      if(conSonido && e.sfx) ps = M.colocarAudio(ps, { id:M.uid(), ruta:e.sfx, nombre:e.sfx_nombre, desde:0, hasta:e.sfx_dur || 1.5, dur_src:e.sfx_dur || 1.5, en:t0, vol:1, silencio:false }, null);
+      return {...q, pistas: ps};
+    });
+  };
   const anadirPista = () => cambiar(q=>({...q, pistas:[...q.pistas, M.nuevaPistaAudio(q.pistas)]}));
+  const anadirPistaVideo = () => cambiar(q=>{ const i = q.pistas.findIndex(x=>x.id==="v1"); return {...q, pistas:[...q.pistas.slice(0, i), M.nuevaPistaVideo(q.pistas), ...q.pistas.slice(i)]}; });
   const quitarAire = async () => {
     const cs = v1 ? v1.clips : []; if(!cs.length) return;
     const aires = {};
@@ -466,8 +499,9 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
   const ocupado = !!(tarea && !tarea.cerrada);
   const elegidos = todos.filter(c=>sel.has(c.id));
   const uno = elegidos.length === 1 ? elegidos[0] : null;
+  const esVideo = !!(uno && (p.pistas.find(x=>x.id===uno.pista) || {}).tipo === "video");
   const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista} reloj={reloj} sel={sel}
-    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto} subs={subsInfo} cambiarClip={cambiarClip}/>;
+    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto} subs={subsInfo} cambiarClip={cambiarClip} editarMascara={pestInsp==="mascara"}/>;
   const menuEl = menu && createPortal(
     <div onMouseDown={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:2000}}>
       <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:Math.min(menu.x, window.innerWidth-230), top:Math.min(menu.y, window.innerHeight-300)}}>
@@ -497,6 +531,16 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <span style={{flex:1}}/>
         <button onClick={()=>setAjustesAb(x=>!x)} className={"rd-ico"+(ajustesAb?" on":"")} title="Rendimiento, proxies y contador de FPS">{I.ajustes}</button>
         <button onClick={quitarAire} className="rd-btn" title="Quita los silencios largos de la pista principal (Ctrl+Z para deshacer)">{I.aire} Quitar el aire</button>
+        {/* 31/10, él: "que se pueda seleccionar la miniatura del timeline, como en CapCut": la PORTADA */}
+        <div style={{position:"relative"}}>
+          <button onClick={()=>setMenuPortada(x=>!x)} className={"rd-btn"+(p.portada != null ? " on" : "")} title={p.portada != null ? `Portada en ${tc(p.portada, fps)}: al exportar se guarda como «… - Miniatura.jpg»` : "Elegir la portada (la miniatura) del vídeo"}>{I.portada} Portada</button>
+          {menuPortada && createPortal(<div onMouseDown={()=>setMenuPortada(false)} style={{position:"fixed",inset:0,zIndex:2000}}>
+            <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{right:220,top:44}}>
+              <button onClick={()=>{ setMenuPortada(false); cambiar(q=>({...q, portada: M.cuantiza(reloj.t, fps)})); toast("Portada: el fotograma del cabezal (con sus textos). Sale al exportar como «… - Miniatura.jpg»"); }}><span>Usar el fotograma del cabezal</span><kbd>{tc(reloj.t, fps)}</kbd></button>
+              {p.portada != null && <button onClick={()=>{ setMenuPortada(false); setJugando(0); ir(p.portada); }}><span>Ir a la portada</span><kbd>{tc(p.portada, fps)}</kbd></button>}
+              {p.portada != null && <button onClick={()=>{ setMenuPortada(false); cambiar(q=>({...q, portada:null})); }}><span>Quitar la portada</span><kbd></kbd></button>}
+            </div></div>, document.body)}
+        </div>
         {p.clip && <button onClick={volverAlOriginal} disabled={ocupado} className="rd-btn">Volver al original</button>}
         <div style={{position:"relative",display:"flex"}}>
           <button onClick={()=>exportar("listos")} disabled={ocupado} className={"rd-btn"+(p.clip ? "" : " primario")} style={{borderTopRightRadius:0,borderBottomRightRadius:0}}
@@ -515,6 +559,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       {/* biblioteca · previsualización · propiedades */}
       <div className="rd-medio-fila">
         <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
+          efectos={efectos} onEfecto={(e, s)=>meterEfecto(e, s)}
           panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
             onGenerar={generarSubs} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
             onPlantilla={pid=>cambiarPistaSubs(()=>({plantilla:pid, estilo:{}}))} onEstilo={(patch, g)=>cambiarPistaSubs(x=>({estilo:{...(x.estilo||{}), ...patch}}), g)}
@@ -551,13 +596,14 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           {uno && uno.tipo === "texto" && <InspectorTexto c={uno} fuentes={fuentes} presets={presets} alGesto={alGesto} cambiarEstilo={cambiarEstilo} cambiarTexto={cambiarTexto} W={p.ancho} H={p.alto}/>}
           {/* 31/10 (v3.18): propiedades por pestañas, como CapCut: Básico · Transformar · Velocidad */}
           {uno && uno.ruta && <div style={{display:"flex",gap:3}}>
-            {[["basico","Básico"], ...(uno.pista==="v1" ? [["transformar","Transformar"],["color","Color"]] : []), ["velocidad","Velocidad"]].map(([k2, l])=>
-              <button key={k2} onClick={()=>setPestInsp(k2)} className={"rd-tab"+(pestInsp===k2 || (!["transformar","velocidad","color"].includes(pestInsp) && k2==="basico") ? " on" : "")} style={{fontSize:11.5,padding:"5px 0"}}>{l}</button>)}
+            {[["basico","Básico"], ...(esVideo ? [["transformar","Transformar"],["color","Color"],["mascara","Máscara"]] : []), ...(uno.imagen ? [] : [["velocidad","Velocidad"]])].map(([k2, l])=>
+              <button key={k2} onClick={()=>setPestInsp(k2)} className={"rd-tab"+(pestInsp===k2 || (!["transformar","velocidad","color","mascara"].includes(pestInsp) && k2==="basico") ? " on" : "")} style={{fontSize:11.5,padding:"5px 0"}}>{l}</button>)}
           </div>}
-          {uno && uno.ruta && pestInsp==="transformar" && uno.pista==="v1" && <PanelTransformar c={uno} reloj={reloj} alGesto={alGesto} cambiarClip={cambiarClip} ir={t=>{ setJugando(0); ir(t); }}/>}
+          {uno && uno.ruta && pestInsp==="transformar" && esVideo && <PanelTransformar c={uno} reloj={reloj} alGesto={alGesto} cambiarClip={cambiarClip} ir={t=>{ setJugando(0); ir(t); }}/>}
           {uno && uno.ruta && pestInsp==="velocidad" && <PanelVelocidad c={uno} alGesto={alGesto} cambiarClip={cambiarClip}/>}
-          {uno && uno.ruta && pestInsp==="color" && uno.pista==="v1" && <PanelColor c={uno} alGesto={alGesto} cambiarClip={cambiarClip}/>}
-          {(!uno || !uno.ruta || !["transformar","velocidad","color"].includes(pestInsp) || (["transformar","color"].includes(pestInsp) && uno.pista!=="v1")) && <>
+          {uno && uno.ruta && pestInsp==="color" && esVideo && <PanelColor c={uno} alGesto={alGesto} cambiarClip={cambiarClip}/>}
+          {uno && uno.ruta && pestInsp==="mascara" && esVideo && <PanelMascara c={uno} W={p.ancho} H={p.alto} alGesto={alGesto} cambiarClip={cambiarClip}/>}
+          {(!uno || !uno.ruta || !["transformar","velocidad","color","mascara"].includes(pestInsp) || (["transformar","color","mascara"].includes(pestInsp) && !esVideo) || (pestInsp==="velocidad" && uno.imagen)) && <>
           {uno && <div style={{color:"#aaa",lineHeight:1.7,fontFamily:"ui-monospace, Consolas, monospace",fontSize:11.5}}>
             {uno.ruta ? <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"4px 8px",alignItems:"center",fontFamily:"system-ui",fontSize:12,color:"#ccc"}}>
               {/* 31/10, él: "modificar los atributos de la música y los SFX, desde dónde empiezan y dónde acaban, o su volumen (como DaVinci)" */}
@@ -609,6 +655,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <button onClick={()=>setIman(x=>!x)} className={"rd-ico"+(iman?" on":"")} title="Imán: se pega a los bordes al arrastrar (N)">{I.iman}</button>
         <button onClick={()=>cambiar(q=>({...q, magnetica: !q.magnetica}))} className={"rd-ico"+(p.magnetica?" on":"")}
           title={p.magnetica ? "Pista principal magnética: los clips se juntan solos (pulsa para moverlos libres)" : "Pista principal libre: cada clip donde lo sueltes (pulsa para que se junten solos)"}>{I.magnetica}</button>
+        <button onClick={anadirPistaVideo} className="rd-ico" title="Pista de vídeo encima de la principal (superposición: vídeo dentro de vídeo, imágenes, máscaras)">{I.capa}</button>
         <button onClick={anadirPista} className="rd-ico" title="Pista de audio nueva">{I.pista}</button>
         <span style={{flex:1}}/>
         <button onClick={()=>setZoom(z=>Math.max(0.5,z/1.4))} className="rd-ico" title="Alejar (Ctrl+-)">{I.menos}</button>
@@ -620,7 +667,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <LineaTiempo proyecto={p} zoom={zoom} setZoom={setZoom} sel={sel} setSel={setSel} herramienta={herramienta} iman={iman}
           reloj={reloj} jugando={jugandoRef} tiras={tiras} ondas={ondas}
           onIr={t=>{ setJugando(0); ir(t); }} onGesto={alGesto} onDividirEn={dividirEn}
-          onSoltarMedio={(m, pi, t)=>m.texto ? meterTexto(m.texto, t, pi.tipo==="texto" ? pi.id : null) : meter(m, pi.tipo==="video" ? "video" : "audio", t, pi.id)}
+          onSoltarMedio={(m, pi, t)=>m.efecto ? meterEfecto((efectos || []).find(x=>x.id===m.efecto) || {id:m.efecto, nombre:m.nombre}, false, t, pi.id) : m.texto ? meterTexto(m.texto, t, pi.tipo==="texto" ? pi.id : null) : meter(m, pi.tipo==="video" ? "video" : "audio", t, pi.id)}
           onMenu={(e, c, pi)=>{ e.preventDefault(); if(!sel.has(c.id)) setSel(new Set([c.id])); setMenu({x:e.clientX, y:e.clientY}); }}
           onPista={accionPista}/>
       </div>

@@ -63,6 +63,10 @@ export const puntosDeCorte = p => [...new Set([0, ...p.pistas.flatMap(pi=>pi.cli
 
 export const nuevaPistaAudio = ps => ({ id:"a"+uid(), tipo:"audio", nombre:"Audio "+(ps.filter(x=>x.tipo==="audio").length+1), clips:[] });
 // 28/10: las pistas de TEXTO van ENCIMA de la principal (como en CapCut): la primera de la lista es la de arriba
+// 31/10 (v3.19): pistas de VÍDEO superpuestas (como las de CapCut): encima de la principal, con lo mismo
+// que ella (transformar, color, máscara, velocidad); para máscaras, efectos y vídeo dentro de vídeo
+export const nuevaPistaVideo = ps => ({ id:"v"+uid(), tipo:"video", nombre:"Vídeo "+(ps.filter(x=>x.tipo==="video").length+1), clips:[] });
+export const IMAGEN = /\.(png|jpe?g|webp|gif|bmp)$/i;
 export const nuevaPistaTexto = ps => ({ id:"t"+uid(), tipo:"texto", nombre:"Texto "+(ps.filter(x=>x.tipo==="texto").length+1), clips:[] });
 
 // mete un clip donde quepa (en la pista pedida, en otra libre del mismo tipo o en una nueva)

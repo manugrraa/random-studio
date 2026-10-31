@@ -30,7 +30,7 @@ const Clip = memo(function Clip({ c, pista, zoom, elegido, cuchilla, onDown, onM
         border:`2px solid ${elegido ? COL.sel : COL.borde}`, boxShadow: elegido ? "0 0 0 1px rgba(212,175,55,0.35), 0 0 12px rgba(212,175,55,0.25)" : "none",
         cursor: cuchilla ? "crosshair" : "grab"}}>
       {w > 30 && <div style={{position:"absolute",left:5,top:pista.tipo==="texto"||pista.tipo==="subtitulos"?8:3,right:5,fontSize:10.5,fontWeight:700,color:"#fff",textShadow:"0 1px 3px #000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",pointerEvents:"none"}}>
-        {c.tipo === "texto" || c.tipo === "sub" ? (c.tipo === "texto" ? "T  " : "") + (c.texto || "").split("\n").join(" ") :(c.silencio ? "🔇 " : "") + c.nombre}</div>}
+        {c.tipo === "texto" || c.tipo === "sub" ? (c.tipo === "texto" ? "T  " : "") + (c.texto || "").split("\n").join(" ") : (c.efecto ? "✦ " : c.imagen ? "▣ " : c.silencio ? "🔇 " : "") + c.nombre}</div>}
       {w > 60 && pista.tipo==="video" && <div style={{position:"absolute",right:6,top:ALTO_FOTO-15,fontSize:9.5,fontWeight:700,color:"#eee",textShadow:"0 1px 3px #000",pointerEvents:"none"}}>{corto(largo(c))}</div>}
       {!cuchilla && <>
         <div onMouseDown={e=>onDown(e, c, pista, "izq")} title="Recortar el principio"
@@ -158,9 +158,11 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       const x = PAD + t*zoom - scroll; g.fillRect(Math.round(x), ALTO_REGLA-13, 1, 13);
       g.fillText(paso < 1 ? tc(t, fps) : corto(t), x + 4, 12);
     }
+    if(proyecto.portada != null){ const x = PAD + proyecto.portada*zoom - scroll; g.fillStyle = "#D4AF37";      // la portada, un rombo dorado
+      g.beginPath(); g.moveTo(x, 15); g.lineTo(x+6, 22); g.lineTo(x, 29); g.lineTo(x-6, 22); g.closePath(); g.fill(); }
     (proyecto.marcadores||[]).forEach(m=>{ const x = PAD + m*zoom - scroll; g.fillStyle = "#60a5fa";
       g.beginPath(); g.moveTo(x-5, 16); g.lineTo(x+5, 16); g.lineTo(x+5, 24); g.lineTo(x, 29); g.lineTo(x-5, 24); g.closePath(); g.fill(); });
-  },[zoom, scroll, ancho, proyecto.marcadores, fps]);
+  },[zoom, scroll, ancho, proyecto.marcadores, proyecto.portada, fps]);
 
   useEffect(()=>{
     const t0 = Math.max(0, (scroll - PAD) / zoom) - 1, t1 = (scroll + ancho) / zoom + 1;
@@ -468,7 +470,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           <div style={{height:ALTO_REGLA,borderBottom:"1px solid #2a2a2a"}}/>
           {proyecto.pistas.map(pi=>(
             <div key={pi.id} style={{height:ALTO[pi.tipo],marginTop:6,display:"flex",alignItems:"center",gap:4,padding:"0 6px"}}>
-              <span style={{fontSize:10.5,fontWeight:800,color:pi.tipo==="texto"?"#a78bfa":pi.tipo==="subtitulos"?"#5eead4":"#888",width:22}}>{pi.tipo==="video" ? "V1" : pi.tipo==="subtitulos" ? "SUB" : pi.tipo==="texto" ? "T"+(proyecto.pistas.filter(x=>x.tipo==="texto").indexOf(pi)+1) : "A"+(proyecto.pistas.filter(x=>x.tipo==="audio").indexOf(pi)+1)}</span>
+              <span style={{fontSize:10.5,fontWeight:800,color:pi.tipo==="texto"?"#a78bfa":pi.tipo==="subtitulos"?"#5eead4":"#888",width:22}}>{pi.tipo==="video" ? "V" + (proyecto.pistas.filter(x=>x.tipo==="video").length - proyecto.pistas.filter(x=>x.tipo==="video").indexOf(pi)) : pi.tipo==="subtitulos" ? "SUB" : pi.tipo==="texto" ? "T"+(proyecto.pistas.filter(x=>x.tipo==="texto").indexOf(pi)+1) : "A"+(proyecto.pistas.filter(x=>x.tipo==="audio").indexOf(pi)+1)}</span>
               <button onClick={()=>onPista("muda", pi.id)} title={pi.muda ? "Pista silenciada" : "Silenciar la pista"} className={"rd-ico"+(pi.muda?" on":"")} style={{width:24,height:24}}>{pi.muda ? "🔇" : "🔊"}</button>
               <button onClick={()=>onPista("bloqueada", pi.id)} title={pi.bloqueada ? "Pista bloqueada" : "Bloquear la pista"} className={"rd-ico"+(pi.bloqueada?" on":"")} style={{width:24,height:24}}>{pi.bloqueada ? "🔒" : "🔓"}</button>
               {pi.tipo!=="video" && !pi.clips.length && (pi.tipo==="texto" || pi.tipo==="subtitulos" || proyecto.pistas.filter(x=>x.tipo==="audio").length>1) &&

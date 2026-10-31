@@ -2,6 +2,8 @@ import React from "react";
 import { fin, volumenEn, local, vel, valorEn } from "./modelo";
 import { Transformador, transformCss } from "./Transformar";
 import { svgFiltro, conColor } from "./color";
+import { mascaraCss, EditorMascara } from "./Mascara";
+import { IMAGEN } from "./modelo";
 import { CapaTextos } from "./Textos";
 import { CapaSubtitulos } from "./Subtitulos";
 const { useEffect, useRef, useState, forwardRef, useImperativeHandle } = React;
@@ -11,7 +13,7 @@ const { useEffect, useRef, useState, forwardRef, useImperativeHandle } = React;
    (antes, en cada corte había que cargar el vídeo de cero). Los audios, uno por pista. */
 export const fileUrl = p => p ? "file:///" + p.replace(/\\/g,"/").split("/").map(encodeURIComponent).join("/").replace(/^([A-Za-z])%3A/,"$1:") : null;
 
-export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip }, ref) {
+export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip, editarMascara }, ref) {
   // 31/10 (v3.18): escala de la pantalla (px de pantalla por px del lienzo), para mover/escalar el vídeo
   const lienzo = useRef(null), kRef = useRef(0.3);
   const [k, setK] = useState(0.3);
@@ -20,6 +22,18 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
   const [tv, setTv] = useState(0);
   useEffect(()=>reloj ? reloj.oir(t=>setTv(x=>Math.abs(x - t) > 1/120 ? t : x)) : undefined,[reloj]);
   const [natural, setNatural] = useState(null);
+  // 31/10: las capas de las pistas de vídeo superpuestas (un reproductor o imagen por pista)
+  const capas = useRef({});
+  const aplicar = (el, c, t) => {
+    el.style.transform = transformCss(c, t - c.en, kRef.current);
+    el.style.opacity = valorEn(c, "opacidad", t - c.en);
+    el.style.filter = conColor(c) ? `url(#rfc_${c.id})` : "none";
+    const m = mascaraCss(c, pRef.current.ancho, pRef.current.alto);
+    el.style.webkitMaskImage = el.style.maskImage = m || "none";
+    el.style.webkitMaskSize = el.style.maskSize = "100% 100%";       // (la máscara, del tamaño del lienzo del clip)
+    el.style.webkitMaskRepeat = el.style.maskRepeat = "no-repeat";
+    el.style.maskMode = "luminance";        // (blanco = se ve, como la imagen de la exportación; no la transparencia)
+  };
   const A = useRef(null), B = useRef(null), activo = useRef(0);
   const auds = useRef({});
   const pRef = useRef(proyecto); pRef.current = proyecto;
@@ -81,8 +95,7 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
       v.volume = volumenEn(c, t, v1.muda);
       // (mover, escalar, girar y opacidad, con sus fotogramas clave)
       v.style.transform = transformCss(c, t - c.en, kRef.current);
-      v.style.opacity = valorEn(c, "opacidad", t - c.en); o.style.opacity = 0;
-      v.style.filter = conColor(c) ? `url(#rfc_${c.id})` : "none";
+      aplicar(v, c, t); o.style.opacity = 0;
       if(adelante && v.paused) v.play().catch(()=>{});
       if(!adelante && !v.paused) v.pause();
       if(!o.paused) o.pause();
@@ -95,6 +108,24 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
       const sig = cs.find(x=>x.en >= fin(c) - 1e-3 && x.id !== c.id);
       if(sig && (o.dataset.clip !== sig.id || o.dataset.src !== fuente(sig))){ cargar(o, sig, sig.en); saltar(o, sig.desde); o.style.transform = transformCss(sig, 0, kRef.current); }
     }
+    // las superpuestas: su clip del instante, en su capa (con su sonido)
+    pr.pistas.filter(pi=>pi.tipo==="video" && pi.id!=="v1").forEach(pi=>{
+      const el = capas.current[pi.id]; if(!el) return;
+      const c2 = pi.muda ? null : clipEn(pi.clips, t);
+      if(!c2){ el.style.visibility = "hidden"; if(el.pause && !el.paused) el.pause(); return; }
+      const f = IMAGEN.test(c2.ruta) ? c2.ruta : fuente(c2);
+      if(el.dataset.src !== f){ el.src = fileUrl(f); el.dataset.src = f; }
+      el.style.visibility = "visible";
+      aplicar(el, c2, t);
+      if(el.tagName === "VIDEO"){
+        const lc = local(c2, t);
+        if(Math.abs(el.currentTime - lc) > (adelante ? 0.2 : 0.01)) { try { el.currentTime = lc + 0.001; } catch(e){} }
+        el.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c2.velocidad || 1)));
+        el.preservesPitch = !c2.tono; el.volume = volumenEn(c2, t, false);
+        if(adelante && el.paused) el.play().catch(()=>{});
+        if(!adelante && !el.paused) el.pause();
+      }
+    });
     pr.pistas.filter(pi=>pi.tipo==="audio").forEach(pi=>{
       let a = auds.current[pi.id]; if(!a){ a = new Audio(); auds.current[pi.id] = a; }
       const c2 = clipEn(pi.clips, t);
@@ -122,7 +153,8 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
     if(!reloj) return;
     const t = reloj.t, v1 = proyecto.pistas.find(x=>x.id==="v1"), c = v1 && v1.clips.find(x=>t >= x.en && t < fin(x));
     const v = [A.current, B.current][activo.current];
-    if(c && v && v.dataset.clip === c.id){ v.style.transform = transformCss(c, t - c.en, kRef.current); v.style.opacity = valorEn(c, "opacidad", t - c.en); v.style.filter = conColor(c) ? `url(#rfc_${c.id})` : "none"; }
+    if(c && v && v.dataset.clip === c.id) aplicar(v, c, t);
+    proyecto.pistas.filter(pi=>pi.tipo==="video" && pi.id!=="v1").forEach(pi=>{ const el = capas.current[pi.id], c2 = clipEn(pi.clips, t); if(el && c2 && el.dataset.src) aplicar(el, c2, t); });
   },[proyecto, k]);
   useImperativeHandle(ref, ()=>({ sincronizar, soltar, activoV, mostrado }));
   useEffect(()=>()=>{ Object.values(auds.current).forEach(a=>{ try { a.pause(); a.src=""; } catch(e){} }); },[]);
@@ -131,16 +163,25 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
   return (
     <div ref={lienzo} data-lienzo style={{position:"relative",height:"100%",aspectRatio:`${W}/${H}`,maxWidth:"100%",maxHeight:"100%",background:"#000",boxShadow:"0 0 0 1px rgba(255,255,255,0.06)",overflow:"hidden"}}>
       {/* 31/10: el color de cada clip (filtro SVG: lo pinta la gráfica, mismas fórmulas que al exportar) */}
-      <svg width="0" height="0" style={{position:"absolute"}} dangerouslySetInnerHTML={{__html: ((proyecto.pistas.find(x=>x.id==="v1") || {clips:[]}).clips.filter(conColor).map(c=>svgFiltro("rfc_" + c.id, c)).join(""))}}/>
+      <svg width="0" height="0" style={{position:"absolute"}} dangerouslySetInnerHTML={{__html: proyecto.pistas.filter(x=>x.tipo==="video").flatMap(x=>x.clips).filter(conColor).map(c=>svgFiltro("rfc_" + c.id, c)).join("")}}/>
       <video ref={A} playsInline preload="auto" style={estiloV} onSeeked={alBuscar} onLoadedMetadata={e=>setNatural([e.target.videoWidth, e.target.videoHeight])}/>
       <video ref={B} playsInline preload="auto" style={estiloV} onSeeked={alBuscar} onLoadedMetadata={e=>setNatural([e.target.videoWidth, e.target.videoHeight])}/>
+      {/* las pistas superpuestas, de abajo arriba (la primera de la lista es la de más arriba) */}
+      {[...proyecto.pistas].reverse().filter(pi=>pi.tipo==="video" && pi.id!=="v1").map(pi=>{
+        const img = pi.clips.length > 0 && pi.clips.every(c=>IMAGEN.test(c.ruta));
+        const est = {...estiloV, visibility:"hidden", opacity:1};
+        return img ? <img key={pi.id + "i"} ref={el=>{ capas.current[pi.id] = el; }} alt="" style={est}/>
+                   : <video key={pi.id} ref={el=>{ capas.current[pi.id] = el; }} playsInline preload="auto" style={est}/>;
+      })}
       {reloj && <CapaSubtitulos proyecto={proyecto} reloj={reloj} info={subs}/>}
       {reloj && <CapaTextos proyecto={proyecto} reloj={reloj} sel={sel} onElegir={onElegirTexto} onGesto={onGesto}/>}
       {reloj && cambiarClip && (()=>{
         // el clip ELEGIDO de la principal que se ve ahora: su recuadro para moverlo/escalarlo/girarlo
-        const v1 = proyecto.pistas.find(x=>x.id==="v1"), c = v1 && v1.clips.find(x=>sel && sel.has(x.id) && tv >= x.en && tv < fin(x));
-        const va = [A.current, B.current][activo.current];
-        const nat = va && va.videoWidth ? [va.videoWidth, va.videoHeight] : natural;
+        const pv = proyecto.pistas.filter(x=>x.tipo==="video"), pc = pv.find(pi=>pi.clips.some(x=>sel && sel.has(x.id) && tv >= x.en && tv < fin(x)));
+        const c = pc && pc.clips.find(x=>sel.has(x.id) && tv >= x.en && tv < fin(x));
+        const va = pc && pc.id !== "v1" ? capas.current[pc.id] : [A.current, B.current][activo.current];
+        const nat = va && (va.videoWidth || va.naturalWidth) ? [va.videoWidth || va.naturalWidth, va.videoHeight || va.naturalHeight] : natural;
+        if(c && editarMascara && c.mascara) return <EditorMascara c={c} tRel={tv - c.en} W={W} H={H} k={k} onGesto={onGesto} cambiarClip={cambiarClip}/>;
         return c ? <Transformador c={c} tRel={tv - c.en} W={W} H={H} k={k} natural={nat} onGesto={onGesto} cambiarClip={cambiarClip}/> : null;
       })()}
       {guias && <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>

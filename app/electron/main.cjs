@@ -349,7 +349,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "retencion", "aprender"]);
+const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "redefectos", "redefecto", "retencion", "aprender"]);
 const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip", "redsubs"]);
 let tarea = null;          // { proc, args, eventos: [] }
 

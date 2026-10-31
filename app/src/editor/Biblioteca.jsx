@@ -76,7 +76,23 @@ function Textos({ presets, onTexto, favs, onFav, soloFavs, vacio }) {
     </div>));
 }
 
-export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs }) {
+// 31/10: los EFECTOS (reluciente, destellos...): solo el efecto o el efecto y su sonido, cada uno en su pista
+function Efectos({ efectos, onEfecto }) {
+  if(!efectos) return <div style={{fontSize:12.5,color:"#888",padding:8}}>Cargando los efectos…</div>;
+  return efectos.map(e=>(
+    <div key={e.id} data-medio draggable onDragStart={ev=>{ ev.dataTransfer.setData("application/x-randomeditor", JSON.stringify({efecto:e.id, nombre:e.nombre})); ev.dataTransfer.effectAllowed = "copy"; }}
+      className="rd-medio" title={e.desc + " · arrástralo a una pista de vídeo"} style={{padding:8}}>
+      <div style={{width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--gold)",flexShrink:0}}>{I.efecto}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:12,fontWeight:650}}>{e.nombre} <span style={{fontWeight:400,color:"#888",fontSize:10.5}}>· {e.dur} s</span></div>
+        <div style={{fontSize:10.5,color:"#8a8a8a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.sfx_nombre ? "♪ " + e.sfx_nombre : "sin sonido"}</div>
+      </div>
+      <button onClick={()=>onEfecto(e, false)} className="rd-ico" style={{width:28,height:28}} title="Solo el efecto, en el cabezal">{I.mas}</button>
+      {e.sfx && <button onClick={()=>onEfecto(e, true)} className="rd-ico" style={{width:34,height:28,fontSize:11}} title={"El efecto y su sonido (" + e.sfx_nombre + "), cada uno en su pista"}>＋♪</button>}
+    </div>));
+}
+
+export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs, efectos, onEfecto }) {
   const [pestana, setPestana] = useState(()=>{ try { return localStorage.getItem("red_pestana") || "clips"; } catch(e){ return "clips"; } });
   const [cat, setCat] = useState("");
   const [busca, setBusca] = useState("");
@@ -140,7 +156,7 @@ export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTex
         {pestana==="texto" && <Textos presets={presets} onTexto={onTexto} favs={favsAqui} onFav={alternarFav} soloFavs={soloFavs} vacio={sinFavs}/>}
         {pestana==="subtitulos" && panelSubs && React.cloneElement(panelSubs, { favs: favsAqui, onFav: id=>alternarFav("subtitulos", id), soloFavs, vacioFavs: sinFavs })}
         {pestana==="stickers" && vacio(I.sticker, "Aquí irán los stickers. Próximamente.")}
-        {pestana==="efectos" && vacio(I.efecto, "Aquí irán los efectos. Próximamente.")}
+        {pestana==="efectos" && <Efectos efectos={efectos} onEfecto={onEfecto}/>}
         {(pestana==="clips" || deAudio) && lista===null && <div style={{fontSize:12.5,color:"#888",padding:8}}>{pestana==="clips" ? "Cargando los clips…" : "Ordenando la biblioteca…"}</div>}
         {carpetas.length>0 && <>
           <div style={{fontSize:10.5,fontWeight:700,color:"#888",letterSpacing:0.4,padding:"4px 2px 0"}}>RECOPILACIONES</div>
