@@ -412,6 +412,11 @@ export function ClipsView({ toast }) {
   // carpeta (18/10: con el vídeo abierto Windows no la deja mover y se duplicaba)
   const [ocupados, setOcupados] = useState({});
   const [sel, setSel] = useState(()=>new Set());    // 19/10: los aprobados que él elige montar
+  // 31/10, él: "un botón para seleccionar varios Clips", "borrar los montados y todos los descartados, del PC,
+  // y que se renumeren los que queden"
+  const [modoVarios, setModoVarios] = useState(false);
+  const [varios, setVarios] = useState(()=>new Set());
+  const [borrando, setBorrando] = useState(false);
   // v3.11 (26/10): el mini editor y las recopilaciones nuevas
   const [nuevaRecop, setNuevaRecop] = useState(null);   // nombre de la recopilación que se está creando (vacía)
   const teclas = useRef(null);
@@ -452,6 +457,31 @@ export function ClipsView({ toast }) {
     document.querySelectorAll("video").forEach(v=>{ try { v.pause(); v.removeAttribute("src"); v.load(); } catch(x){} });
     setAbierto(null);
     await new Promise(r=>setTimeout(r,400));
+  };
+  const gb = b => b >= 2**30 ? (b / 2**30).toFixed(1) + " GB" : Math.max(1, Math.round(b / 2**20)) + " MB";
+  // borrar del PC (a la Papelera de Windows, se puede recuperar desde allí) y renumerar los que quedan
+  const borrarDelPC = async (carpetas, todosDescartados) => {
+    if(borrando || (!carpetas.length && !todosDescartados)) return;
+    if(ocupado){ toast && toast("Espera a que termine la tarea del clon"); return; }
+    try {
+      const ev = await consultar(todosDescartados ? ["borrardescartados", "--peso"] : ["pesoclips", ...carpetas]);
+      const h = ev.find(e=>e.evento==="hecho") || {};
+      const n = todosDescartados ? h.cuantos : carpetas.length;
+      if(!n){ toast && toast("No hay nada que borrar"); return; }
+      if(!window.confirm(`¿Borrar ${n} clip${n!==1?"s":""} del PC (${gb(h.bytes || 0)})?
+
+Van a la Papelera de Windows (desde allí se recuperan si hace falta). Después se renumeran los que quedan, seguidos desde el 01.`)) return;
+      setBorrando(true);
+      await soltarVideo();
+      const r = (await consultar(todosDescartados ? ["borrardescartados"] : ["borrarclips", ...carpetas])).find(e=>e.evento==="hecho") || {};
+      toast && toast(`${(r.borrados||[]).length} borrado${(r.borrados||[]).length!==1?"s":""} (${gb(r.bytes||0)} a la Papelera)${r.renumerados ? ` · ${r.renumerados} renumerados` : ""}`);
+      setVarios(new Set()); setSel(new Set());
+    } catch(e){ toast && toast(e.message); }
+    finally { setBorrando(false); cargar(); }
+  };
+  const variosEnLote = async accion => {
+    for(const c of (clips||[]).filter(x=>varios.has(x.carpeta))) await cribar(c, accion);
+    setVarios(new Set());
   };
   const renombrar = async (c, nombre) => {
     if(ocupados[c.carpeta]) return;
@@ -584,6 +614,8 @@ export function ClipsView({ toast }) {
           <option value="numero">Orden: número</option><option value="potencial">Orden: potencial</option>
         </select>
         <button onClick={cargar} style={boton(false)}>Actualizar</button>
+        <button onClick={()=>{ setModoVarios(x=>!x); setVarios(new Set()); }} title="Elegir varios clips a la vez (aprobar, descartar o borrar del PC)" style={boton(modoVarios)}>☑ Seleccionar varios</button>
+        {filtro==="descartado" && <button onClick={()=>borrarDelPC([], true)} disabled={borrando} title="Todos los descartados a la Papelera de Windows, y renumerar los que quedan" style={{...boton(false),color:"var(--red)"}}>🗑 Borrar todos los descartados</button>}
         {nuevaRecop===null
           ? <button onClick={()=>setNuevaRecop("")} title="Crea una recopilación vacía y ve añadiéndole clips desde cada clip" style={boton(false)}>＋ Recopilación</button>
           : <span style={{display:"flex",gap:6}}>
@@ -593,6 +625,17 @@ export function ClipsView({ toast }) {
               <button onClick={()=>setNuevaRecop(null)} style={boton(false)}>✕</button>
             </span>}
       </div>
+      {modoVarios && <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:12.5,color:"var(--text-2)",padding:"8px 12px",border:"1px solid var(--border-gold)",borderRadius:10,background:"var(--bg-2)"}}>
+        <b style={{color:"var(--text)"}}>{varios.size} elegido{varios.size!==1?"s":""}</b>
+        <button onClick={()=>setVarios(new Set(lista.map(c=>c.carpeta)))} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Elegir los {lista.length} de la vista</button>
+        {varios.size>0 && <>
+          <button onClick={()=>setVarios(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Ninguno</button>
+          <span style={{flex:1}}/>
+          <button onClick={()=>variosEnLote("aprobar")} style={{...boton(false),padding:"4px 10px",fontSize:12}}>✓ Aprobar</button>
+          <button onClick={()=>variosEnLote("descartar")} style={{...boton(false),padding:"4px 10px",fontSize:12}}>✗ Descartar</button>
+          <button onClick={()=>borrarDelPC([...varios])} disabled={borrando} style={{...boton(false),padding:"4px 10px",fontSize:12,color:"var(--red)"}}>🗑 Borrar del PC</button>
+        </>}
+      </div>}
       {aprobados.length>0 && <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",fontSize:12.5,color:"var(--text-2)"}}>
         <span>Marca la casilla de los aprobados que quieras montar ahora{elegidos.length ? ` · ${elegidos.length} elegido${elegidos.length!==1?"s":""}` : ""}.</span>
         {elegidos.length<aprobados.length && <button onClick={()=>setSel(new Set(aprobados.map(c=>c.carpeta)))} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Elegir todos</button>}
@@ -606,7 +649,10 @@ export function ClipsView({ toast }) {
       {/* 28/10, él: "si hay recopilaciones deben aparecer en la parte de arriba, como carpetas" */}
       {(()=>{
         const tarjeta = c => (
-          <div key={c.carpeta} style={{position:"relative",border:"1px solid "+(abierto===c.carpeta?"var(--gold)":sel.has(c.carpeta)&&c.estado==="aprobado"?"#4ade80":"var(--border)"),borderRadius:12,background:"var(--bg-2)",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+          <div key={c.carpeta} style={{position:"relative",border:"1px solid "+(modoVarios&&varios.has(c.carpeta)?"var(--gold)":abierto===c.carpeta?"var(--gold)":sel.has(c.carpeta)&&c.estado==="aprobado"?"#4ade80":"var(--border)"),borderRadius:12,background:"var(--bg-2)",overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            {modoVarios && <label title="Elegirlo" onClick={e=>e.stopPropagation()} style={{position:"absolute",left:6,top:6,zIndex:3,width:26,height:26,borderRadius:7,background:"rgba(0,0,0,0.8)",border:"1px solid var(--gold)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+              <input type="checkbox" checked={varios.has(c.carpeta)} onChange={()=>setVarios(v=>{ const n = new Set(v); n.has(c.carpeta) ? n.delete(c.carpeta) : n.add(c.carpeta); return n; })} style={{cursor:"pointer",accentColor:"#D4AF37"}}/>
+            </label>}
             {c.estado==="aprobado" && <label title="Elegirlo para montar" onClick={e=>e.stopPropagation()} style={{position:"absolute",right:6,top:6,zIndex:2,width:24,height:24,borderRadius:6,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
               <input type="checkbox" checked={sel.has(c.carpeta)} onChange={()=>elegir(c)} style={{cursor:"pointer",accentColor:"#4ade80"}}/>
             </label>}

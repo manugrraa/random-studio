@@ -359,6 +359,25 @@ export function RankingView({ toast }) {
     const r = await window.studioFS.rankingEliminar(x.n, false);
     if(r.error) toast && toast(r.error); else { toast && toast(`${x.n} eliminado del ranking`); cargar(); }
   };
+  // 31/10, él: "borrar Shorts del PC, con un botón para seleccionar varios, y que se renumeren los que quedan"
+  const [modoVarios, setModoVarios] = useState(false);
+  const [varios, setVarios] = useState(()=>new Set());
+  const [borrando, setBorrando] = useState(false);
+  const gb = b => b >= 2**30 ? (b / 2**30).toFixed(1) + " GB" : Math.max(1, Math.round(b / 2**20)) + " MB";
+  const borrarShorts = async (ns) => {
+    if(borrando || !ns.length) return;
+    try {
+      const p0 = await window.studioFS.clonConsultar(["borrarshorts", "--peso", ...ns.map(String)]);
+      const h = ((p0.eventos||[]).find(e=>e.evento==="hecho")) || {};
+      if(!window.confirm(`¿Borrar ${ns.length} Short${ns.length!==1?"s":""} del PC (${gb(h.bytes||0)})?\n\nVan a la Papelera de Windows (desde allí se recuperan si hace falta). Después se renumeran los Shorts Listos que quedan, seguidos desde el 1.`)) return;
+      setBorrando(true); await soltarVideos(); setAbierto(null);
+      const r = await window.studioFS.clonConsultar(["borrarshorts", ...ns.map(String)]);
+      if(r.error){ toast && toast(r.error); return; }
+      const x = (r.eventos||[]).find(e=>e.evento==="hecho") || {};
+      toast && toast(`${(x.borrados||[]).length} borrado${(x.borrados||[]).length!==1?"s":""} (${gb(x.bytes||0)} a la Papelera)${x.renumerados ? ` · ${x.renumerados} renumerados` : ""}`);
+      setVarios(new Set());
+    } finally { setBorrando(false); cargar(); }
+  };
   const recuperar = async (x) => {
     const r = await window.studioFS.rankingEliminar(x.n, true);
     if(r.error) toast && toast(r.error); else { toast && toast(`${x.n} recuperado`); cargar(); }
@@ -510,6 +529,9 @@ export function RankingView({ toast }) {
             <button key={k} onClick={()=>setVerSubidos(k)} style={boton(verSubidos===k)}>{l} · {k==="todos"?datos.ranking.length:datos.ranking.filter(x=>k==="subidos"?!!x.subido:!x.subido).length}</button>
           ))}
           {(datos.eliminados||[]).length>0 && <button onClick={()=>setVerSubidos("eliminados")} style={boton(verSubidos==="eliminados")}>Eliminados · {datos.eliminados.length}</button>}
+          {enPC && window.studioFS?.clonConsultar && <button onClick={()=>{ setModoVarios(v=>!v); setVarios(new Set()); }} style={boton(modoVarios)} title="Elegir varios Shorts para borrarlos del PC">☑ Seleccionar varios</button>}
+          {enPC && verSubidos==="eliminados" && (datos.eliminados||[]).length>0 && <button onClick={()=>borrarShorts(datos.eliminados.map(x=>x.n))} disabled={borrando}
+            style={{...boton(false),color:"var(--red)"}} title="Los eliminados a la Papelera de Windows y renumerar los que quedan">🗑 Borrar todos los eliminados del PC</button>}
           {verSubidos==="subidos" && window.studioFS?.clonConsultar && <button disabled={!!retProg} onClick={retencionTodos}
             title="Lee de YouTube la curva de cada Short subido y el clon analiza dónde se va la gente (las lecciones las apruebas tú)"
             style={{...boton(false),opacity:retProg?.6:1}}>{retProg ? `Analizando retención ${retProg}…` : "Analizar la retención de todos"}</button>}
@@ -526,14 +548,27 @@ export function RankingView({ toast }) {
       )}
       {datos && verCal && datos.calibracion && <Calibracion c={datos.calibracion}/>}
 
+      {modoVarios && <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:12.5,color:"var(--text-2)",padding:"8px 12px",border:"1px solid var(--border-gold)",borderRadius:10,background:"var(--bg-2)"}}>
+        <b style={{color:"var(--text)"}}>{varios.size} elegido{varios.size!==1?"s":""}</b>
+        <button onClick={()=>setVarios(new Set((verSubidos==="eliminados" ? (datos?.eliminados||[]) : lista).map(x=>x.n)))} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Elegir todos los de la vista</button>
+        {varios.size>0 && <>
+          <button onClick={()=>setVarios(new Set())} style={{...boton(false),padding:"4px 10px",fontSize:12}}>Ninguno</button>
+          <span style={{flex:1}}/>
+          <button onClick={()=>borrarShorts([...varios])} disabled={borrando} style={{...boton(false),padding:"4px 10px",fontSize:12,color:"var(--red)"}}>🗑 Borrar del PC</button>
+        </>}
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {verSubidos==="eliminados" ? (datos?.eliminados||[]).map(x=>(
           <div key={x.carpeta} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",border:"1px solid var(--border)",borderRadius:12,background:"var(--bg-2)",opacity:.8}}>
+            {modoVarios && <input type="checkbox" checked={varios.has(x.n)} onChange={()=>setVarios(v=>{ const n = new Set(v); n.has(x.n) ? n.delete(x.n) : n.add(x.n); return n; })} style={{accentColor:"#D4AF37",width:18,height:18}}/>}
             <span style={{fontSize:16,fontWeight:800,color:"var(--text-3)",width:44,textAlign:"center"}}>{x.nota!=null?x.nota.toFixed(1):"—"}</span>
             <span style={{flex:1,minWidth:0,fontWeight:650,fontSize:14,overflowWrap:"anywhere"}}>{x.n} · {x.titulo}</span>
             <button onClick={()=>recuperar(x)} style={{fontSize:12,fontWeight:600,color:"#4ade80",border:"1px solid var(--border)",borderRadius:8,padding:"5px 10px"}}>Recuperar</button>
           </div>))
-        : lista.map(x=><Fila key={x.carpeta} x={x} abierto={abierto===x.carpeta} onToggle={()=>setAbierto(a=>a===x.carpeta?null:x.carpeta)} onSubido={marcarSubido} onMejorar={window.studioFS?.clonTarea ? mejorar : null} onRetitular={window.studioFS?.clonTarea ? retitular : null} ocupado={ocupado} onEliminar={window.studioFS?.rankingEliminar ? eliminar : null} toast={toast} modelo={modelo} onRecargar={cargar}/>)}
+        : lista.map(x=>modoVarios ? <div key={x.carpeta} style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input type="checkbox" checked={varios.has(x.n)} onChange={()=>setVarios(v=>{ const n = new Set(v); n.has(x.n) ? n.delete(x.n) : n.add(x.n); return n; })} style={{accentColor:"#D4AF37",width:18,height:18,flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}><Fila x={x} abierto={abierto===x.carpeta} onToggle={()=>setAbierto(a=>a===x.carpeta?null:x.carpeta)} onSubido={marcarSubido} onMejorar={window.studioFS?.clonTarea ? mejorar : null} onRetitular={window.studioFS?.clonTarea ? retitular : null} ocupado={ocupado} onEliminar={window.studioFS?.rankingEliminar ? eliminar : null} toast={toast} modelo={modelo} onRecargar={cargar}/></div>
+          </div> : <Fila key={x.carpeta} x={x} abierto={abierto===x.carpeta} onToggle={()=>setAbierto(a=>a===x.carpeta?null:x.carpeta)} onSubido={marcarSubido} onMejorar={window.studioFS?.clonTarea ? mejorar : null} onRetitular={window.studioFS?.clonTarea ? retitular : null} ocupado={ocupado} onEliminar={window.studioFS?.rankingEliminar ? eliminar : null} toast={toast} modelo={modelo} onRecargar={cargar}/>)}
         {datos && verSubidos!=="eliminados" && !lista.length && !prog && (
           <div style={{padding:"40px 20px",textAlign:"center",color:"var(--text-3)",border:"1px dashed var(--border)",borderRadius:14,fontSize:13}}>
             {datos.ranking.length ? "Ningún Short coincide con la búsqueda." : "Todavía no hay ningún Short analizado: pulsa «Analizar» para empezar."}
