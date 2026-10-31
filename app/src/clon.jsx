@@ -288,7 +288,7 @@ function AnadirARecopilacion({ c, recops, onAnadir, onCrear, ocupado }) {
     </div>);
 }
 
-function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, onCrearRecop, ocupado }) {
+function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, onCrearRecop, onMover, onOficializar, ocupado }) {
   const [v, setV] = useState(0);
   const [nombre, setNombre] = useState(c.nombre);
   const [tit, setTit] = useState(c.titulo_suyo||"");
@@ -330,9 +330,19 @@ function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, on
                 <button onClick={()=>setV(i)} style={{...boton(i===v),flex:1,minWidth:0,padding:"4px 9px",fontSize:11.5,textAlign:"left",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:dentro?"none":"line-through"}}>{a.replace(/\.mp4$/i,"")}</button>
                 {editable && <button onClick={()=>onExcluir(c, a, dentro)} disabled={ocupado} title={dentro?"Quitarlo de la recopilación (el archivo no se borra)":"Volver a meterlo en la recopilación"}
                   style={{...boton(false,dentro),padding:"4px 8px",fontSize:11.5,whiteSpace:"nowrap"}}>{dentro?"Quitar":"Meter"}</button>}
+                {/* 31/10, él: "poder mover clips de una recopilación a otra" */}
+                {onMover && c.estado!=="descartado" && (recops||[]).length>0 && <select value="" disabled={ocupado} onChange={e=>e.target.value && onMover(c, a, e.target.value)}
+                  title="Moverlo a otra recopilación (sale de esta y entra la última en la otra)"
+                  style={{...boton(false),padding:"4px 4px",fontSize:11.5,width:34,cursor:"pointer"}}>
+                  <option value="">↪</option>
+                  {recops.map(r=><option key={r.carpeta} value={r.carpeta}>Mover a {r.carpeta}</option>)}
+                </select>}
               </div>); })}
           </div>
         </>}
+        {onOficializar && !c.recopilacion_suya && c.videos.length>1 && c.estado!=="descartado" && <button onClick={()=>onOficializar([c.carpeta])} disabled={ocupado}
+          title="Pasa a 📁 Recopilaciones: se ordena, se le añaden y se mueven momentos (no se toca ningún vídeo)"
+          style={{...boton(false),width:"100%",marginTop:8,padding:"7px 0",fontSize:12.5}}>📁 Hacerla recopilación tuya</button>}
         {editable && onAnadir && !c.recopilacion_suya && c.videos.length>0 && <AnadirARecopilacion c={c} recops={recops||[]} onAnadir={onAnadir} onCrear={onCrearRecop} ocupado={ocupado}/>}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10,minWidth:0}}>
@@ -567,6 +577,26 @@ Van a la Papelera de Windows (desde allí se recuperan si hace falta). Después 
       await cargar();
     } catch(e){ toast && toast(e.message); }
   };
+  // 31/10, él: "las recopilaciones antiguas, que se conviertan en recopilaciones oficiales" y "mover clips
+  // de una recopilación a otra"
+  const antiguas = (clips||[]).filter(c=>c.videos.length>1 && !c.recopilacion_suya && c.estado!=="descartado");
+  const oficializar = async (carpetas) => {
+    if(!carpetas.length) return;
+    if(carpetas.length>1 && !window.confirm(`¿Convertir estas ${carpetas.length} en recopilaciones tuyas?\n\n${carpetas.join("\n")}\n\nNo se toca ningún vídeo: pasan a 📁 Recopilaciones con el orden que tienen ahora.`)) return;
+    try {
+      const h = (await consultar(["oficializar", ...carpetas])).find(e=>e.evento==="hecho") || {};
+      toast && toast(`${(h.hechas||[]).length} ${(h.hechas||[]).length===1?"es ya recopilación tuya":"son ya recopilaciones tuyas"}`);
+    } catch(e){ toast && toast(e.message); }
+    cargar();
+  };
+  const moverMomento = async (c, archivo, hasta) => {
+    try {
+      await soltarVideo();
+      await consultar(["mover", c.carpeta, archivo, hasta]);
+      toast && toast(`«${archivo.replace(/\.mp4$/i,"")}» movido a ${hasta}`);
+    } catch(e){ toast && toast(e.message); }
+    cargar();
+  };
   const crearRecop = async (nombre, c, archivo, momento) => {
     try {
       const ev = await consultar(["nuevarecop", nombre, ...(c ? [c.carpeta, archivo||"-", (momento||"").trim()] : [])]);
@@ -616,6 +646,8 @@ Van a la Papelera de Windows (desde allí se recuperan si hace falta). Después 
         <button onClick={cargar} style={boton(false)}>Actualizar</button>
         <button onClick={()=>{ setModoVarios(x=>!x); setVarios(new Set()); }} title="Elegir varios clips a la vez (aprobar, descartar o borrar del PC)" style={boton(modoVarios)}>☑ Seleccionar varios</button>
         {filtro==="descartado" && <button onClick={()=>borrarDelPC([], true)} disabled={borrando} title="Todos los descartados a la Papelera de Windows, y renumerar los que quedan" style={{...boton(false),color:"var(--red)"}}>🗑 Borrar todos los descartados</button>}
+        {filtro==="recop" && antiguas.length>0 && <button onClick={()=>oficializar(antiguas.map(c=>c.carpeta))}
+          title="Las recopilaciones de antes (las carpetas con varios momentos) pasan a ser tuyas" style={boton(false)}>📁 Convertir las antiguas ({antiguas.length})</button>}
         {nuevaRecop===null
           ? <button onClick={()=>setNuevaRecop("")} title="Crea una recopilación vacía y ve añadiéndole clips desde cada clip" style={boton(false)}>＋ Recopilación</button>
           : <span style={{display:"flex",gap:6}}>
@@ -644,7 +676,7 @@ Van a la Papelera de Windows (desde allí se recuperan si hace falta). Después 
       {det && <Detalle c={det} onCribar={cribar} onEditar={async (c, ruta)=>{ await soltarVideo(); abrirEnEditor({carpeta:c.carpeta, archivo:archivoDe(ruta)}); }}
         onEditarRecop={async c=>{ await soltarVideo(); abrirEnEditor({recopilacion:c.carpeta}); }} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
         onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
-        recops={recops.filter(r=>r.carpeta!==det.carpeta)} onAnadir={anadirA} onCrearRecop={(c, nombre, archivo, momento)=>crearRecop(nombre, c, archivo, momento)}
+        recops={recops.filter(r=>r.carpeta!==det.carpeta)} onAnadir={anadirA} onCrearRecop={(c, nombre, archivo, momento)=>crearRecop(nombre, c, archivo, momento)} onMover={moverMomento} onOficializar={oficializar}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
       {/* 28/10, él: "si hay recopilaciones deben aparecer en la parte de arriba, como carpetas" */}
       {(()=>{
