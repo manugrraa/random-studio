@@ -1,5 +1,5 @@
 import React from "react";
-import { fin, largo, tc, corto, puntosDeCorte, cuantiza, solapa } from "./modelo";
+import { fin, largo, tc, corto, puntosDeCorte, cuantiza, solapa, vel } from "./modelo";
 const { useEffect, useLayoutEffect, useRef, useState, useMemo, memo, useCallback } = React;
 
 /* RandomEditor · la línea de tiempo, al estilo de CapCut de PC.
@@ -177,7 +177,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         g.fillStyle = COL[pi.tipo] || COL.audio; g.fillRect(a, 0, b - a, H);
         if(pi.tipo === "texto" || pi.tipo === "subtitulos"){ g.restore(); return; }
         const gris = c.silencio || pi.muda;
-        const tsrc = x => c.desde + ((x + scroll - PAD) / zoom - c.en);       // el segundo del archivo en esa x
+        const tsrc = x => c.desde + ((x + scroll - PAD) / zoom - c.en) * vel(c);       // el segundo del archivo en esa x
         if(pi.tipo==="video"){
           const tr = tiras[c.ruta];
           if(tr && tr.img && tr.img.complete && tr.img.naturalWidth){
@@ -343,18 +343,20 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         if(pi.id === pista.id && destino === pista.id) clips = clips.map(y=>{
           if(y.id !== c.id) return y;
           if(modo === "izq"){
-            let desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + dt));
-            const g = encaje(y.en + (desde - y.desde), y.id); desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + (g - y.en)));
+            const vy = vel(y);
+            let desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + dt * vy));
+            const g = encaje(y.en + (desde - y.desde) / vy, y.id); desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + (g - y.en) * vy));
             desde = cuantiza(desde, fps);
-            txt = `${desde - y.desde >= 0 ? "−" : "+"}${tc(Math.abs(desde - y.desde), fps)}  ·  dura ${tc(y.hasta - desde, fps)}`;
-            const n = {...y, desde, en: pi.id==="v1" && mag ? y.en : y.en + (desde - y.desde)};
+            txt = `${desde - y.desde >= 0 ? "−" : "+"}${tc(Math.abs(desde - y.desde) / vy, fps)}  ·  dura ${tc((y.hasta - desde) / vy, fps)}`;
+            const n = {...y, desde, en: pi.id==="v1" && mag ? y.en : y.en + (desde - y.desde) / vy};
             return pi.id==="v1" && !mag && solapa(pi, n.en, largo(n), n.id) ? y : n;
           }
           if(modo === "der"){
-            let hasta = Math.max(y.desde + 1/fps, Math.min(y.dur_src ?? 1e9, y.hasta + dt));
-            const f2 = encaje(y.en + (hasta - y.desde), y.id); hasta = Math.max(y.desde + 1/fps, Math.min(y.dur_src ?? 1e9, y.desde + (f2 - y.en)));
+            const vy = vel(y);
+            let hasta = Math.max(y.desde + 1/fps, Math.min(y.dur_src ?? 1e9, y.hasta + dt * vy));
+            const f2 = encaje(y.en + (hasta - y.desde) / vy, y.id); hasta = Math.max(y.desde + 1/fps, Math.min(y.dur_src ?? 1e9, y.desde + (f2 - y.en) * vy));
             hasta = cuantiza(hasta, fps);
-            txt = `${hasta - y.hasta >= 0 ? "+" : "−"}${tc(Math.abs(hasta - y.hasta), fps)}  ·  dura ${tc(hasta - y.desde, fps)}`;
+            txt = `${hasta - y.hasta >= 0 ? "+" : "−"}${tc(Math.abs(hasta - y.hasta) / vy, fps)}  ·  dura ${tc((hasta - y.desde) / vy, fps)}`;
             return {...y, hasta};
           }
           if(pi.id === "v1" && mag){ txt = ""; return {...y, en: y.en + dt + (dt > 0 ? 0.0005 : -0.0005)}; }

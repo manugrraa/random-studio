@@ -59,7 +59,7 @@ export function Medidor({ reloj, proyecto, ondas }) {
         if(pi.muda) return;
         const c = pi.clips.find(x=>t >= x.en && t < fin(x)); if(!c || c.silencio) return;
         const od = oRef.current[c.ruta]; if(!od || !od.length) return;
-        const i = Math.floor((c.desde + t - c.en) / (c.dur_src || 1) * od.length);
+        const i = Math.floor((c.desde + (t - c.en) * (c.velocidad || 1)) / (c.dur_src || 1) * od.length);
         const v = (od[Math.max(0, Math.min(od.length - 1, i))] || 0) * (c.vol ?? 1);
         s += v * v;
       });

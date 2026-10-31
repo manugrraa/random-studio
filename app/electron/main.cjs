@@ -522,7 +522,7 @@ function abrirEditor(req) {
   const conClip = req && (req.carpeta || req.recopilacion) ? req : null;    // un clip, o una recopilación entera
   if (editorWin && !editorWin.isDestroyed()) {
     if (editorWin.isMinimized()) editorWin.restore();
-    editorWin.show(); editorWin.focus();
+    if (process.env.STUDIO_CAPTURA) editorWin.showInactive(); else { editorWin.show(); editorWin.focus(); }
     if (conClip) { if (editorListo) editorWin.webContents.send("editor-peticion", conClip); else editorPendiente = conClip; }
     return editorWin;
   }
@@ -534,8 +534,8 @@ function abrirEditor(req) {
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false,
       backgroundThrottling: !process.env.STUDIO_CAPTURA }
   });
-  if (v.max) editorWin.maximize();
-  editorWin.once("ready-to-show", () => { try { editorWin.show(); } catch (x) {} });
+  if (v.max && !process.env.STUDIO_CAPTURA) editorWin.maximize();
+  editorWin.once("ready-to-show", () => { try { if (process.env.STUDIO_CAPTURA) { aPortatil(editorWin); editorWin.showInactive(); } else editorWin.show(); } catch (x) {} });
   editorWin.loadFile(path.join(__dirname, "..", "dist", "index.html"), { hash: "editor" });
   editorWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: "deny" }; });
   editorWin.webContents.on("will-navigate", (e, u) => { if (!u.startsWith("file:")) e.preventDefault(); });
@@ -574,6 +574,22 @@ ipcMain.handle("tema-ventana", (e, tema) => {
   return true;
 });
 
+// 31/10, él: "prueba todo en la pantalla del portátil siempre, que la principal la estoy usando": en el
+// modo de pruebas (STUDIO_CAPTURA) las ventanas van a la pantalla que NO es la principal y sin quitar el foco
+function aPortatil(win) {
+  // (el portátil va a otra escala que la principal: Windows recoloca mal la ventana la primera vez, así que
+  // se vuelve a ajustar a su área justo después de mostrarse)
+  const ajustar = () => {
+    try {
+      const { screen } = require("electron");
+      const pri = screen.getPrimaryDisplay(), d = screen.getAllDisplays().find(x => x.id !== pri.id) || pri;
+      if (!win.isDestroyed()) win.setBounds({ x: d.workArea.x, y: d.workArea.y, width: d.workArea.width, height: d.workArea.height });
+    } catch (e) {}
+  };
+  ajustar();
+  [150, 600, 1500].forEach(ms => setTimeout(ajustar, ms));
+}
+
 function createWindow() {
   nativeTheme.themeSource = "dark";   // hasta que la app diga su tema (por defecto oscuro): sin destello blanco
   const v = leerVentana();
@@ -582,6 +598,7 @@ function createWindow() {
     minWidth: 900, minHeight: 600,
     backgroundColor: "#000000",
     title: "RandomStudio",
+    show: !process.env.STUDIO_CAPTURA,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -591,7 +608,8 @@ function createWindow() {
       backgroundThrottling: !process.env.STUDIO_CAPTURA
     }
   });
-  if (v.max) mainWindow.maximize();
+  if (process.env.STUDIO_CAPTURA) { aPortatil(mainWindow); mainWindow.showInactive(); }
+  else if (v.max) mainWindow.maximize();
   mainWindow.on("close", e => { guardarVentana(); if (editorWin && !editorWin.isDestroyed()) { editorWin.close(); if (editorWin && !editorWin.isDestroyed()) e.preventDefault(); } });
   mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   // Los enlaces externos (YouTube Studio, etc.) se abren en el navegador normal

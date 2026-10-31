@@ -9,6 +9,8 @@ import { Biblioteca } from "./Biblioteca";
 import { I } from "./iconos";
 import { Fps, Medidor, AjustesEditor, useAjuste } from "./Rendimiento";
 import { InspectorTexto } from "./Textos";
+import { PanelTransformar, PanelVelocidad } from "./Transformar";
+import { PanelColor } from "./PanelColor";
 import { PanelSubtitulos, InspectorSub } from "./Subtitulos";
 export { ATAJOS_EDITOR } from "./atajos";
 const { useState, useEffect, useRef, useMemo } = React;
@@ -32,6 +34,14 @@ async function consultar(args) {
   const r = await window.studioFS.clonConsultar(args);
   if (r.error) throw new Error(r.error);
   return r.eventos || [];
+}
+
+// un tiempo editable al fotograma (segundos con dos decimales; se escribe y Enter o al salir)
+function NumTiempo({ v, fps, onCambiar }) {
+  const [txt, setTxt] = useState(null);
+  const aplicar = () => { if(txt == null) return; const x = Number(String(txt).replace(",", ".")); if(!isNaN(x)) onCambiar(Math.round(x * fps) / fps); setTxt(null); };
+  return <input value={txt ?? v.toFixed(2)} onChange={e=>setTxt(e.target.value)} onBlur={aplicar} onKeyDown={e=>{ if(e.key==="Enter"){ aplicar(); e.target.blur(); } }}
+    className="rd-input" style={{padding:"3px 6px",fontFamily:"ui-monospace, Consolas, monospace",fontSize:11.5,width:"100%",boxSizing:"border-box"}} title="Segundos (se ajusta al fotograma)"/>;
 }
 
 function Contador({ reloj, fps }) {
@@ -83,6 +93,7 @@ export function RandomEditor({ toast }) {
   const [fuentes, setFuentes] = useState(null);
   const [presets, setPresets] = useState(null);
   const [menuExp, setMenuExp] = useState(false);
+  const [pestInsp, setPestInsp] = useAjuste("red_pest_insp", "basico");
   // 28/10: los subtítulos (las plantillas, la elegida y cuántas palabras por tarjeta)
   const [subsInfo, setSubsInfo] = useState(null);
   const [subsPid, setSubsPid] = useAjuste("red_subs_plantilla", "shorts");
@@ -314,6 +325,11 @@ export function RandomEditor({ toast }) {
     let n = 0; cambiar(q=>{ const [r, k] = M.quitarAire(q, aires); n = k; return r; });
     toast(n ? `Aire quitado en ${n} sitio${n!==1?"s":""} (Ctrl+Z para deshacer)` : "No hay silencios largos que quitar");
   };
+  // 31/10: cambiar UN clip entero (transformar, velocidad, tiempos); con `gesto`, dentro de un arrastre
+  const cambiarClip = (n, gesto) => {
+    const f = q => ({...q, pistas: q.pistas.map(pi=>pi.clips.some(c=>c.id===n.id) ? {...pi, clips: pi.clips.map(c=>{ if(c.id!==n.id) return c; const x = {...n}; delete x.pista; return x; })} : pi)});
+    if(gesto) alGesto("durante", f(pRef.current)); else cambiar(f);
+  };
   const ponerEnElegidos = (campo, v) => { const s = est.current.sel;
     alGesto("durante", {...pRef.current, pistas: pRef.current.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>s.has(c.id) ? {...c, [campo]:v} : c)}))}); };
 
@@ -451,7 +467,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
   const elegidos = todos.filter(c=>sel.has(c.id));
   const uno = elegidos.length === 1 ? elegidos[0] : null;
   const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista} reloj={reloj} sel={sel}
-    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto} subs={subsInfo}/>;
+    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto} subs={subsInfo} cambiarClip={cambiarClip}/>;
   const menuEl = menu && createPortal(
     <div onMouseDown={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:2000}}>
       <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:Math.min(menu.x, window.innerWidth-230), top:Math.min(menu.y, window.innerHeight-300)}}>
@@ -533,13 +549,28 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           {!elegidos.length && <div style={{color:"#888",lineHeight:1.6}}>Elige un clip para ver y cambiar sus propiedades.<br/>Todos los atajos, en Configuración del Studio.</div>}
           {uno && uno.tipo === "sub" && <InspectorSub c={uno} alGesto={alGesto} cambiar={cambiarTarjeta}/>}
           {uno && uno.tipo === "texto" && <InspectorTexto c={uno} fuentes={fuentes} presets={presets} alGesto={alGesto} cambiarEstilo={cambiarEstilo} cambiarTexto={cambiarTexto} W={p.ancho} H={p.alto}/>}
+          {/* 31/10 (v3.18): propiedades por pestañas, como CapCut: Básico · Transformar · Velocidad */}
+          {uno && uno.ruta && <div style={{display:"flex",gap:3}}>
+            {[["basico","Básico"], ...(uno.pista==="v1" ? [["transformar","Transformar"],["color","Color"]] : []), ["velocidad","Velocidad"]].map(([k2, l])=>
+              <button key={k2} onClick={()=>setPestInsp(k2)} className={"rd-tab"+(pestInsp===k2 || (!["transformar","velocidad","color"].includes(pestInsp) && k2==="basico") ? " on" : "")} style={{fontSize:11.5,padding:"5px 0"}}>{l}</button>)}
+          </div>}
+          {uno && uno.ruta && pestInsp==="transformar" && uno.pista==="v1" && <PanelTransformar c={uno} reloj={reloj} alGesto={alGesto} cambiarClip={cambiarClip} ir={t=>{ setJugando(0); ir(t); }}/>}
+          {uno && uno.ruta && pestInsp==="velocidad" && <PanelVelocidad c={uno} alGesto={alGesto} cambiarClip={cambiarClip}/>}
+          {uno && uno.ruta && pestInsp==="color" && uno.pista==="v1" && <PanelColor c={uno} alGesto={alGesto} cambiarClip={cambiarClip}/>}
+          {(!uno || !uno.ruta || !["transformar","velocidad","color"].includes(pestInsp) || (["transformar","color"].includes(pestInsp) && uno.pista!=="v1")) && <>
           {uno && <div style={{color:"#aaa",lineHeight:1.7,fontFamily:"ui-monospace, Consolas, monospace",fontSize:11.5}}>
-            {uno.tipo !== "texto" && uno.tipo !== "sub" && <div>Archivo · {tc(uno.desde, fps)} → {tc(uno.hasta, fps)}</div>}
+            {uno.ruta ? <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"4px 8px",alignItems:"center",fontFamily:"system-ui",fontSize:12,color:"#ccc"}}>
+              {/* 31/10, él: "modificar los atributos de la música y los SFX, desde dónde empiezan y dónde acaban, o su volumen (como DaVinci)" */}
+              <span>Empieza en la línea</span><NumTiempo v={uno.en} fps={fps} onCambiar={x=>cambiarClip({...uno, en:Math.max(0, x)})}/>
+              <span>Desde (archivo)</span><NumTiempo v={uno.desde} fps={fps} onCambiar={x=>cambiarClip({...uno, desde:Math.max(0, Math.min(uno.hasta - 1/fps, x))})}/>
+              <span>Hasta (archivo)</span><NumTiempo v={uno.hasta} fps={fps} onCambiar={x=>cambiarClip({...uno, hasta:Math.max(uno.desde + 1/fps, Math.min(uno.dur_src ?? 1e9, x))})}/>
+              <span style={{color:"#888"}}>Dura</span><span style={{fontFamily:"ui-monospace, Consolas, monospace",color:"#999"}}>{tc(largo(uno), fps)}</span>
+            </div> : <>
             <div>Línea · {tc(uno.en, fps)} → {tc(fin(uno), fps)}</div>
-            <div>Dura · {tc(largo(uno), fps)}</div>
+            <div>Dura · {tc(largo(uno), fps)}</div></>}
           </div>}
           {elegidos.length>0 && !elegidos.every(c=>c.tipo==="texto" || c.tipo==="sub") && <>
-            {[["Volumen","vol",0,2,0.01,v=>Math.round(v*100)+"%"],["Fundido de entrada","fade_in",0,3,0.05,v=>v.toFixed(2)+" s"],["Fundido de salida","fade_out",0,3,0.05,v=>v.toFixed(2)+" s"]].map(([n,campo,a,b,st,fmt])=>{
+            {[["Volumen","vol",0,2,0.01,v=>(v <= 0.001 ? "−∞" : (20*Math.log10(v) >= 0 ? "+" : "") + (20*Math.log10(v)).toFixed(1)) + " dB · " + Math.round(v*100)+"%"],["Fundido de entrada","fade_in",0,3,0.05,v=>v.toFixed(2)+" s"],["Fundido de salida","fade_out",0,3,0.05,v=>v.toFixed(2)+" s"]].map(([n,campo,a,b,st,fmt])=>{
               const v = elegidos[0][campo] ?? (campo==="vol" ? 1 : 0);
               return <label key={campo} style={{display:"flex",flexDirection:"column",gap:4}}><span style={{display:"flex",justifyContent:"space-between"}}>{n}<span style={{color:"#999"}}>{fmt(v)}</span></span>
                 <input type="range" min={a} max={b} step={st} value={v} onPointerDown={()=>alGesto("inicio")} onPointerUp={()=>alGesto("fin")}
@@ -552,6 +583,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               <button onClick={duplicar} className="rd-ico" title="Duplicar (Ctrl+D)">{I.duplicar}</button>
               <button onClick={eliminar} className="rd-ico peligro" title="Eliminar (Supr)">{I.borrar}</button>
             </div>
+          </>}
           </>}
         </div>
       </div>

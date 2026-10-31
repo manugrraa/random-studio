@@ -6,7 +6,36 @@
    La pista principal (id "v1") es MAGNÉTICA, como en CapCut: sus clips van seguidos, sin huecos. */
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
-export const largo = c => c.hasta - c.desde;
+// 31/10 (v3.18): la VELOCIDAD de cada clip (0,1x-10x): a 2x dura la mitad en la línea de tiempo
+export const vel = c => c.velocidad || 1;
+export const largo = c => (c.hasta - c.desde) / vel(c);
+// el segundo del ARCHIVO que suena en el instante `t` de la línea de tiempo
+export const local = (c, t) => c.desde + (t - c.en) * vel(c);
+// las pistas que se VEN y las que se OYEN no se mezclan nunca (él: "al pegar un subtítulo a veces se iba a la de audio")
+export const esVisual = tipo => tipo === "video" || tipo === "texto" || tipo === "subtitulos";
+
+/* 31/10 (v3.18): TRANSFORMAR y animar. `transform` = el valor fijo de cada propiedad; `kf[prop]` = sus
+   fotogramas clave [[t (desde el inicio del clip, s), valor, curva]]: la curva es cómo se llega a ESE
+   fotograma clave (lineal, aceleración, desaceleración o las dos). Las mismas fórmulas en la exportación. */
+export const TRANS0 = { escala:1, x:0, y:0, rot:0, opacidad:1 };
+export const CURVAS = {
+  lineal: u=>u,
+  entrada: u=>u*u*u,                                                     // aceleración (sale despacio)
+  salida: u=>1 - Math.pow(1 - u, 3),                                     // desaceleración (llega despacio)
+  ambas: u=>u < 0.5 ? 4*u*u*u : 1 - Math.pow(-2*u + 2, 3) / 2,           // las dos
+};
+export function valorEn(c, prop, tRel) {
+  const base = (c.transform || {})[prop] ?? TRANS0[prop];
+  const kf = ((c.kf || {})[prop] || []).slice().sort((a,b)=>a[0]-b[0]);
+  if(!kf.length) return base;
+  if(tRel <= kf[0][0]) return kf[0][1];
+  for(let i = 1; i < kf.length; i++){
+    const [ta, va] = kf[i-1], [tb, vb, curva] = kf[i];
+    if(tRel <= tb){ const u = tb > ta ? (tRel - ta) / (tb - ta) : 1; return va + (vb - va) * (CURVAS[curva] || CURVAS.lineal)(u); }
+  }
+  return kf[kf.length-1][1];
+}
+export const transformado = c => !!(c.kf && Object.values(c.kf).some(x=>x && x.length)) || Object.entries(c.transform || {}).some(([k, v])=>v !== TRANS0[k]);
 export const fin = c => c.en + largo(c);
 export const LIENZOS = { vertical:[1080,1920,"9:16"], horizontal:[1920,1080,"16:9"] };
 
@@ -42,6 +71,13 @@ export function colocar(ps, c, preferida, tipo="audio") {
     || ps.find(x=>x.tipo===tipo && !x.bloqueada && !solapa(x, c.en, largo(c)));
   if(libre) return ps.map(x=>x.id!==libre.id ? x : {...x, clips:[...x.clips, c]});
   if(tipo === "texto"){ const n = nuevaPistaTexto(ps); const i = ps.findIndex(x=>x.tipo==="texto"); return i < 0 ? [{...n, clips:[c]}, ...ps] : [...ps.slice(0, i), {...n, clips:[c]}, ...ps.slice(i)]; }
+  // 31/10: sin sitio en los subtítulos, otra pista de SUBTÍTULOS con su plantilla (antes caía en una de audio)
+  if(tipo === "subtitulos"){
+    const ref = ps.find(x=>x.id===preferida) || ps.find(x=>x.tipo==="subtitulos") || {};
+    const n = { id:"s"+uid(), tipo:"subtitulos", nombre:"Subtítulos", plantilla:ref.plantilla, estilo:ref.estilo || {}, clips:[c] };
+    const i = ps.findIndex(x=>x.tipo==="subtitulos"); return i < 0 ? [n, ...ps] : [...ps.slice(0, i), n, ...ps.slice(i)];
+  }
+  if(tipo === "video") return ps.map(x=>x.id!=="v1" ? x : {...x, clips:[...x.clips, sinPisar(x, c)]});
   return [...ps, {...nuevaPistaAudio(ps), clips:[c]}];
 }
 export const colocarAudio = (ps, c, preferida) => colocar(ps, c, preferida, "audio");
@@ -72,14 +108,16 @@ export const nuevoTexto = (texto, estilo, en, dur, plantilla) => ({ id:uid(), ti
 // dividir en `t` los clips con esos ids
 export const dividir = (p, ids, t) => ({...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.flatMap(c=>{
   if(!ids.has(c.id) || t <= c.en + 0.01 || t >= fin(c) - 0.01) return [c];
-  const k = c.desde + (t - c.en);
-  return [{...c, hasta:k, fade_out:0}, {...c, id:uid(), desde:k, en:t, fade_in:0}];
+  const k = local(c, t), dt = t - c.en;
+  // (los fotogramas clave se reparten: cada mitad se queda con los suyos, en su tiempo)
+  const kfDe = (desde, hasta) => c.kf ? Object.fromEntries(Object.entries(c.kf).map(([pr, l])=>[pr, (l||[]).filter(x=>x[0] >= desde && x[0] <= hasta).map(x=>[+(x[0] - desde).toFixed(4), x[1], x[2]])])) : c.kf;
+  return [{...c, hasta:k, fade_out:0, kf: kfDe(0, dt)}, {...c, id:uid(), desde:k, en:t, fade_in:0, kf: kfDe(dt, 1e9)}];
 })}))});
 
 // borrar a la izquierda (Q) o a la derecha (W) del cabezal
 export const borrarLado = (p, ids, t, izq) => ({...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>{
   if(!ids.has(c.id) || t <= c.en + 0.01 || t >= fin(c) - 0.01) return c;
-  const k = c.desde + (t - c.en);
+  const k = local(c, t);
   return izq ? {...c, desde:k, en: pi.id==="v1" && p.magnetica ? c.en : t} : {...c, hasta:k};
 })}))});
 
@@ -100,7 +138,7 @@ export function pegar(p, cs, t, trasCadaUno) {
       ps = ps.map(x=>x.id!=="v1" ? x : {...x, clips:[...x.clips, n]});
     } else {
       n.en = trasCadaUno ? fin(c) : t + (c.en - base);
-      ps = colocar(ps, n, c.pista, (p.pistas.find(x=>x.id===c.pista) || {}).tipo || (n.tipo === "texto" ? "texto" : "audio"));
+      ps = colocar(ps, n, c.pista, (p.pistas.find(x=>x.id===c.pista) || {}).tipo || (n.tipo === "texto" ? "texto" : n.tipo === "sub" ? "subtitulos" : "audio"));
     }
   });
   return [{...p, pistas: ps}, nuevos];
@@ -127,7 +165,7 @@ export function quitarAire(p, aires) {
     });
     quitados += trozos.length - 1;
     let en = c.en;
-    return trozos.map(([x,y],k)=>{ const n = {...c, id:k ? uid() : c.id, desde:x, hasta:y, en}; en += y - x; return n; });
+    return trozos.map(([x,y],k)=>{ const n = {...c, id:k ? uid() : c.id, desde:x, hasta:y, en}; en += (y - x) / vel(c); return n; });
   })})};
   return [q, quitados];
 }
