@@ -1,6 +1,7 @@
 import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { createClient } from "@supabase/supabase-js";
+import { asegurarEquipo, cabecerasEquipo, cabecerasUrgentes } from "./seguridad";
 import { DEFAULT_FORMATS, Icons, STATUSES, clone, getIdBase, setIdBase } from "./base";
 
 export function StatStrip({videos}) {
@@ -1119,18 +1120,21 @@ export async function cloudToken() {
   if(!ytIsConnected()) throw new Error("Conecta Google para sincronizar");
   if(!(await ytEnsureToken())) throw new Error("La sesión de Google caducó");
   const t = ytGetTokens();
-  return t && t.access_token;
+  const token = t && t.access_token;
+  // alta del equipo + «inicio de sesión» en el registro de accesos (una vez por ejecución)
+  if (token) await asegurarEquipo(YT_BACKEND, token);
+  return token;
 }
 export async function cloudLoad(code) {
   const token = await cloudToken();
-  const r = await fetch(YT_BACKEND + "/api/datos?code=" + encodeURIComponent(code), { headers: { Authorization: "Bearer " + token } });
+  const r = await fetch(YT_BACKEND + "/api/datos?code=" + encodeURIComponent(code), { headers: { Authorization: "Bearer " + token, ...(await cabecerasEquipo("GET", "/api/datos")) } });
   const j = await r.json().catch(()=>({}));
   if(!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
   return j.data ? { data: j.data, updated_at: j.updated_at } : null;
 }
 export async function cloudFecha(code) {
   const token = await cloudToken();
-  const r = await fetch(YT_BACKEND + "/api/datos?solo=fecha&code=" + encodeURIComponent(code), { headers: { Authorization: "Bearer " + token } });
+  const r = await fetch(YT_BACKEND + "/api/datos?solo=fecha&code=" + encodeURIComponent(code), { headers: { Authorization: "Bearer " + token, ...(await cabecerasEquipo("GET", "/api/datos")) } });
   const j = await r.json().catch(()=>({}));
   if(!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
   return j.updated_at ? new Date(j.updated_at).getTime() : 0;
@@ -1138,7 +1142,7 @@ export async function cloudFecha(code) {
 export async function cloudSave(code, payload) {
   const token = await cloudToken();
   const r = await fetch(YT_BACKEND + "/api/datos", {
-    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+    method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, ...(await cabecerasEquipo("POST", "/api/datos")) },
     body: JSON.stringify({ code, data: payload })
   });
   const j = await r.json().catch(()=>({}));
@@ -1152,7 +1156,7 @@ export function cloudSaveUrgente(code, payload) {
   try {
     fetch(YT_BACKEND + "/api/datos", {
       method: "POST", keepalive: true,
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + t.access_token },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + t.access_token, ...cabecerasUrgentes() },
       body: JSON.stringify({ code, data: payload })
     }).catch(()=>{});
   } catch(e){}

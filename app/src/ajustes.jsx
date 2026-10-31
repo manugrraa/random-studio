@@ -5,6 +5,7 @@ import { Icons, STATUSES } from "./base";
 import { geminiGetKey, geminiSaveKey, ytClearTokens, ytIsConnected } from "./datos";
 import { Field, inputStyle } from "./videos";
 import { ingresosEstimadosActivos } from "./youtube";
+import { SeguridadPanel } from "./acceso";
 
 const GUIA_ATAJOS = [
   ["En todo RandomStudio", [["Ctrl+1 … Ctrl+9", "Ir a cada apartado (en el orden de la barra)"], ["Ctrl+K", "Buscar vídeos y apartados"],
@@ -115,6 +116,8 @@ export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, se
             <div style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5}}>Reconecta si la app pide permisos nuevos (analíticas, comentarios).</div>
           </div>
         </div>
+
+        <SeguridadPanel caja={caja} tituloZona={tituloZona} toast={toast}/>
 
         <div style={caja}>
           <div style={tituloZona}>IA (Gemini)</div>
