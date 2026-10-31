@@ -1,11 +1,14 @@
 import React from "react";
 const { useState, useEffect } = React;
 import { AVATAR_HISTORIAS, AVATAR_RDR } from "./perfiles_img";
+import { YT_BACKEND } from "./datos";
 
 /* ============================ PERFILES (v3.21) ============================
  * Pantalla de inicio: eliges con qué perfil (canal) entras. Por ahora solo RDeRandom; RandomHistorias
  * llegará para subir los Shorts desde el mismo sitio en que se hacen.
  * «Entrar siempre con este perfil» la salta en los siguientes arranques (se vuelve con Ajustes → Cambiar de perfil).
+ * v3.24: la foto de cada perfil es la del canal de YouTube (el servidor la lee de la página pública del canal,
+ * /api/avatar); se puede subir otra con el lápiz y volver a la del canal. El logo incrustado es solo el respaldo.
  */
 
 export const PERFILES = [
@@ -17,6 +20,29 @@ const K_PERFIL = "rs_perfil", K_SIEMPRE = "rs_perfil_siempre";
 let _sesion = null;                       // perfil elegido en esta ejecución
 
 export function perfilActual() { return _sesion; }
+
+// ------------------------------------------------------------------ fotos de perfil
+const kFoto = (id) => "rs_perfil_foto_" + id;          // la que subiste tú (data URL)
+const kCanal = (id) => "rs_perfil_canal_" + id;        // la del canal de YouTube (URL, se refresca al abrir)
+const leer = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const guardar = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
+
+export function fotoPerfil(p) { return leer(kFoto(p.id)) || leer(kCanal(p.id)) || p.avatar; }
+
+function recortar(file) {
+  return new Promise((ok, ko) => {
+    const img = new Image();
+    img.onload = () => {
+      const lado = Math.min(img.width, img.height), c = document.createElement("canvas");
+      c.width = c.height = 400;
+      c.getContext("2d").drawImage(img, (img.width - lado) / 2, (img.height - lado) / 2, lado, lado, 0, 0, 400, 400);
+      URL.revokeObjectURL(img.src);
+      ok(c.toDataURL("image/jpeg", 0.88));
+    };
+    img.onerror = () => ko(new Error("No es una imagen válida"));
+    img.src = URL.createObjectURL(file);
+  });
+}
 export function perfilAlArrancar() {
   try {
     if (localStorage.getItem(K_SIEMPRE) === "1") {
@@ -43,6 +69,11 @@ const CSS = `
 .rsp-avatar { transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s; }
 .rsp-carta.bloq:hover .rsp-avatar { transform: none; box-shadow: 0 0 0 1px #2a2a2a; }
 .rsp-carta.bloq:hover .rsp-nombre { color: #8a8a8a; }
+.rsp-lapiz { opacity: 0; transition: opacity .18s, transform .18s; }
+.rsp-carta:hover .rsp-lapiz, .rsp-lapiz:focus-visible { opacity: 1; }
+.rsp-lapiz:hover { transform: scale(1.1); }
+.rsp-op { text-align: left; font-size: 13px; font-weight: 600; color: #F5F5F5; padding: 9px 12px; border-radius: 8px; background: none; border: none; cursor: pointer; }
+.rsp-op:hover:not(:disabled) { background: rgba(212,175,55,.12); color: #FFD700; }
 `;
 
 function Particulas() {
@@ -54,20 +85,12 @@ function Particulas() {
       background: "#D4AF37", boxShadow: "0 0 8px #D4AF37", animation: `rsp-flota ${p.dur}s linear ${p.delay}s infinite`, opacity: 0 }} />));
 }
 
-function AvatarRDR({ size }) {
-  return (
-    <div style={{ width: size, height: size, borderRadius: size * 0.2, display: "flex", alignItems: "center", justifyContent: "center",
-      background: "radial-gradient(120% 120% at 30% 20%, #2a2410 0%, #0d0b05 60%, #000 100%)", border: "1px solid #3a3119", position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", inset: 0, background: "conic-gradient(from 210deg, transparent 0 70%, rgba(255,215,0,.16) 80%, transparent 90%)" }} />
-      <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: size * 0.56, lineHeight: 1, letterSpacing: "-.04em",
-        background: "linear-gradient(160deg,#FFF1B0 0%,#FFD700 30%,#D4AF37 60%,#8a7320 100%)", WebkitBackgroundClip: "text", color: "transparent",
-        filter: "drop-shadow(0 4px 14px rgba(212,175,55,.45))" }}>R</span>
-    </div>);
-}
-
 export function PantallaPerfiles({ onElegir }) {
   const [siempre, setSiempre] = useState(false);
   const [saliendo, setSaliendo] = useState(null);
+  const [, refrescar] = useState(0);
+  const [menu, setMenu] = useState(null);             // perfil con el menú del lápiz abierto
+  const subir = React.useRef(null);
   const size = Math.min(170, Math.max(112, Math.round(window.innerWidth / 7)));
 
   const elegir = (p) => {
@@ -78,8 +101,26 @@ export function PantallaPerfiles({ onElegir }) {
     setTimeout(() => onElegir(p.id), 420);
   };
 
+  // la foto del canal de YouTube: se pide al abrir y se guarda (la próxima vez sale al instante)
   useEffect(() => {
-    const f = (e) => { if (e.key === "Enter") elegir(PERFILES[0]); };
+    PERFILES.forEach(p => fetch(YT_BACKEND + "/api/avatar?canal=" + p.id).then(r => r.json()).then(j => {
+      if (j && j.success && j.url && j.url !== leer(kCanal(p.id))) { guardar(kCanal(p.id), j.url); refrescar(n => n + 1); }
+    }).catch(() => {}));
+    const cerrar = () => setMenu(null);
+    window.addEventListener("click", cerrar);
+    return () => window.removeEventListener("click", cerrar);
+  }, []);
+
+  const elegirFoto = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f || !menu) return;
+    try { guardar(kFoto(menu), await recortar(f)); refrescar(n => n + 1); } catch (x) { alert(x.message); }
+    setMenu(null);
+  };
+
+  useEffect(() => {
+    const f = (e) => { if (e.key === "Enter" && !menu) elegir(PERFILES[0]); };
     window.addEventListener("keydown", f);
     return () => window.removeEventListener("keydown", f);
   });
@@ -109,15 +150,29 @@ export function PantallaPerfiles({ onElegir }) {
 
       <div style={{ position: "relative", display: "flex", gap: "clamp(22px,5vw,56px)", marginTop: 44, flexWrap: "wrap", justifyContent: "center" }}>
         {PERFILES.map((p, i) => (
-          <button key={p.id} onClick={() => elegir(p)} className={"rsp-carta" + (p.activo ? "" : " bloq")} disabled={!p.activo}
-            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, cursor: p.activo ? "pointer" : "default",
+          <div key={p.id} role="button" tabIndex={p.activo ? 0 : -1} onClick={() => elegir(p)} className={"rsp-carta" + (p.activo ? "" : " bloq")}
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, cursor: p.activo ? "pointer" : "default", position: "relative",
               animation: `rsp-entra .6s ease ${0.12 + i * 0.1}s both`, outline: "none", background: "none", border: "none", color: "inherit" }}>
             <div className="rsp-avatar" style={{ position: "relative", borderRadius: size * 0.2, boxShadow: "0 0 0 1px #2a2a2a",
               transform: saliendo === p.id ? "scale(1.08)" : undefined }}>
-              {p.avatar
-                ? <img src={p.avatar} alt="" style={{ width: size, height: size, borderRadius: size * 0.2, display: "block", objectFit: "cover",
-                    filter: p.activo ? "none" : "grayscale(.85) brightness(.45)" }} />
-                : <AvatarRDR size={size} />}
+              <img src={fotoPerfil(p)} alt="" referrerPolicy="no-referrer"
+                onError={(e) => { if (e.currentTarget.src !== p.avatar) e.currentTarget.src = p.avatar; }}
+                style={{ width: size, height: size, borderRadius: size * 0.2, display: "block", objectFit: "cover",
+                  filter: p.activo ? "none" : "grayscale(.85) brightness(.45)" }} />
+              {/* lápiz: subir otra foto o volver a la del canal */}
+              <button className="rsp-lapiz" title="Cambiar la foto" onClick={(e) => { e.stopPropagation(); setMenu(m => m === p.id ? null : p.id); }}
+                style={{ position: "absolute", right: -6, bottom: -6, width: 32, height: 32, borderRadius: 99, display: "flex", alignItems: "center",
+                  justifyContent: "center", background: "#141414", border: "1px solid #3a3119", color: "#D4AF37", boxShadow: "0 4px 14px rgba(0,0,0,.6)", zIndex: 2 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+              </button>
+              {menu === p.id && (
+                <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: "calc(100% + 12px)", left: "50%", transform: "translateX(-50%)", zIndex: 5,
+                  minWidth: 236, whiteSpace: "nowrap", background: "#141414", border: "1px solid #3a3119", borderRadius: 12, padding: 6, boxShadow: "0 18px 50px rgba(0,0,0,.7)",
+                  display: "flex", flexDirection: "column", gap: 2, animation: "rsp-entra .18s ease both" }}>
+                  <button onClick={() => subir.current && subir.current.click()} className="rsp-op">Subir una foto…</button>
+                  <button disabled={!leer(kFoto(p.id))} onClick={() => { guardar(kFoto(p.id), null); refrescar(n => n + 1); setMenu(null); }}
+                    className="rsp-op" style={{ opacity: leer(kFoto(p.id)) ? 1 : 0.4 }}>Usar la del canal de YouTube</button>
+                </div>)}
               {!p.activo && (
                 <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 800, letterSpacing: ".08em", color: "#FFD700",
@@ -131,8 +186,9 @@ export function PantallaPerfiles({ onElegir }) {
               <div className="rsp-nombre" style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 18, color: p.activo ? "#F5F5F5" : "#8a8a8a", transition: "color .2s" }}>{p.nombre}</div>
               <div style={{ fontSize: 12, color: p.activo ? "#D4AF37" : "#6B6B6B", marginTop: 3, fontWeight: 600 }}>{p.lema}</div>
             </div>
-          </button>))}
+          </div>))}
       </div>
+      <input ref={subir} type="file" accept="image/*" style={{ display: "none" }} onChange={elegirFoto} />
 
       <label style={{ position: "relative", marginTop: 44, display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "#A3A3A3", cursor: "pointer",
         animation: "rsp-entra .6s ease .35s both" }}>
