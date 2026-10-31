@@ -2,6 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { createClient } from "@supabase/supabase-js";
 import { asegurarEquipo, cabecerasEquipo, cabecerasUrgentes } from "./seguridad";
+import { perfilEnUso } from "./perfil_estado";
 import { DEFAULT_FORMATS, Icons, STATUSES, clone, getIdBase, setIdBase } from "./base";
 
 export function StatStrip({videos}) {
@@ -1106,7 +1107,9 @@ export function getSyncCode() {
   let c = null;
   try { c = localStorage.getItem(SYNC_CODE_KEY); } catch(e){}
   if(!c) {
-    c = window.studioFS ? MAIN_SYNC_CODE : ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ("code-"+Math.random().toString(36).slice(2)+Date.now().toString(36)));
+    // v3.26: cada perfil tiene su propia copia en la nube (RDeRandom, la de siempre)
+    const principal = perfilEnUso() === "rderandom" ? MAIN_SYNC_CODE : MAIN_SYNC_CODE + "-" + perfilEnUso();
+    c = (window.studioFS || perfilEnUso() !== "rderandom") ? principal : ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ("code-"+Math.random().toString(36).slice(2)+Date.now().toString(36)));
     try { localStorage.setItem(SYNC_CODE_KEY, c); } catch(e){}
   }
   return c;

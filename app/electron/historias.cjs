@@ -1,6 +1,6 @@
 /* RandomHistorias dentro de RandomStudio (v3.21): el mismo proceso de siempre (tools/cadena.py), pero visto y
  * lanzado desde aquí: estado de cada historia, progreso del render plano a plano con el tiempo que falta, y elegir
- * la miniatura entre las fotos de los planos. Los archivos se leen siempre del portátil (RAIZ).
+ * la miniatura entre las fotos de los planos. Los archivos se leen siempre del portátil (Ajustes → Carpetas).
  *
  * Se registra solo con require("./historias.cjs") desde main.cjs.
  */
@@ -9,9 +9,11 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
-const RAIZ = process.env.RANDOMHISTORIAS_DIR || "E:\\A RdeRandom\\RandomHistorias";
-const HIST = path.join(RAIZ, "historias");
-const LISTAS = path.join(RAIZ, ".historiaslistas");
+// v3.26: el proyecto y la carpeta de entregas salen de Ajustes → Carpetas del perfil (carpetas.cjs)
+const carpetas = () => require("./carpetas.cjs").carpetasDe();
+const raiz = () => process.env.RANDOMHISTORIAS_DIR || carpetas().historias;
+const histDir = () => path.join(raiz(), "historias");
+const listasDir = () => carpetas().entregas;
 const PASOS = ["sincronizar", "revisar", "fotos", "mezclar", "subtitulos", "animatic", "render", "montar", "miniatura", "entregar"];
 
 const leer = (p, def) => { try { return fs.readFileSync(p, "utf-8"); } catch (e) { return def; } };
@@ -20,7 +22,7 @@ const existe = (p) => { try { return fs.existsSync(p); } catch (e) { return fals
 
 function carpetaDe(id) {
   if (!/^\d{2}_[\w-]+$/.test(String(id))) throw new Error("historia no válida");
-  const c = path.join(HIST, id);
+  const c = path.join(histDir(), id);
   if (!existe(c)) throw new Error("no existe la historia " + id);
   return c;
 }
@@ -58,7 +60,7 @@ function resumen(id) {
   for (const [p, f] of Object.entries(hechoA))
     if (!estado[p] && existe(path.join(c, f))) estado[p] = { fin: fecha(path.join(c, f)), aMano: true };
   const t = titulo(c);
-  const entrega = path.join(LISTAS, tituloArchivo(t));
+  const entrega = path.join(listasDir(), tituloArchivo(t));
   const hechos = PASOS.filter(p => estado[p]);
   const mini = existe(path.join(c, "miniatura.png")) ? path.join(c, "miniatura.png") : null;
   return {
@@ -103,8 +105,8 @@ function analizarLinea(l) {
 function lanzar(sender, id, args) {
   if (tarea) throw new Error("Ya hay una tarea en marcha (" + tarea.id + ")");
   const c = carpetaDe(id);
-  const proc = spawn("python", [path.join(RAIZ, "tools", "cadena.py"), path.relative(RAIZ, c), ...args], {
-    cwd: RAIZ, env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUNBUFFERED: "1" }, windowsHide: true,
+  const proc = spawn("python", [path.join(raiz(), "tools", "cadena.py"), path.relative(raiz(), c), ...args], {
+    cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUNBUFFERED: "1", RH_ENTREGAS: listasDir() }, windowsHide: true,
   });
   tarea = { proc, id, args, inicio: Date.now(), lineas: [], paso: null, render: null, sender, nPlanos: planos(c).length };
   let resto = "";
@@ -142,9 +144,9 @@ function argsSeguros(a) {
 
 // ------------------------------------------------------------------ llamadas
 ipcMain.handle("historias-lista", async () => {
-  if (!existe(HIST)) return { ok: false, error: "No encuentro " + HIST };
-  const ids = fs.readdirSync(HIST).filter(n => /^\d{2}_[\w-]+$/.test(n)).sort().reverse();
-  return { ok: true, raiz: RAIZ, historias: ids.map(id => { try { return resumen(id); } catch (e) { return { id, error: e.message }; } }) };
+  if (!existe(histDir())) return { ok: false, error: "No encuentro " + histDir() + " (Ajustes → Carpetas)" };
+  const ids = fs.readdirSync(histDir()).filter(n => /^\d{2}_[\w-]+$/.test(n)).sort().reverse();
+  return { ok: true, raiz: raiz(), historias: ids.map(id => { try { return resumen(id); } catch (e) { return { id, error: e.message }; } }) };
 });
 
 ipcMain.handle("historias-detalle", async (e, id) => {
@@ -174,14 +176,14 @@ ipcMain.handle("historias-miniatura", async (e, id, plano, t) => {
   if (!/^s\d+$/.test(String(plano))) throw new Error("plano no válido");
   const tt = Math.max(0.05, Math.min(0.95, Number(t) || 0.8));
   const correr = (args) => new Promise((ok, ko) => {
-    const p = spawn("python", args, { cwd: RAIZ, env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+    const p = spawn("python", args, { cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir() }, windowsHide: true });
     let out = "";
     p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
     p.on("close", code => code === 0 ? ok(out) : ko(new Error(out.split("\n").filter(Boolean).slice(-3).join(" | ") || ("código " + code))));
   });
-  await correr([path.join(RAIZ, "tools", "miniatura.py"), path.relative(RAIZ, c), "--plano", plano, "--t", String(tt)]);
+  await correr([path.join(raiz(), "tools", "miniatura.py"), path.relative(raiz(), c), "--plano", plano, "--t", String(tt)]);
   if (existe(path.join(c, `historia${id.slice(0, 2)}_final.mp4`)))
-    await correr([path.join(RAIZ, "tools", "cadena.py"), path.relative(RAIZ, c), "--solo", "entregar"]);
+    await correr([path.join(raiz(), "tools", "cadena.py"), path.relative(raiz(), c), "--solo", "entregar"]);
   return { ok: true, miniatura: miniDataUrl(path.join(c, "miniatura.png"), 360) };
 });
 
@@ -193,4 +195,4 @@ ipcMain.handle("historias-abrir", async (e, id, que) => {
   return { ok: !err, error: err || null };
 });
 
-module.exports = { RAIZ };
+module.exports = {};

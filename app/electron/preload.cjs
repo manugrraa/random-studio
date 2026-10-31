@@ -82,6 +82,12 @@ contextBridge.exposeInMainWorld("studioFS", {
     ipcRenderer.on("studio-upload-progress", h);
     return () => ipcRenderer.removeListener("studio-upload-progress", h);
   },
+  // Perfiles y carpetas (v3.26)
+  perfilPoner: (id) => ipcRenderer.invoke("perfil-poner", id),
+  carpetasLeer: (id) => ipcRenderer.invoke("carpetas-leer", id),
+  carpetasGuardar: (id, clave, ruta) => ipcRenderer.invoke("carpetas-guardar", id, clave, ruta),
+  carpetasElegir: (actual) => ipcRenderer.invoke("carpetas-elegir", actual),
+  carpetasAbrir: (ruta) => ipcRenderer.invoke("carpetas-abrir", ruta),
   // RandomHistorias dentro de Studio (v3.21): estado, cadena con progreso y miniatura
   historiasLista: () => ipcRenderer.invoke("historias-lista"),
   historiasDetalle: (id) => ipcRenderer.invoke("historias-detalle", id),

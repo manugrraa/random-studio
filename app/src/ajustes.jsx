@@ -7,6 +7,7 @@ import { Field, inputStyle } from "./videos";
 import { ingresosEstimadosActivos } from "./youtube";
 import { SeguridadPanel } from "./acceso";
 import { PERFILES, cambiarPerfil, perfilActual } from "./perfiles";
+import { CarpetasPanel } from "./carpetas";
 
 const GUIA_ATAJOS = [
   ["En todo RandomStudio", [["Ctrl+1 … Ctrl+9", "Ir a cada apartado (en el orden de la barra)"], ["Ctrl+K", "Buscar vídeos y apartados"],
@@ -126,6 +127,8 @@ export function ConfigView({ goals, setGoals, theme, setTheme, cardsExpanded, se
             <button onClick={cambiarPerfil} style={{fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:9,padding:"9px 14px",background:"rgba(212,175,55,0.05)"}}>Cambiar de perfil</button>
           </div>
         </div>
+
+        <CarpetasPanel caja={caja} tituloZona={tituloZona} toast={toast}/>
 
         <SeguridadPanel caja={caja} tituloZona={tituloZona} toast={toast}/>
 

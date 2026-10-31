@@ -1,4 +1,5 @@
 import { Icons } from "./base.jsx";
+import { PERFILES, cambiarPerfil, fotoPerfil, perfilActual } from "./perfiles";
 
 /* v3.11 (26/10), él: "reforma la distribución de TODO el RandomStudio, porque las pestañas arriba se
    me hacen feas visualmente". Barra lateral con los apartados agrupados por lo que se hace en cada
@@ -29,16 +30,20 @@ function Boton({ tb, activo, plegada, onClick }) {
 
 export function BarraLateral({ tabs, view, setView, plegada, setPlegada }) {
   const abajo = tabs.filter(t => t.grupo === "abajo");
+  const perfil = PERFILES.find(p => p.id === perfilActual()) || PERFILES[0];
   return (
     <aside className="side-nav" style={{width:plegada?70:236,flexShrink:0,position:"sticky",top:0,height:"100vh",display:"flex",flexDirection:"column",
       borderRight:"1px solid var(--border)",background:"var(--bg-2)",transition:"width .18s ease"}}>
       <div style={{display:"flex",alignItems:"center",gap:11,padding:plegada?"18px 0 14px":"18px 18px 14px",justifyContent:plegada?"center":"flex-start"}}>
-        <div className="grad-gold gold-glow" style={{width:38,height:38,borderRadius:11,display:"flex",alignItems:"center",justifyContent:"center",color:"#000",flexShrink:0}}>
-          <span style={{fontFamily:"'Sora'",fontWeight:800,fontSize:18}}>R</span>
-        </div>
+        {/* v3.26: la cuenta con la que se ha entrado (clic = cambiar de perfil) */}
+        <button onClick={cambiarPerfil} title={"Perfil: " + perfil.nombre + " · cambiar de perfil"}
+          style={{width:38,height:38,borderRadius:11,padding:0,flexShrink:0,overflow:"hidden",boxShadow:"0 0 0 1px var(--border-gold)"}}>
+          <img src={fotoPerfil(perfil)} alt="" referrerPolicy="no-referrer" onError={e=>{ if(e.currentTarget.src!==perfil.avatar) e.currentTarget.src=perfil.avatar; }}
+            style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+        </button>
         {!plegada && <div style={{minWidth:0}}>
           <div style={{fontFamily:"'Sora'",fontWeight:700,fontSize:16.5,letterSpacing:"-.01em"}}>Random<span className="gold-text">Studio</span></div>
-          <div style={{fontSize:10.5,color:"var(--text-3)",letterSpacing:".04em"}}>Gestor de contenido</div>
+          <div style={{fontSize:10.5,color:"var(--gold)",letterSpacing:".04em",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{perfil.nombre}</div>
         </div>}
       </div>
       <nav style={{flex:1,overflowY:"auto",padding:plegada?"4px 8px":"4px 12px",display:"flex",flexDirection:"column",gap:2}}>

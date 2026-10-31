@@ -69,13 +69,15 @@ if (!gotLock) app.quit();
 let mainWindow = null;
 
 const dataDir = () => app.getPath("userData");
-const dataFile = () => path.join(dataDir(), "datos.json");
+// v3.26: los datos (datos.json, copias y errores.log) van por perfil; las ventanas siguen siendo globales
+const datosDir = () => require("./carpetas.cjs").dirDatos();
+const dataFile = () => path.join(datosDir(), "datos.json");
 
 // Primera escritura de cada día → copia en /copias (se conservan las últimas 30)
 function copiaDiaria(txt) {
   try {
     const dia = new Date().toISOString().slice(0, 10);
-    const dir = path.join(dataDir(), "copias");
+    const dir = path.join(datosDir(), "copias");
     fs.mkdirSync(dir, { recursive: true });
     const f = path.join(dir, "datos-" + dia + ".json");
     if (!fs.existsSync(f)) fs.writeFileSync(f, txt);
@@ -93,7 +95,8 @@ ipcMain.on("studio-load", (e) => {
 // llevaba sin actualizarse desde el 23/8 mientras las copias diarias sí se hacían)
 function apuntarError(donde, err) {
   try {
-    fs.appendFileSync(path.join(dataDir(), "errores.log"),
+    fs.mkdirSync(datosDir(), { recursive: true });
+    fs.appendFileSync(path.join(datosDir(), "errores.log"),
       new Date().toISOString() + " " + donde + ": " + (err && (err.code || err.message) || err) + "\n");
   } catch (e) {}
 }
@@ -101,7 +104,7 @@ function apuntarError(donde, err) {
 ipcMain.on("studio-save", (e, txt) => {
   if (typeof txt !== "string") return;
   try {
-    fs.mkdirSync(dataDir(), { recursive: true });
+    fs.mkdirSync(datosDir(), { recursive: true });
     const f = dataFile();
     fs.writeFileSync(f + ".tmp", txt);
     // en Windows el antivirus o el indexador pueden tener el .tmp abierto un
@@ -819,5 +822,7 @@ ipcMain.handle("chat-abrir", async (e, que) => {
 
 // RandomHistorias dentro de Studio (v3.21): sus llamadas viven en historias.cjs
 require("./historias.cjs");
+// Perfiles y carpetas (v3.26): perfil activo, carpetas de cada perfil y datos por perfil
+require("./carpetas.cjs");
 // el contador de suscriptores de YouTube Studio para OBS (v3.23)
 require("./contador.cjs");

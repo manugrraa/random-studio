@@ -2,6 +2,7 @@ import React from "react";
 const { useState, useEffect } = React;
 import { AVATAR_HISTORIAS, AVATAR_RDR } from "./perfiles_img";
 import { YT_BACKEND } from "./datos";
+import { fijarPerfilEnUso } from "./perfil_estado";
 
 /* ============================ PERFILES (v3.21) ============================
  * Pantalla de inicio: eliges con qué perfil (canal) entras. RDeRandom (la app de siempre) o RandomHistorias
@@ -20,6 +21,32 @@ const K_PERFIL = "rs_perfil", K_SIEMPRE = "rs_perfil_siempre";
 let _sesion = null;                       // perfil elegido en esta ejecución
 
 export function perfilActual() { return _sesion; }
+
+/* v3.26: cada perfil es una cuenta con las mismas opciones. Sus datos guardados (vídeos, tareas, sesión de
+ * Google, código de sincronización, ajustes de cada apartado...) van aparte: en cualquier perfil que no sea
+ * RDeRandom, las claves de localStorage llevan delante «perfil:<id>:». RDeRandom usa las de siempre (no se
+ * mueve nada). Son comunes a todos los perfiles: el propio perfil, la llave del equipo, el tema, la barra
+ * plegada, la clave de Gemini y las preferencias del RandomEditor (módulo aparte). */
+const GLOBALES = /^(rs_perfil|rs_disp_id|rds_theme|rds_barra_plegada|rds_gemini_|red_)/;
+let _almacen = false;
+function separarAlmacen(id) {
+  if (_almacen || id === "rderandom") return;
+  _almacen = true;
+  const ls = window.localStorage, proto = Object.getPrototypeOf(ls), pre = "perfil:" + id + ":";
+  const get = proto.getItem, set = proto.setItem, quitar = proto.removeItem;
+  const k = (s, key) => (s === ls && !GLOBALES.test(String(key))) ? pre + key : key;
+  proto.getItem = function (key) { return get.call(this, k(this, key)); };
+  proto.setItem = function (key, v) { return set.call(this, k(this, key), v); };
+  proto.removeItem = function (key) { return quitar.call(this, k(this, key)); };
+}
+
+/** Prepara el perfil ANTES de montar la app: almacén aparte y, en el escritorio, datos y carpetas del perfil. */
+export async function entrarEnPerfil(id) {
+  _sesion = id;
+  fijarPerfilEnUso(id);
+  separarAlmacen(id);
+  try { if (window.studioFS && window.studioFS.perfilPoner) await window.studioFS.perfilPoner(id); } catch (e) {}
+}
 
 // ------------------------------------------------------------------ fotos de perfil
 const kFoto = (id) => "rs_perfil_foto_" + id;          // la que subiste tú (data URL)
@@ -47,7 +74,7 @@ export function perfilAlArrancar() {
   try {
     if (localStorage.getItem(K_SIEMPRE) === "1") {
       const p = PERFILES.find(x => x.id === localStorage.getItem(K_PERFIL) && x.activo);
-      if (p) { _sesion = p.id; return p.id; }
+      if (p) return p.id;
     }
   } catch (e) {}
   return null;
@@ -96,9 +123,8 @@ export function PantallaPerfiles({ onElegir }) {
   const elegir = (p) => {
     if (!p.activo || saliendo) return;
     try { localStorage.setItem(K_PERFIL, p.id); localStorage.setItem(K_SIEMPRE, siempre ? "1" : "0"); } catch (e) {}
-    _sesion = p.id;
     setSaliendo(p.id);
-    setTimeout(() => onElegir(p.id), 420);
+    setTimeout(() => entrarEnPerfil(p.id).then(() => onElegir(p.id)), 420);
   };
 
   // la foto del canal de YouTube: se pide al abrir y se guarda (la próxima vez sale al instante)
