@@ -29,7 +29,8 @@ function generar(prompt, { sistema, cwd, modelo, segundos = 300, herramientas = 
     if (!exe) return ko(new Error("No encuentro Claude Code en este equipo"));
     const args = ["-p", "--model", modelo || MODELO, "--output-format", "text"];
     if (sistema) args.push("--append-system-prompt", String(sistema));
-    if (!herramientas) args.push("--tools", "");
+    if (herramientas === "lectura") args.push("--tools", "Read", "Glob", "Grep");   // solo mirar el proyecto, sin tocar nada
+    else if (!herramientas) args.push("--tools", "");
     // sin las variables de una sesión de Claude que lo haya lanzado (si no, intenta usar su autenticación)
     const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_AGENT_SDK|ANTHROPIC_BASE_URL)/.test(k)));
     const p = spawn(exe, args, { cwd: cwd || process.env.USERPROFILE, env, windowsHide: true, shell: /\.cmd$/i.test(exe) });

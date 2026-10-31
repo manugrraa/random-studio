@@ -45,7 +45,7 @@ const RES = { ok: "var(--green)", pendiente: "var(--gold)", rechazado: "var(--re
 
 const CSS = `
 @keyframes adm-pulso { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.6) } 50% { box-shadow: 0 0 0 6px rgba(34,197,94,0) } }
-@keyframes adm-entra { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+@keyframes adm-entra { from { transform: translateY(8px) } to { transform: none } }
 @keyframes adm-borde { 0%,100% { border-color: rgba(212,175,55,.35) } 50% { border-color: rgba(212,175,55,.9) } }
 .adm-btn { font-size: 12px; font-weight: 700; border-radius: 9px; padding: 7px 12px; border: 1px solid var(--border); transition: all .15s; }
 .adm-btn:hover { filter: brightness(1.2); transform: translateY(-1px); }
@@ -54,7 +54,7 @@ const CSS = `
 
 function Tile({ n, txt, color, onClick }) {
   return (
-    <button onClick={onClick} style={{ flex: "1 1 150px", textAlign: "left", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 14, padding: "14px 16px", cursor: onClick ? "pointer" : "default" }}>
+    <button onClick={onClick} style={{ flex: "1 1 125px", textAlign: "left", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 14, padding: "12px 14px", cursor: onClick ? "pointer" : "default" }}>
       <div style={{ fontFamily: "'Sora'", fontSize: 28, fontWeight: 800, color: n ? color : "var(--text-3)", lineHeight: 1 }}>{n}</div>
       <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 6, fontWeight: 600 }}>{txt}</div>
     </button>);
@@ -162,7 +162,7 @@ export function AdminView({ toast }) {
             const cA = { accion: "aprobar_solicitud", dispositivo_id: e.id, perfil_id: p.id };
             return (
               <div key={e.id + p.id} style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", padding: 14, borderRadius: 12,
-                background: "rgba(212,175,55,0.05)", border: "1px solid var(--border-gold)", animation: "adm-entra .3s ease both, adm-borde 2.4s ease-in-out infinite" }}>
+                background: "rgba(212,175,55,0.05)", border: "1px solid var(--border-gold)", animation: "adm-borde 2.4s ease-in-out infinite" }}>
                 <div style={{ fontSize: 30 }}>{t.icono}</div>
                 <div style={{ flex: "1 1 260px", minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 700 }}>{e.nombre} <span style={{ fontWeight: 500, color: "var(--text-3)", fontSize: 12 }}>· {t.txt}</span></div>

@@ -1,0 +1,17 @@
+RandomStudio para el ordenador de sobremesa
+===========================================
+
+1. Descomprime todo (si son varias partes, abre la .part01.rar y WinRAR une el resto).
+2. Doble clic en «Instalar.bat». Copia la app a C:\RandomStudio e instala Blender 4.5,
+   Python y FFmpeg (solo la primera vez, tarda unos minutos).
+3. Abre RandomStudio desde el escritorio y pulsa «Iniciar sesión» con tu cuenta de Google.
+4. La cuenta saldrá con un candado: «Esperando permiso del portátil».
+5. En el portátil: RandomStudio → Administración (abajo en la barra) → «Aprobar».
+   El candado se abre solo en unos segundos.
+6. «Este equipo no guarda los Shorts» ya viene activado (Historias → Ajustes):
+   cada Short que haga irá a tu Drive y se borrará de aquí.
+   Mientras el portátil tenga la versión antigua, también puedes aprobarlo desde
+   Configuración → Seguridad → «Aprobar».
+
+Si quieres que el ordenador también pueda aprobar a otros equipos, en el portátil
+pulsa «Hacer admin» en su fila de Administración.

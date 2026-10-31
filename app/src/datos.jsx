@@ -151,6 +151,8 @@ export const YT_SCOPES = [
   "https://www.googleapis.com/auth/youtube",
   "https://www.googleapis.com/auth/youtube.force-ssl",
   "https://www.googleapis.com/auth/drive.readonly",
+  // v3.30: subir los Shorts a tu Drive (solo ve y toca lo que sube la propia app)
+  "https://www.googleapis.com/auth/drive.file",
   // Analíticas (visitas e ingresos) para el panel de Objetivos
   "https://www.googleapis.com/auth/yt-analytics.readonly",
   "https://www.googleapis.com/auth/yt-analytics-monetary.readonly"

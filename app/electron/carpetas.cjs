@@ -13,7 +13,8 @@ const { app, ipcMain, dialog, shell, BrowserWindow } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
-const BASE = "E:\\A RdeRandom";
+// v3.30: en el ordenador de sobremesa la base la pone su instalador (RANDOMSTUDIO_BASE); en el portátil, la de siempre
+const BASE = process.env.RANDOMSTUDIO_BASE || "E:\\A RdeRandom";
 const PERFILES = {
   rderandom: { nombre: "RDeRandom", canal: "UCF-3SarqM5bvy3sBT_avssQ" },
   randomhistorias: { nombre: "RandomHistorias", canal: "UCt7hr6bzAxETC8y961WmH4g" },
