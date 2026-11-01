@@ -307,7 +307,9 @@ function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, on
     <div style={{border:"1px solid var(--gold)",borderRadius:14,background:"var(--bg-2)",padding:14,display:"grid",gridTemplateColumns:"minmax(0,300px) minmax(0,1fr)",gap:16}}>
       <div>
         {!c.videos.length && <div style={{aspectRatio:"9/16",borderRadius:10,border:"1px dashed var(--border)",display:"flex",alignItems:"center",justifyContent:"center",
-          textAlign:"center",padding:20,color:"var(--text-3)",fontSize:13}}>📁 Recopilación vacía<br/>Añádele clips desde cada clip: «Añadir a recopilación»</div>}
+          textAlign:"center",padding:20,color:"var(--text-3)",fontSize:13}}>{(c.en_drive||[]).length
+            ? <span>☁ {c.en_drive.length===1?"Su vídeo está":"Sus "+c.en_drive.length+" vídeos están"} fuera del disco{c.en_drive.every(e=>e.estado==="drive")?", en tu Google Drive":""}<br/>Recupéra{c.en_drive.length===1?"lo":"los"} desde Configuración › Almacenamiento</span>
+            : <span>📁 Recopilación vacía<br/>Añádele clips desde cada clip: «Añadir a recopilación»</span>}</div>}
         {c.videos.length>0 && <video key={c.videos[v]+(c.editados&&c.editados[archivoDe(c.videos[v])]?"e":"")} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>}
         {c.estado!=="montado" && onEditar && c.videos.length>0 && <button onClick={()=>onEditar(c, c.videos[v])} disabled={ocupado} title="Ábrelo en el RandomEditor (E)"
           style={{...boton(false),width:"100%",marginTop:8,padding:"8px 0",fontSize:12.5}}>✂ Editar {c.videos.length>1?"este momento":"el clip"}{c.editados&&c.editados[archivoDe(c.videos[v])]?" · ya editado":""}</button>}
@@ -692,6 +694,9 @@ Van a la Papelera de Windows (desde allí se recuperan si hace falta). Después 
               <div style={{position:"relative",aspectRatio:"9/16",background:"#111"}}>
                 {c.miniatura && <img src={fileUrl(c.miniatura)} alt="" loading="lazy" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>}
                 {!c.miniatura && c.recopilacion_suya && <span style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:44}}>📁</span>}
+                {!c.miniatura && !c.recopilacion_suya && (c.en_drive||[]).length>0 && <span style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:44}}>☁</span>}
+                {/* 1/11: vídeos archivados en Drive (Configuración › Almacenamiento) */}
+                {(c.en_drive||[]).length>0 && <span title={c.en_drive.map(e=>e.archivo).join(", ")} style={{position:"absolute",left:6,top:78,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.8)",color:"#7dd3fc"}}>☁ {c.videos.length?c.en_drive.length+" en Drive":"en Drive"}</span>}
                 {c.recopilacion_suya && <span style={{position:"absolute",right:6,bottom:30,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(212,175,55,0.9)",color:"#000"}}>RECOPILACIÓN</span>}
                 {(c.en_recopilaciones||[]).length>0 && <span title={"En: "+c.en_recopilaciones.join(", ")} style={{position:"absolute",left:6,top:54,fontSize:10.5,fontWeight:800,padding:"2px 7px",borderRadius:6,background:"rgba(0,0,0,0.8)",color:"#4ade80"}}>📁 {c.en_recopilaciones.length}</span>}
                 <span style={{position:"absolute",right:6,bottom:6,fontSize:11,fontWeight:700,padding:"2px 6px",borderRadius:6,background:"rgba(0,0,0,0.75)",color:"#fff"}}>{mmss(c.duracion)}</span>
