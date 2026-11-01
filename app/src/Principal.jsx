@@ -11,6 +11,7 @@ import { ordenarTabs, useModulosOff, useOrdenModulos } from "./modulos";
 import { AdminView, esAdmin, useRolEquipo, useSolicitudesPendientes } from "./admin";
 import { iniciarRemotoEscritorio, iniciarTrabajador } from "./remoto";
 import { AvisoActualizacion } from "./actualizar";
+import { UsoClaude } from "./uso_claude";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { BarraLateral } from "./navegacion";
@@ -1086,6 +1087,8 @@ export function App() {
           </div>
 
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {/* v3.40.6: lo gastado de Claude (5 h y semana), para dosificar las historias */}
+            {window.studioFS && <span className="uso-claude-cab"><UsoClaude/></span>}
             {/* Buscador global: encuentra cualquier vídeo y abre su ventana */}
             <GlobalSearch videos={videos} formats={formats} onOpen={setEditing} secciones={tabs} onIr={setView}/>
 

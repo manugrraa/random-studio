@@ -124,6 +124,8 @@ export function iniciarRemotoEscritorio(t) {
       ajustes: aj.ajustes,
       ideas: (id.ideas || []).filter(i => i.estado !== "descartada").slice(0, 30).map(i => ({ id: i.id, titulo: i.titulo, regla: i.regla, resumen: i.resumen, estado: i.estado, temporada: i.temporada, historia: i.historia })),
       generandoIdeas: !!id.generando,
+      // v3.40.6: el uso de Claude de este equipo (lo ve el móvil en su marcador); se lee como mucho cada 10 min
+      claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,
     };
     await remotoApi("POST", { accion: "publicar", datos }).catch(() => {});
   };

@@ -123,3 +123,6 @@
   textarea { resize: none; }
   .no-scrollbar::-webkit-scrollbar { display: none; }
   kbd { background: var(--card); border:1px solid var(--border); border-radius:5px; padding:1px 6px; font-size:11px; font-family:inherit; color:var(--text-2);}
+
+/* v3.40.6: el marcador de Claude de la barra superior se esconde si la ventana es estrecha */
+@media (max-width: 860px) { .uso-claude-cab { display: none; } }

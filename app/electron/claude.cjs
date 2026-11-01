@@ -141,4 +141,40 @@ function limiteDe(texto) {
   return ahora + 30 * 60000;
 }
 
-module.exports = { exeClaude, generar, MODELO, entornoClaude, comprobar, estadoClaude: () => estado, limiteDe };
+/* v3.40.6: cuánto llevas gastado del plan de Claude (la ventana de 5 h y la semana), para pedir más o menos historias.
+ * 1) /api/oauth/usage, si el permiso lo deja (el de la sesión normal de Claude Code); 2) si no, las cabeceras de una
+ * consulta mínima a Haiku (el permiso de larga duración solo deja hacer consultas). Se recuerda 10 min. */
+let uso = { ok: null, cuando: 0 };
+function tokenCli() {
+  try {
+    const o = JSON.parse(fs.readFileSync(path.join(process.env.USERPROFILE || "", ".claude", ".credentials.json"), "utf8")).claudeAiOauth || {};
+    return o.accessToken && o.expiresAt > Date.now() ? o.accessToken : "";
+  } catch (e) { return ""; }
+}
+const ventana = (pct, reinicio) => (pct == null || isNaN(pct) ? null : { pct: Math.max(0, Math.min(100, Math.round(pct))), reinicio: reinicio || 0 });
+async function leerUso(forzar) {
+  if (!forzar && uso.cuando && Date.now() - uso.cuando < 10 * 60000) return uso;
+  const cabeceras = (t) => ({ Authorization: "Bearer " + t, "anthropic-beta": "oauth-2025-04-20", "anthropic-version": "2023-06-01", "content-type": "application/json" });
+  const cli = tokenCli(), largo = tokenClaude();
+  try {
+    if (cli) {
+      const r = await fetch("https://api.anthropic.com/api/oauth/usage", { headers: cabeceras(cli) });
+      if (r.ok) {
+        const j = await r.json(), w = (x) => x && ventana(Number(x.utilization), x.resets_at ? Date.parse(x.resets_at) : 0);
+        return (uso = { ok: true, cuando: Date.now(), cinco: w(j.five_hour), semana: w(j.seven_day) });
+      }
+    }
+    const t = largo || cli;
+    if (!t) return (uso = { ok: false, cuando: Date.now(), error: "Sin permiso de Claude en este equipo" });
+    const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: cabeceras(t),
+      body: JSON.stringify({ model: "claude-haiku-5-5", max_tokens: 1, system: "You are Claude Code, Anthropic's official CLI for Claude.", messages: [{ role: "user", content: "ok" }] }) });
+    const h = (k) => r.headers.get("anthropic-ratelimit-unified-" + k);
+    const v = (k) => { const x = h(k + "-utilization"); return x == null ? null : ventana(Number(x) * 100, Number(h(k + "-reset")) * 1000); };
+    const cinco = v("5h"), semana = v("7d");
+    if (!cinco && !semana) return (uso = { ok: false, cuando: Date.now(), error: "Claude no dijo el uso (" + r.status + ")" });
+    return (uso = { ok: true, cuando: Date.now(), cinco, semana, estado: h("status") || "" });
+  } catch (e) { return (uso = { ok: false, cuando: Date.now(), error: e.message || String(e) }); }
+}
+ipcMain.handle("claude-uso", async (e, forzar) => leerUso(!!forzar));
+
+module.exports = { exeClaude, generar, MODELO, entornoClaude, comprobar, estadoClaude: () => estado, limiteDe, leerUso };

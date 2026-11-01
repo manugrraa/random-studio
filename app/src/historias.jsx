@@ -5,6 +5,7 @@ import { borrarHistoria, pedidosApi, remotoApi } from "./remoto";
 import { BotonDisponible, BotonPararTodo, ColaTrabajo, NuevaPeticion } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 import { esAdmin, useRolEquipo } from "./admin";
+import { UsoClaude, usoDeEquipos } from "./uso_claude";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
  * Todo el proceso de RandomHistorias dentro del Studio, con una «carpeta» por historia:
@@ -782,6 +783,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
       <style>{CSS}</style>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         {!incrustado && <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 22 }}>Random<span className="gold-text">Historias</span></div>}
+        {!incrustado && usoDeEquipos(equipos) && <UsoClaude uso={usoDeEquipos(equipos)} />}
         <span style={{ flex: 1 }} />
         <div style={{ display: "flex", gap: 4 }}>
           {[["historias", "📚 Historias"], ["ideas", "💡 Ideas"], ["equipos", "🖥️ Equipos"]].map(([k, t]) => <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>)}
