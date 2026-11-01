@@ -8,6 +8,7 @@ import { HistoriasView } from "./historias";
 import { useModulosOff } from "./modulos";
 import { AdminView, esAdmin, useRolEquipo, useSolicitudesPendientes } from "./admin";
 import { iniciarRemotoEscritorio } from "./remoto";
+import { AvisoActualizacion } from "./actualizar";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { BarraLateral } from "./navegacion";
@@ -1059,6 +1060,7 @@ export function App() {
     <div className="app-shell" style={{display:"flex",minHeight:"100vh",background:"radial-gradient(1200px 600px at 80% -10%, rgba(212,175,55,0.06), transparent), var(--bg)"}}>
       <BarraLateral tabs={tabs} view={view} setView={setView} plegada={plegada} setPlegada={setPlegada}/>
       <div className="app-col" style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
+      <AvisoActualizacion/>
       {/* HEADER */}
       <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(12px)",background:"var(--header-bg)"}}>
         <div className="app-header" style={{maxWidth:1500,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>

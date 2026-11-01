@@ -2,6 +2,7 @@ import React from "react";
 const { useState, useEffect, useCallback, useRef } = React;
 import { YT_BACKEND, cloudToken, fireNotification } from "./datos";
 import { estadoEquipo, idEquipo, seguridadApi } from "./seguridad";
+import { PublicarVersion } from "./actualizar";
 
 /* ============================ ADMINISTRACIÓN (v3.30) ============================
  * Solo para el portátil (rol «dueno») y los equipos a los que el portátil dé ese poder («admin»).
@@ -241,6 +242,8 @@ export function AdminView({ toast }) {
               <button key={p.id} className="adm-chip" style={{ marginLeft: 6, color: "var(--text-2)" }} onClick={() => accion({ accion: "perfil", id: p.id, estado: "aprobado" }, p.nombre + " vuelve a estar activa")}>↺ {p.nombre}</button>))}
           </div>)}
       </Seccion>
+
+      {soyDueno && <PublicarVersion toast={toast} />}
 
       <Seccion ref={refs.ip} titulo={"IPs bloqueadas" + (ipsActivas.length ? " · " + ipsActivas.length : "")} extra={
         <span style={{ display: "flex", gap: 6 }}>
