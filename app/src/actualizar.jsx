@@ -23,6 +23,18 @@ export async function actualizacionApi(metodo, cuerpo) {
   return j;
 }
 
+/** v3.34.1: el portátil publica su versión NADA MÁS ABRIRSE (también en la pantalla de cuentas, sin entrar en ningún perfil):
+ * así cada versión nueva llega al ordenador aunque se instale con la app cerrada. En los demás equipos no hace nada. */
+let _publicando = false;
+export async function publicarSiToca() {
+  if (_publicando || !SF() || !SF().actInfo) return;
+  _publicando = true;
+  try {
+    const [v, yo] = await Promise.all([actualizacionApi("GET"), SF().actInfo()]);
+    if (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version))) await publicarVersion(yo, "");
+  } catch (e) {} finally { _publicando = false; }
+}
+
 /** Aviso arriba en la app cuando hay una versión más nueva publicada por el portátil. */
 export function AvisoActualizacion() {
   const [nueva, setNueva] = useState(null);

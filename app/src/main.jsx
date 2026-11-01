@@ -4,6 +4,7 @@ import "./styles.css";
 import { App } from "./Principal";
 import { EditorApp } from "./editor/EditorApp";
 import { PantallaBloqueo, PantallaPerfiles, comprobarAcceso, entrarEnPerfil } from "./perfiles";
+import { publicarSiToca } from "./actualizar";
 
 // v3.14: la misma página sirve a las dos ventanas; la del RandomEditor se abre con #editor
 // v3.21: antes de la app, la pantalla para elegir perfil (canal)
@@ -21,6 +22,7 @@ function Inicio() {
   const [estado, setEstado] = React.useState(null);     // null = comprobando
   const [perfil, setPerfil] = React.useState("");
   React.useEffect(() => {
+    if (window.studioFS) setTimeout(publicarSiToca, 4000);   // el portátil deja su versión publicada para los demás equipos
     comprobarAcceso().then(r => {
       const auto = r.auto || (vueltaGoogle && (r.lista || []).find(p => p.activo && p.id === localStorage.getItem("rs_perfil")) || {}).id;
       if (!r.bloqueado && auto && !codigoEntrar) entrarEnPerfil(auto).then(() => { setPerfil(auto); setEstado(r); });
