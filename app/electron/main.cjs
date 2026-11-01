@@ -616,8 +616,9 @@ function createWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      // en las capturas de prueba la ventana suele quedar detrás: sin esto no se repinta y la foto sale vieja
-      backgroundThrottling: !process.env.STUDIO_CAPTURA
+      // sin freno: minimizada o con la pantalla bloqueada sigue recogiendo pedidos y órdenes al momento
+      // (con él, Chromium la dejaba en una vuelta por minuto); y en las capturas de prueba se repinta aunque esté detrás
+      backgroundThrottling: false
     }
   });
   if (process.env.STUDIO_CAPTURA) { aPortatil(mainWindow); mainWindow.showInactive(); }
