@@ -46,7 +46,7 @@ Write-Host ""
 Write-Host "Listo. Abre RandomStudio desde el escritorio, inicia sesión con Google y apruébalo desde el portátil." -ForegroundColor Green
 Write-Host "Cada Short que haga este equipo irá a tu Drive y se borrará de aquí." -ForegroundColor Green
 # Claude Code (el de la línea de comandos: la app de escritorio sola no basta para que RandomStudio trabaje aquí)
-if (-not (Get-Command claude -ErrorAction SilentlyContinue) -and -not (Test-Path "$env:USERPROFILE\.localin\claude.exe")) {
+if (-not (Get-Command claude -ErrorAction SilentlyContinue) -and -not (Test-Path "$env:USERPROFILE\.local\bin\claude.exe")) {
   Paso "Instalando Claude Code"
   try { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression } catch { Write-Host "No se pudo instalar Claude Code: $_" -ForegroundColor Red }
   Write-Host "Ahora abre una ventana nueva de PowerShell, escribe  claude  y entra con tu cuenta de Claude (la del plan Max)." -ForegroundColor Yellow
