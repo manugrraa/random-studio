@@ -135,6 +135,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   brutosEstado: () => ipcRenderer.invoke("brutos-estado"),
   brutosCambiar: (cambio) => ipcRenderer.invoke("brutos-cambiar", cambio),
   brutosDriveSubir: (id, token, perfil) => ipcRenderer.invoke("brutos-drive-subir", id, token, perfil),
+  brutosDriveCarpeta: (token, perfil) => ipcRenderer.invoke("brutos-drive-carpeta", token, perfil),
   onBrutosProgreso: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on("brutos-progreso", h); return () => ipcRenderer.removeListener("brutos-progreso", h); },
   // RandomHistorias dentro de Studio (v3.21): estado, cadena con progreso y miniatura
   historiasLista: () => ipcRenderer.invoke("historias-lista"),

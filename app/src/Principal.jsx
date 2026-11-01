@@ -16,7 +16,7 @@ import { ConfigView, GlobalSearch } from "./ajustes";
 import { BarraLateral } from "./navegacion";
 import { abrirEnEditor } from "./random_editor";
 import { APP_VERSION, DEFAULT_FORMATS, Icons, SEED, STATUSES, clone, dnd, makeVideo, setIdBase, uid, useToast } from "./base";
-import { DEFAULT_TASK_LISTS, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudFecha, cloudLoad, cloudSave, cloudSaveUrgente, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
+import { DEFAULT_TASK_LISTS, StatStrip, bumpIdFrom, clasificarFormato, clearStore, cloudFecha, cloudLoad, cloudSave, cloudSaveUrgente, completarChecklist, ensureAuth, esFormatosV2, fireNotification, getClient, getSyncCode, loadStore, mergeById, mergeDailyArchive, mergeTaskLists, migrarFormatosV2, normalizarDatos, pruneTombs, registerNotifSW, saveStore, storeSyncCode, ytCaptureAuthFromHash, ytCheckVideos, driveConectado, driveConectar, ytExchangeCode, ytIsConnected, ytPostComment, ytSilentRefresh, ytStartAuth, ytTokenValid, ytUpdateSchedule } from "./datos";
 import { ConfirmDialog, SyncModal } from "./dialogos";
 import { CalendarView, FormatsModal, KanbanView } from "./planificacion";
 import { TasksView, dailyDayKey, weekKey } from "./tareas";
@@ -80,6 +80,8 @@ export function App() {
   const [search, setSearch] = useState("");
   const [confirm, setConfirm] = useState(null); // {title, message, confirmLabel, danger, onConfirm}
   const [syncStatus, setSyncStatus] = useState("connecting"); // connecting | online | offline | saving
+  const [driveLocal, setDriveLocal] = useState(() => driveConectado());
+  useEffect(()=>{ const h = ()=>setDriveLocal(driveConectado()); window.addEventListener("rs_drive", h); return ()=>window.removeEventListener("rs_drive", h); },[]);
   const syncStatusRef = useRef("connecting");
   useEffect(()=>{ syncStatusRef.current = syncStatus; },[syncStatus]);
   const [showSync, setShowSync] = useState(false);
@@ -1151,8 +1153,19 @@ export function App() {
         </div>
       </header>
 
+      {/* v3.40.2: un perfil local no tiene canal ni nube: su único enlace con Google es el Drive donde suben los vídeos
+          terminados (solo ese permiso; pedirle el de YouTube lo bloqueaba Google) */}
+      {esLocal(perfilDeAhora()) && !driveLocal && (
+        <div className="fade-in" style={{background:"rgba(212,175,55,0.07)",borderBottom:"1px solid rgba(212,175,55,0.25)",padding:"9px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:9,flexWrap:"wrap"}}>
+          <span style={{fontSize:12.5,color:"var(--gold)",fontWeight:600}}>Drive sin conectar</span>
+          <span style={{fontSize:12,color:"var(--text-2)"}}>Conecta la cuenta de Google donde quieres los vídeos terminados: se suben solos y compartes la carpeta con tus compañeros.</span>
+          <button onClick={async()=>{ try { await driveConectar({ elegirCuenta: true }); toast("Drive conectado: los vídeos terminados se subirán solos"); } catch(e){ toast(e.message); } }}
+            style={{fontSize:12,fontWeight:700,color:"var(--gold)",border:"1px solid rgba(212,175,55,0.45)",borderRadius:8,padding:"4px 11px"}}>Conectar Drive</button>
+        </div>
+      )}
+
       {/* AVISO DE MODO SIN CONEXIÓN */}
-      {syncStatus==="offline" && (
+      {syncStatus==="offline" && !esLocal(perfilDeAhora()) && (
         <div className="fade-in" style={{background:"rgba(248,113,113,0.08)",borderBottom:"1px solid rgba(248,113,113,0.25)",padding:"9px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:9,flexWrap:"wrap"}}>
           {/* v3: la nube exige la sesión de Google del canal */}
           <span style={{fontSize:12.5,color:"var(--red)",fontWeight:600}}>{ytIsConnected() ? "Sin conexión" : "Nube sin conectar"}</span>

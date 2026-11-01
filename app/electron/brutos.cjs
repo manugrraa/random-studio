@@ -114,4 +114,10 @@ ipcMain.handle("brutos-drive-subir", async (e, id, token, perfilNombre) => {
   } catch (x) { return { error: x.message || String(x) }; }
 });
 
+// v3.40.2: la carpeta del perfil en Drive (RandomStudio/<perfil>), para abrirla y compartirla con los compañeros
+ipcMain.handle("brutos-drive-carpeta", async (e, token, perfilNombre) => {
+  try { return { ok: true, url: "https://drive.google.com/drive/folders/" + (await drive.rutaCarpetas(token, ["RandomStudio", perfilNombre || "Perfil"])) }; }
+  catch (x) { return { error: x.message || String(x) }; }
+});
+
 module.exports = { locales };

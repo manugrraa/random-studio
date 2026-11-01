@@ -1,6 +1,6 @@
 import React from "react";
 import { PanelTarea, SelectorModelo, useTarea, boton } from "./clon";
-import { driveConectado, driveConectar, driveToken } from "./datos";
+import { driveConectado, driveConectar, driveCorreo, driveToken } from "./datos";
 import { PERFILES, perfilActual } from "./perfiles";
 const { useState, useEffect, useMemo, useRef } = React;
 
@@ -32,6 +32,7 @@ export function BrutosView({ toast }) {
   const [viendo, setViendo] = useState(null);             // bruto que se está viendo
   const [cargando, setCargando] = useState(false);
   const [drive, setDrive] = useState(() => driveConectado());
+  const [correo, setCorreo] = useState(() => driveCorreo());
   const [subiendo, setSubiendo] = useState(null);         // { id, fraccion }
   const perfil = (PERFILES.find(p => p.id === perfilActual()) || {}).nombre || "Perfil";
 
@@ -48,9 +49,22 @@ export function BrutosView({ toast }) {
     setCargando(false);
   };
   useEffect(() => { if (!enPC) return; leerEstado(); listar(); }, []);
+  useEffect(() => { const h = () => { setDrive(driveConectado()); setCorreo(driveCorreo()); }; window.addEventListener("rs_drive", h); return () => window.removeEventListener("rs_drive", h); }, []);
   useEffect(() => { try { localStorage.setItem("rds_brutos_plegados", JSON.stringify([...plegados])); } catch (e) {} }, [plegados]);
   useEffect(() => window.studioFS && window.studioFS.onBrutosProgreso ? window.studioFS.onBrutosProgreso(d => setSubiendo(d)) : undefined, []);
 
+  // v3.40.2: el perfil local elige la cuenta de Google cuyo Drive usa (solo permiso de Drive, nada de YouTube)
+  const conectarDrive = async () => {
+    try { await driveConectar({ elegirCuenta: true }); toast("Drive conectado: los vídeos terminados se subirán solos"); }
+    catch (e) { toast(e.message); }
+  };
+  const carpetaDrive = async () => {
+    try {
+      const r = await window.studioFS.brutosDriveCarpeta(await driveToken(), perfil);
+      if (r.error) throw new Error(r.error);
+      window.open(r.url, "_blank");
+    } catch (e) { toast(e.message); }
+  };
   const subirDrive = async (id, aviso) => {
     try {
       setSubiendo({ id, fraccion: 0 });
@@ -122,8 +136,13 @@ export function BrutosView({ toast }) {
         <button onClick={listar} disabled={cargando} style={boton(false)}>{cargando ? "Buscando…" : "Actualizar"}</button>
         <button onClick={() => raiz && window.studioFS.clonAbrir(raiz)} style={boton(false)}>Abrir carpeta</button>
         {drive
-          ? <span title="Los vídeos montados se suben solos a Drive (RandomStudio/<perfil>/<mes>)" style={{ fontSize: 12, color: "#4ade80", fontWeight: 700 }}>● Drive conectado</span>
-          : <button onClick={async () => { try { await driveConectar(); setDrive(true); toast("Drive conectado: los vídeos se subirán solos"); } catch (e) { toast(e.message); } }} style={boton(false)}>Conectar Drive</button>}
+          ? <>
+              <span title={`Los vídeos montados se suben solos a Drive (RandomStudio/${perfil}/<mes>)`} style={{ fontSize: 12, color: "#4ade80", fontWeight: 700 }}>
+                ● Drive{correo ? " · " + correo : " conectado"}</span>
+              <button onClick={carpetaDrive} title="Ábrela en Drive y compártela con tus compañeros: ahí aparece cada vídeo terminado" style={boton(false)}>Carpeta en Drive</button>
+              <button onClick={conectarDrive} title="Conectar otra cuenta de Google" style={{ ...boton(false), padding: "6px 9px" }}>Cambiar</button>
+            </>
+          : <button onClick={conectarDrive} title="Solo pide permiso para Drive: los vídeos terminados se suben solos a RandomStudio/<perfil>" style={boton(false)}>Conectar Drive</button>}
       </div>
 
       {tarea && tarea.args[0] === "brutosmontar" && <PanelTarea tarea={tarea} onCerrar={cerrarTarea} />}

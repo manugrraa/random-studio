@@ -236,20 +236,28 @@ export async function ytExchangeCode(code){
 export const DRIVE_TOKEN_KEY = "rds_drive_tokens";
 const driveTok = () => { try { return JSON.parse(localStorage.getItem(DRIVE_TOKEN_KEY) || "null"); } catch(e){ return null; } };
 export function driveConectado(){ const t = driveTok(); return !!(t && t.refresh_token); }
-export async function driveConectar(){
+// v3.40.2: con { elegirCuenta } deja escoger la cuenta (los perfiles locales suben al Drive que quieran) y apunta su correo
+export async function driveConectar(opts = {}){
   if(!(window.studioFS && window.studioFS.oauth)) throw new Error("Drive se conecta desde RandomStudio de escritorio");
   const params = new URLSearchParams({
     client_id: YT_CLIENT_ID, redirect_uri: YT_REDIRECT, response_type: "code", access_type: "offline",
-    scope: "https://www.googleapis.com/auth/drive.file", include_granted_scopes: "false", prompt: "consent", state: "rs_drive"
+    scope: "https://www.googleapis.com/auth/drive.file", include_granted_scopes: "false",
+    prompt: opts.elegirCuenta ? "select_account consent" : "consent", state: "rs_drive"
   });
   const ret = String(await window.studioFS.oauth("https://accounts.google.com/o/oauth2/v2/auth?" + params.toString(), YT_REDIRECT, {}) || "");
   const code = new URLSearchParams(ret.replace(/^[?#]/,"")).get("code");
   if(!code) throw new Error("No se completó la conexión con Drive");
   const t = await ytCanjear(code);
   if(!t || !t.access_token) throw new Error("Google no dio acceso a Drive");
+  try {
+    const j = await (await fetch("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)", { headers: { Authorization: "Bearer " + t.access_token } })).json();
+    if(j && j.user && j.user.emailAddress) t.email = j.user.emailAddress;
+  } catch(e){}
   try { localStorage.setItem(DRIVE_TOKEN_KEY, JSON.stringify(t)); } catch(e){}
+  try { window.dispatchEvent(new Event("rs_drive")); } catch(e){}   // quien enseñe el estado de Drive se entera
   return true;
 }
+export function driveCorreo(){ const t = driveTok(); return (t && t.email) || ""; }
 export function driveDesconectar(){ try { localStorage.removeItem(DRIVE_TOKEN_KEY); } catch(e){} }
 export async function driveToken(){
   const t = driveTok();
