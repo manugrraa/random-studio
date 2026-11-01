@@ -4,6 +4,7 @@ import { Icons } from "./base";
 import { borrarHistoria, pedidosApi, remotoApi } from "./remoto";
 import { BotonDisponible, BotonPararTodo, ColaTrabajo, NuevaPeticion } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
+import { esAdmin, useRolEquipo } from "./admin";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
  * Todo el proceso de RandomHistorias dentro del Studio, con una «carpeta» por historia:
@@ -421,6 +422,7 @@ function AjustesEstudio({ toast }) {
 export function HistoriasView({ toast }) {
   const escritorio = !!(SF() && SF().historiasLista && SF().estudioEtapas);
   const [pestana, setPestana] = useState("proyectos");
+  const admin = esAdmin(useRolEquipo());
   const [lista, setLista] = useState(null);
   const [error, setError] = useState("");
   const [selId, setSelId] = useState(null);
@@ -510,7 +512,7 @@ export function HistoriasView({ toast }) {
         <BotonPararTodo toast={toast} />
         <BotonDisponible />
         <div style={{ display: "flex", gap: 4, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: 4 }}>
-          {[["proyectos", "📁 Historias"], ["cola", "📋 Cola"], ["ideas", "💡 Ideas"], ["ajustes", "⚙️ Ajustes"]].map(([k, t]) => (
+          {[...(admin ? [["todo", "🌐 Todos los equipos"]] : []), ["proyectos", "📁 Historias"], ["cola", "📋 Cola"], ["ideas", "💡 Ideas"], ["ajustes", "⚙️ Ajustes"]].map(([k, t]) => (
             <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>))}
         </div>
       </div>
@@ -527,6 +529,8 @@ export function HistoriasView({ toast }) {
           {informe.texto && <div style={{ fontSize: 12.5, color: "var(--text-2)", whiteSpace: "pre-wrap", marginTop: 8, lineHeight: 1.55 }}>{informe.texto}</div>}
         </div>)}
 
+      {/* v3.40.1: el panel unificado del móvil también en los equipos administradores (organizar desde cualquier lado) */}
+      {pestana === "todo" && admin && <HistoriasRemoto toast={toast} incrustado />}
       {pestana === "ideas" && <Ideas toast={toast} onCreada={() => cargar()} />}
       {pestana === "cola" && <ColaTrabajo toast={toast} />}
       {pestana === "ajustes" && <AjustesEstudio toast={toast} />}
@@ -634,7 +638,7 @@ function BarraEtapas({ etapas }) {
     </div>);
 }
 
-export function HistoriasRemoto({ toast }) {
+export function HistoriasRemoto({ toast, incrustado }) {
   const [r, setR] = useState(null);
   const [cola, setCola] = useState(null);
   const [error, setError] = useState("");
@@ -775,7 +779,7 @@ export function HistoriasRemoto({ toast }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900, margin: "0 auto", width: "100%" }}>
       <style>{CSS}</style>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 22 }}>Random<span className="gold-text">Historias</span></div>
+        {!incrustado && <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 22 }}>Random<span className="gold-text">Historias</span></div>}
         <span style={{ flex: 1 }} />
         <div style={{ display: "flex", gap: 4 }}>
           {[["historias", "📚 Historias"], ["ideas", "💡 Ideas"], ["equipos", "🖥️ Equipos"]].map(([k, t]) => <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>)}

@@ -80,6 +80,16 @@ function elegidasDe(id) {
   try { return JSON.parse(fs.readFileSync(path.join(dirPerfil(id), "carpetas_elegidas.json"), "utf8")) || {}; } catch (e) { return {}; }
 }
 function carpetasDe(id = activo) { return resolver(id, elegidasDe(id)); }
+/** v3.40.1: las historias son las mismas en todos los perfiles: su proyecto y sus entregas salen de lo elegido en
+ * RandomHistorias (o en RDeRandom), no del perfil abierto, para que cambiar de perfil no las cambie de carpeta. */
+function carpetasHistorias() {
+  const c = carpetasDe(activo);
+  for (const k of ["historias", "entregas"]) {
+    const id = ["randomhistorias", "rderandom"].find(p => elegidasDe(p)[k]);
+    c[k] = id ? carpetasDe(id)[k] : resolver("rderandom", {})[k];
+  }
+  return c;
+}
 
 // ------------------------------------------------------------------ llamadas
 ipcMain.handle("perfil-poner", async (e, id, info) => {
@@ -143,4 +153,4 @@ ipcMain.handle("carpetas-abrir", async (e, ruta) => {
   return { ok: !err, error: err || null };
 });
 
-module.exports = { PERFILES, perfilActivo, canalDe, dirDatos, carpetasDe, archivoCarpetas, registrarLocal, elegir };
+module.exports = { PERFILES, perfilActivo, canalDe, dirDatos, carpetasDe, carpetasHistorias, archivoCarpetas, registrarLocal, elegir };

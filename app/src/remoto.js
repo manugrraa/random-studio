@@ -7,7 +7,8 @@
  * En la WEB/móvil: remotoApi() lee ese estado y manda órdenes (lo usa la vista de Historias).
  */
 import { APP_VERSION } from "./base";
-import { YT_BACKEND, cloudToken, driveConectado, driveToken } from "./datos";
+import { YT_BACKEND } from "./datos";
+import { driveConectadoTrabajo, driveHistorias, driveTokenTrabajo, tokenTrabajo } from "./sesion_historias";
 import { cabecerasEquipo } from "./seguridad";
 import { PERFILES, perfilActual } from "./perfiles";
 import { avisar } from "./avisos";
@@ -15,7 +16,7 @@ import { avisar } from "./avisos";
 const SF = () => window.studioFS;
 
 export async function remotoApi(metodo, cuerpo) {
-  const token = await cloudToken();
+  const token = await tokenTrabajo();
   const r = await fetch(YT_BACKEND + "/api/remoto", {
     method: metodo,
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, ...(await cabecerasEquipo(metodo, "/api/remoto")) },
@@ -27,6 +28,8 @@ export async function remotoApi(metodo, cuerpo) {
 }
 
 const nombrePerfil = () => (PERFILES.find(p => p.id === perfilActual()) || PERFILES[0] || {}).nombre || "RandomStudio";
+// la carpeta de Drive: la de RandomHistorias si su Drive está conectado en este equipo (v3.40.1)
+const perfilDrive = () => driveHistorias() ? "RandomHistorias" : nombrePerfil();
 
 // ------------------------------------------------------------------ órdenes que entiende el escritorio
 async function ejecutar(o) {
@@ -42,14 +45,19 @@ async function ejecutar(o) {
     // (v3.38.1: ya no hay orden «crear»: toda historia nueva pasa por la cola, que es la que impide repetirlas)
     case "borrar": return borrarHistoria(a.id);
     case "parar_todo": return pararTodo();
-    case "drive_subir": return s.estudioDriveSubir(a.id, await driveToken(), nombrePerfil(), a.que || "short");
+    case "drive_subir": return s.estudioDriveSubir(a.id, await driveTokenTrabajo(), perfilDrive(), a.que || "short");
     case "ajustes": return s.estudioAjustes(a.nuevos || {});
   }
   throw new Error("Orden desconocida");
 }
 
 let _iniciado = false;
-export function iniciarRemotoEscritorio(toast) {
+/* v3.40.1: arrancan al abrir la app (main.jsx), antes de elegir perfil, y siguen igual al cambiar de perfil. Los avisos en
+ * pantalla (toast) llegan cuando la ventana principal se monta y se los pasa. */
+let _toast = null;
+const toast = (m) => { if (_toast) _toast(m); };
+export function iniciarRemotoEscritorio(t) {
+  if (t) _toast = t;
   const s = SF();
   if (_iniciado || !s || !s.historiasLista || !s.estudioEtapas) return;
   _iniciado = true;
@@ -57,12 +65,12 @@ export function iniciarRemotoEscritorio(toast) {
 
   const publicar = async () => {
     if (!navigator.onLine) return;
-    let token; try { token = await cloudToken(); } catch (e) { return; }
+    try { await tokenTrabajo(); } catch (e) { return; }
     const [l0, t, aj, id] = await Promise.all([s.historiasLista(), s.historiasTareaEstado(), s.estudioAjustes(), s.estudioIdeas()]);
     // sin el proyecto de historias (p. ej. el ordenador antes de prepararlo) se publica igual: así se ve que está encendido
     const l = l0 && l0.ok ? l0 : { ok: true, historias: [] };
     // Drive: el Short entregado (si está activado) y lo que espera revisión de voces o animatic, de uno en uno
-    if (!subiendo && driveConectado()) {
+    if (!subiendo && driveConectadoTrabajo()) {
       const lista = aj.ajustes.driveAuto && l.historias.find(h => !h.legado && h.entregada && !h.drive);
       const pend = lista ? { h: lista, que: "short" } : null;
       const rev = !pend && l.historias.map(h => ({ h, e: (h.etapas || []).find(x => x.estado === "revisar" && (x.id === "voces" || x.id === "animatic")) }))
@@ -70,7 +78,7 @@ export function iniciarRemotoEscritorio(toast) {
       const tarea = pend || (rev && { h: rev.h, que: rev.e.id });
       if (tarea) {
         subiendo = true;
-        driveToken().then(dt => s.estudioDriveSubir(tarea.h.id, dt, nombrePerfil(), tarea.que))
+        driveTokenTrabajo().then(dt => s.estudioDriveSubir(tarea.h.id, dt, perfilDrive(), tarea.que))
           .then(r => { if (r.ok && tarea.que === "short" && toast) toast("☁️ «" + tarea.h.titulo + "» ya está en tu Drive"); })
           .catch(() => {}).finally(() => { subiendo = false; });
       }
@@ -157,7 +165,7 @@ export async function ordenA(para, que, args) { return remotoApi("POST", { accio
 
 // ------------------------------------------------------------------ cola compartida (v3.33): /api/pedidos
 export async function pedidosApi(metodo, cuerpo) {
-  const token = await cloudToken();
+  const token = await tokenTrabajo();
   const r = await fetch(YT_BACKEND + "/api/pedidos", {
     method: metodo,
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, ...(await cabecerasEquipo(metodo, "/api/pedidos")) },
@@ -198,7 +206,8 @@ const mios = () => { try { return JSON.parse(localStorage.getItem(K_MIOS) || "{}
 const guardarMios = (m) => { try { localStorage.setItem(K_MIOS, JSON.stringify(m)); } catch (e) {} };
 
 let _trabajador = false;
-export function iniciarTrabajador(toast) {
+export function iniciarTrabajador(t) {
+  if (t) _toast = t;
   const s = SF();
   if (_trabajador || !s || !s.estudioCrear) return;
   _trabajador = true;

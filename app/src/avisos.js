@@ -3,11 +3,12 @@
  *   el servidor (/api/avisos). En iPhone solo funciona con RandomStudio añadido a la pantalla de inicio.
  * - Escritorio: avisar() lo usan los equipos de trabajo cuando una historia espera revisión, termina o falla.
  */
-import { YT_BACKEND, cloudToken } from "./datos";
+import { YT_BACKEND } from "./datos";
+import { tokenTrabajo } from "./sesion_historias";
 import { cabecerasEquipo } from "./seguridad";
 
 async function api(cuerpo) {
-  const token = await cloudToken();
+  const token = await tokenTrabajo();
   const r = await fetch(YT_BACKEND + "/api/avisos", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, ...(await cabecerasEquipo("POST", "/api/avisos")) },

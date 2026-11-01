@@ -5,6 +5,7 @@ import { App } from "./Principal";
 import { EditorApp } from "./editor/EditorApp";
 import { PantallaBloqueo, PantallaPerfiles, comprobarAcceso, entrarEnPerfil } from "./perfiles";
 import { AvisoActualizacion, publicarSiToca } from "./actualizar";
+import { iniciarRemotoEscritorio, iniciarTrabajador } from "./remoto";
 
 // v3.14: la misma página sirve a las dos ventanas; la del RandomEditor se abre con #editor
 // v3.21: antes de la app, la pantalla para elegir perfil (canal)
@@ -24,6 +25,9 @@ function Inicio() {
   React.useEffect(() => {
     if (window.studioFS) setTimeout(publicarSiToca, 4000);   // el portátil deja su versión publicada para los demás equipos
     comprobarAcceso().then(r => {
+      // v3.40.1: las historias siguen en marcha en cualquier perfil (y en esta pantalla): el escritorio publica su estado,
+      // recoge órdenes y coge pedidos desde que se abre, con la sesión de RandomHistorias
+      if (!r.bloqueado && window.studioFS && !esEditor) { iniciarRemotoEscritorio(); iniciarTrabajador(); }
       const auto = r.auto || (vueltaGoogle && (r.lista || []).find(p => p.activo && p.id === localStorage.getItem("rs_perfil")) || {}).id;
       if (!r.bloqueado && auto && !codigoEntrar) entrarEnPerfil(auto).then(() => { setPerfil(auto); setEstado(r); });
       else setEstado(r);

@@ -50,6 +50,16 @@ export function perfilActual() { return _sesion; }
 const GLOBALES = /^(rs_perfil|rs_disp_id|rds_theme|rds_barra_plegada|red_)/;
 const clavePerfil = (id, key) => id === "rderandom" ? key : "perfil:" + id + ":" + key;
 let _almacen = false;
+// v3.40.1: los originales, guardados antes de separar el almacén, para leer lo de OTRO perfil (las historias usan siempre
+// la sesión de RandomHistorias, estés en el perfil que estés)
+const _proto = typeof Storage !== "undefined" ? Storage.prototype : null;
+const _crudo = _proto ? { get: _proto.getItem, set: _proto.setItem } : null;
+export function almacenDe(id) {
+  return {
+    get: (key) => { try { return _crudo.get.call(window.localStorage, clavePerfil(id, key)); } catch (e) { return null; } },
+    set: (key, v) => { try { _crudo.set.call(window.localStorage, clavePerfil(id, key), v); } catch (e) {} },
+  };
+}
 function separarAlmacen(id) {
   if (_almacen || id === "rderandom") return;
   _almacen = true;

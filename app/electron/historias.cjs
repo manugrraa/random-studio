@@ -14,7 +14,7 @@ const fs = require("fs");
 const path = require("path");
 
 // v3.26: el proyecto y la carpeta de entregas salen de Ajustes → Carpetas del perfil (carpetas.cjs)
-const carpetas = () => require("./carpetas.cjs").carpetasDe();
+const carpetas = () => require("./carpetas.cjs").carpetasHistorias();
 const raiz = () => process.env.RANDOMHISTORIAS_DIR || carpetas().historias;
 const histDir = () => path.join(raiz(), "historias");
 const listasDir = () => carpetas().entregas;
