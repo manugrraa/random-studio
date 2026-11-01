@@ -106,6 +106,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   actInfo: () => ipcRenderer.invoke("act-info"),
   actSubir: (url) => ipcRenderer.invoke("act-subir", url),
   actInstalar: (url, sha) => ipcRenderer.invoke("act-instalar", url, sha),
+  actLocal: () => ipcRenderer.invoke("act-local"),
+  actLocalAplicar: () => ipcRenderer.invoke("act-local-aplicar"),
   carpetasLeer: (id) => ipcRenderer.invoke("carpetas-leer", id),
   carpetasGuardar: (id, clave, ruta) => ipcRenderer.invoke("carpetas-guardar", id, clave, ruta),
   carpetasElegir: (actual) => ipcRenderer.invoke("carpetas-elegir", actual),
@@ -115,7 +117,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   historiasDetalle: (id) => ipcRenderer.invoke("historias-detalle", id),
   historiasTarea: (id, args) => ipcRenderer.invoke("historias-tarea", id, args),
   historiasTareaEstado: () => ipcRenderer.invoke("historias-tarea-estado"),
-  historiasCancelar: () => ipcRenderer.invoke("historias-cancelar"),
+  historiasCancelar: (soloId) => ipcRenderer.invoke("historias-cancelar", soloId),
   historiasMiniatura: (id, plano, t) => ipcRenderer.invoke("historias-miniatura", id, plano, t),
   historiasAbrir: (id, que) => ipcRenderer.invoke("historias-abrir", id, que),
   // contador de suscriptores para OBS (v3.23, contador.cjs)

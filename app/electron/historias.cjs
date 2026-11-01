@@ -177,7 +177,9 @@ ipcMain.handle("historias-tarea-estado", async (e) => {
     render: tarea.render, accion: tarea.accion, acciones: (tarea.acciones || []).slice(-30), lineas: tarea.lineas.slice(-60) };
 });
 
-ipcMain.handle("historias-cancelar", async () => {
+ipcMain.handle("historias-cancelar", async (e, soloId) => {
+  // soloId: cancelar solo si lo que está en marcha es esa historia (lo pide la cola compartida); y sacarla de la cola local
+  if (soloId) { const i = cola.indexOf(soloId); if (i >= 0) cola.splice(i, 1); if (!tarea || tarea.id !== soloId) return { ok: true }; }
   if (tarea) tarea.alTerminar = null;            // cancelar también para el avance automático
   if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
   return { ok: true };
@@ -428,7 +430,7 @@ ipcMain.handle("estudio-idea-poner", async (e, ideaId, cambios) => {
   const ideas = leerIdeas(), i = ideas.findIndex(x => x.id === ideaId);
   if (i < 0) throw new Error("idea no encontrada");
   const permitido = {};
-  if (["nueva", "guardada", "descartada"].includes(cambios && cambios.estado)) permitido.estado = cambios.estado;
+  if (["nueva", "guardada", "descartada", "en_cola"].includes(cambios && cambios.estado)) permitido.estado = cambios.estado;
   if (cambios && typeof cambios.nota === "string") permitido.nota = cambios.nota.slice(0, 2000);
   ideas[i] = { ...ideas[i], ...permitido };
   escribirJson(ideasArchivo(), ideas);

@@ -5,9 +5,9 @@ import { RankingView } from "./ranking";
 import { DirectosView, ClipsView } from "./clon";
 import { ConvertidorView } from "./convertidor";
 import { HistoriasView } from "./historias";
-import { useModulosOff } from "./modulos";
+import { ordenarTabs, useModulosOff, useOrdenModulos } from "./modulos";
 import { AdminView, esAdmin, useRolEquipo, useSolicitudesPendientes } from "./admin";
-import { iniciarRemotoEscritorio } from "./remoto";
+import { iniciarRemotoEscritorio, iniciarTrabajador } from "./remoto";
 import { AvisoActualizacion } from "./actualizar";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
@@ -144,7 +144,7 @@ export function App() {
   const [syncCode, setSyncCodeState] = useState(()=>getSyncCode());
   const [toast, toastNode] = useToast();
   // v3.30: el escritorio publica cómo va y atiende las órdenes del móvil (y sube los Shorts a Drive)
-  useEffect(()=>{ iniciarRemotoEscritorio(toast); },[]);
+  useEffect(()=>{ iniciarRemotoEscritorio(toast); iniciarTrabajador(toast); },[]);
   useSesionChat(toast);   // v3.8.2: la sesión de YouTube llega al RandomChat esté donde esté
 
   const lastSyncedRef = useRef(null); // huella de los últimos datos sincronizados (para ignorar ecos)
@@ -768,10 +768,11 @@ export function App() {
   };
 
   const modulosOff = useModulosOff();
+  const ordenMods = useOrdenModulos();
   // v3.30: el panel de administración solo sale en el portátil y en los equipos a los que dé ese poder
   const rolEquipo = useRolEquipo();
   const solicitudes = useSolicitudesPendientes(esAdmin(rolEquipo));
-  const todasTabs = [
+  const todasTabsBase = [
     {id:"calendar", label:"Calendario", icon:Icons.calendar, primary:true, grupo:"plan"},
     {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban, primary:true, grupo:"plan"},
     {id:"tasks", label:"Tareas", icon:Icons.tasks, grupo:"plan", badge: taskLists.reduce((a,l)=>{
@@ -796,6 +797,8 @@ export function App() {
     {id:"config", label:"Configuración", icon:Icons.gear, grupo:"abajo"},
     {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length, grupo:"abajo"},
   ];
+  // v3.33: y su orden (arrastrando en Configuración → Apartados)
+  const todasTabs = ordenarTabs(todasTabsBase, ordenMods);
   // v3.29: cada perfil elige sus apartados (Ajustes → Apartados); por defecto, todos
   const tabs = todasTabs.filter(t=>t.grupo==="abajo" || !modulosOff.has(t.id));
   useEffect(()=>{ if(modulosOff.has(view)) setView0((tabs[0]||{}).id || "config"); },[modulosOff, view]);

@@ -34,7 +34,7 @@ async function ejecutar(o) {
     case "revisar": return s.estudioRevisar(a.id, a.etapa, !!a.ok, String(a.nota || ""));
     case "rehacer": return s.estudioRehacer(a.id, a.etapa, String(a.nota || ""));
     case "nota": return s.estudioNotaFinal(a.id, String(a.texto || ""));
-    case "cancelar": return s.historiasCancelar();
+    case "cancelar": return s.historiasCancelar(a.historia || undefined);
     case "ideas_generar": return s.estudioIdeasGenerar(Number(a.n) || 5, String(a.pista || ""));
     case "idea_poner": return s.estudioIdeaPoner(a.id, { estado: a.estado });
     case "crear": return s.estudioCrear(a.id, { nn: Number.isInteger(a.nn) ? a.nn : undefined, idea: a.idea });
@@ -80,7 +80,7 @@ export function iniciarRemotoEscritorio(toast) {
       historias.push(x);
     }
     const datos = {
-      tipo: "escritorio", ts: Date.now(), historias,
+      tipo: "escritorio", ts: Date.now(), historias, disponible: _disponible,
       capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, blender: !!aj.blender, eleven: !!aj.eleven },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
       tarea: t && t.activa ? { id: t.id, tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
@@ -125,3 +125,107 @@ export function numeroSiguiente(todos, locales) {
   return (ns.length ? Math.max(...ns) : 0) + 1;
 }
 export async function ordenA(para, que, args) { return remotoApi("POST", { accion: "orden", para, que, args }); }
+
+// ------------------------------------------------------------------ cola compartida (v3.33): /api/pedidos
+export async function pedidosApi(metodo, cuerpo) {
+  const token = await cloudToken();
+  const r = await fetch(YT_BACKEND + "/api/pedidos", {
+    method: metodo,
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, ...(await cabecerasEquipo(metodo, "/api/pedidos")) },
+    body: metodo === "GET" ? undefined : JSON.stringify(cuerpo || {}),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
+  return j;
+}
+
+/* Disponible para trabajar: al abrir RandomStudio siempre empieza en «disponible»; el botón lo cambia hasta cerrar. */
+let _disponible = true;
+const _oyentes = new Set();
+export const disponible = () => _disponible;
+export function ponerDisponible(v) { _disponible = !!v; _oyentes.forEach(f => f(_disponible)); }
+export function alCambiarDisponible(f) { _oyentes.add(f); return () => _oyentes.delete(f); }
+
+/* El trabajador: si este escritorio está disponible y libre, coge el siguiente pedido de la cola compartida.
+ * Una historia se queda en el equipo que la empieza (sus archivos están ahí); mientras espera tu revisión, el equipo
+ * queda libre y coge otro pedido. Los pedidos de este equipo se guardan aquí para seguir su estado aunque se reinicie. */
+const K_MIOS = "rs_perfil_pedidos_mios";
+const mios = () => { try { return JSON.parse(localStorage.getItem(K_MIOS) || "{}"); } catch (e) { return {}; } };
+const guardarMios = (m) => { try { localStorage.setItem(K_MIOS, JSON.stringify(m)); } catch (e) {} };
+
+let _trabajador = false;
+export function iniciarTrabajador(toast) {
+  const s = SF();
+  if (_trabajador || !s || !s.estudioCrear) return;
+  _trabajador = true;
+  let ocupadoCogiendo = false, ultimoAviso = {};
+  const avisar = (id, estado, extra) => {
+    const k = id + estado;
+    if (ultimoAviso[k]) return Promise.resolve();
+    ultimoAviso[k] = 1;
+    return pedidosApi("POST", { accion: "estado", id, estado, ...(extra || {}) }).catch(() => { delete ultimoAviso[k]; });
+  };
+
+  // los fallos de una etapa de una historia de la cola
+  s.onHistoriasProgreso && s.onHistoriasProgreso((d) => {
+    if (d.tipo !== "fin" || d.ok) return;
+    const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id);
+    if (p) avisar(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") });
+  });
+  s.onEstudioIdeas && s.onEstudioIdeas((d) => {
+    const m = mios(), p = Object.keys(m).find(k => m[k].tipo === "ideas" && !m[k].fin);
+    if (p) { m[p].fin = true; guardarMios(m); avisar(Number(p), d.ok ? "hecho" : "fallido", { detalle: d.ok ? d.n + " ideas nuevas" : d.error }); }
+  });
+
+  const vuelta = async () => {
+    if (!navigator.onLine || ocupadoCogiendo) return;
+    let aj, t, l;
+    try { [aj, t, l] = await Promise.all([s.estudioAjustes(), s.historiasTareaEstado(), s.historiasLista()]); } catch (e) { return; }
+    // 1) seguir el estado de mis pedidos
+    const m = mios();
+    for (const [pid, x] of Object.entries(m)) {
+      if (x.tipo !== "historia" || !x.historia || x.fin) continue;
+      const h = (l.historias || []).find(y => y.id === x.historia);
+      if (!h) continue;
+      const et = h.etapas || [];
+      if (h.entregada || (et.length && et.every(e => e.estado === "hecho"))) { x.fin = true; avisar(Number(pid), "hecho", { historia_id: h.id, detalle: "Short entregado" }); }
+      else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisar(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + (et.find(e => e.estado === "revisar") || {}).nombre }); }
+      else if (t && t.activa && t.id === h.id) { delete ultimoAviso[pid + "revision"]; avisar(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
+    }
+    guardarMios(m);
+    // 2) coger trabajo nuevo: solo si estoy disponible, libre y preparado
+    if (!_disponible || (t && t.activa) || !aj.proyecto || !aj.claude) return;
+    const tipos = aj.blender ? ["historia", "ideas"] : ["ideas"];
+    ocupadoCogiendo = true;
+    try {
+      const r = await pedidosApi("POST", { accion: "reclamar", tipos });
+      const p = r.pedido;
+      if (!p) return;
+      if (p.tipo === "historia") {
+        const idea = (p.args && p.args.idea) || { titulo: p.titulo };
+        const c = await s.estudioCrear("p" + p.id, { nn: p.numero, idea });
+        if (!c || c.ok === false) {
+          // si justo empezó otra cosa aquí, el pedido vuelve a la cola para otro equipo (o para este, al quedar libre)
+          await pedidosApi("POST", { accion: "estado", id: p.id, estado: "fallido", detalle: (c && c.error) || "no se pudo crear" });
+          if (/en marcha/.test((c && c.error) || "")) await pedidosApi("POST", { accion: "reintentar", id: p.id }).catch(() => {});
+          return;
+        }
+        m[p.id] = { tipo: "historia", historia: c.id }; guardarMios(m);
+        await pedidosApi("POST", { accion: "estado", id: p.id, estado: "trabajando", historia_id: c.id, detalle: "guion" });
+        if (toast) toast("📥 Pedido de la cola: «" + (p.titulo || c.id) + "» (historia " + c.id.slice(0, 2) + ")");
+      } else {
+        const g = await s.estudioIdeasGenerar(Number(p.args && p.args.n) || 5, String((p.args && p.args.pista) || ""));
+        if (g && g.ok === false) { await pedidosApi("POST", { accion: "estado", id: p.id, estado: "fallido", detalle: g.error }); return; }
+        m[p.id] = { tipo: "ideas" }; guardarMios(m);
+        await pedidosApi("POST", { accion: "estado", id: p.id, estado: "trabajando", detalle: "pensando ideas" });
+      }
+    } catch (e) {} finally { ocupadoCogiendo = false; }
+  };
+  // que el número global de historia nunca vaya por detrás de las que ya existen aquí
+  s.historiasLista().then(l => {
+    const max = Math.max(0, ...((l && l.historias) || []).map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)));
+    if (max) pedidosApi("POST", { accion: "contador", minimo: max }).catch(() => {});
+  }).catch(() => {});
+  vuelta();
+  setInterval(vuelta, 6000);
+}

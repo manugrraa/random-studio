@@ -15,16 +15,32 @@ const CARPETA = process.env.RANDOMSTUDIO_CARPETA || "E:\\A RdeRandom\\RandomStud
 const destino = path.join(CARPETA, "App");
 const exe = path.join(destino, "RandomStudio.exe");
 const version = JSON.parse(fs.readFileSync(path.join(raiz, "package.json"), "utf8")).version;
+const electronVersion = JSON.parse(fs.readFileSync(path.join(raiz, "node_modules", "electron", "package.json"), "utf8")).version;
 
 if (!fs.existsSync(path.join(origen, "RandomStudio.exe"))) { console.error("No está release/win-unpacked: ejecuta antes electron-builder"); process.exit(1); }
 const ps = cmd => execSync(`powershell -NoProfile -Command "${cmd.replace(/"/g, '\\"')}"`, { encoding: "utf8" }).trim();
 // abierta desde la carpeta fija: Windows no deja reemplazar sus archivos
 const abiertas = ps(`@(Get-Process RandomStudio -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '${destino}\\*' }).Count`);
-if (Number(abiertas) > 0) { console.error("RandomStudio está abierto: ciérralo y vuelve a ejecutar `npm run instalar`."); process.exit(1); }
+if (Number(abiertas) > 0) {
+  // v3.33: con la app abierta, si solo cambia el código (mismo Electron), se deja preparada al lado y la propia app
+  // enseña «Hay una versión nueva · Actualizar ahora» (electron/actualizar.cjs hace el cambio al reiniciarse)
+  // el .exe cambia en cada build (lleva la huella del código), así que se compara la versión de Electron apuntada al instalar
+  let instalado = ""; try { instalado = fs.readFileSync(path.join(destino, "electron-version.txt"), "utf8").trim(); } catch (e) {}
+  if (instalado && instalado === electronVersion) {
+    fs.copyFileSync(path.join(origen, "resources", "app.asar"), path.join(destino, "resources", "app.asar.nueva"));
+    fs.writeFileSync(path.join(destino, "resources", "app.asar.nueva.json"), JSON.stringify({ version }));
+    console.log(`OK: RandomStudio ${version} preparada; la app avisará para actualizar (sin cerrarla ahora).`);
+    process.exit(0);
+  }
+  console.error("RandomStudio está abierto y esta versión cambia Electron: ciérralo y vuelve a ejecutar `npm run instalar`."); process.exit(1);
+}
 
 // copia espejo (lo que sobra de la versión anterior se quita)
 const r = spawnSync("robocopy", [origen, destino, "/MIR", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:2", "/W:1"], { encoding: "utf8" });
 if (r.status >= 8) { console.error("robocopy falló:", r.stdout, r.stderr); process.exit(1); }
+
+fs.writeFileSync(path.join(destino, "electron-version.txt"), electronVersion);
+try { fs.unlinkSync(path.join(destino, "resources", "app.asar.nueva")); fs.unlinkSync(path.join(destino, "resources", "app.asar.nueva.json")); } catch (e) {}
 
 // accesos directos: junto a la carpeta y en el menú Inicio
 const atajo = (lnk) => ps(`$s=(New-Object -ComObject WScript.Shell).CreateShortcut('${lnk}'); $s.TargetPath='${exe}'; ` +

@@ -1,7 +1,8 @@
 import React from "react";
 const { useState, useEffect, useCallback, useRef } = React;
 import { Icons } from "./base";
-import { equiposDual, numeroSiguiente, ordenA, remotoApi } from "./remoto";
+import { pedidosApi, remotoApi } from "./remoto";
+import { BotonDisponible, ColaTrabajo } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
@@ -243,15 +244,8 @@ function Terminado({ det, mat, toast, onGuardada }) {
 }
 
 // ------------------------------------------------------------------ ideas
-function Ideas({ toast, onCreada, ocupado, locales }) {
+function Ideas({ toast, onCreada }) {
   const [ideas, setIdeas] = useState(null);
-  const [dual, setDual] = useState({ todos: [], otros: [] });
-  useEffect(() => {
-    const mirar = () => equiposDual().then(setDual);
-    mirar();
-    const t = setInterval(mirar, 15000);
-    return () => clearInterval(t);
-  }, []);
   const [generando, setGenerando] = useState(false);
   const [pista, setPista] = useState("");
   const [filtro, setFiltro] = useState("todas");
@@ -267,20 +261,15 @@ function Ideas({ toast, onCreada, ocupado, locales }) {
     setGenerando(true);
   };
   const poner = async (i, estado) => { await SF().estudioIdeaPoner(i.id, { estado }); cargar(); };
-  const crear = async (i, otro) => {
-    const nn = numeroSiguiente(dual.todos, locales);
-    if (otro) {
-      if (!confirm("¿Mandar «" + i.titulo + "» a " + otro.nombre + "? Hará la historia entera allí y el Short acabará en tu Drive.")) return;
-      const { id, estado, historia, ...idea } = i;
-      try { await ordenA(otro.id, "crear", { id: i.id, nn, idea }); await SF().estudioIdeaPoner(i.id, { estado: "guardada", nota: (i.nota || "") }); toast("📤 Mandada a " + otro.nombre); }
-      catch (e) { toast("❌ " + e.message); }
-      return;
-    }
-    if (!confirm("¿Crear la historia «" + i.titulo + "»? Claude empezará a escribir el guion.")) return;
-    const r = await SF().estudioCrear(i.id, { nn });
-    if (r && r.ok === false) return toast(r.error);
-    toast("📝 Historia creada: Claude está escribiendo el guion");
-    onCreada && onCreada(r.id);
+  // v3.33: las historias nuevas van a la cola compartida; la coge el primer equipo disponible (el portátil, si está libre)
+  const crear = async (i) => {
+    const { id, estado, historia, fecha, ...idea } = i;
+    try {
+      await pedidosApi("POST", { accion: "crear", tipo: "historia", titulo: i.titulo, args: { idea } });
+      await SF().estudioIdeaPoner(i.id, { estado: "en_cola" });
+      toast("📋 «" + i.titulo + "» añadida a la cola");
+      cargar(); onCreada && onCreada();
+    } catch (e) { toast("❌ " + e.message); }
   };
   const vis = (ideas || []).filter(i => filtro === "todas" ? !["descartada", "usada"].includes(i.estado) : i.estado === filtro);
   return (
@@ -312,10 +301,8 @@ function Ideas({ toast, onCreada, ocupado, locales }) {
             {i.historia && <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 700 }}>Creada: historia {i.historia.slice(0, 2)}</div>}
             {i.estado !== "usada" && (
               <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-                <button disabled={ocupado} onClick={() => crear(i)} className="grad-gold" style={{ ...botonOro, opacity: ocupado ? 0.5 : 1 }} title={ocupado ? "Espera a que termine la tarea en marcha" : ""}>{dual.otros.length ? "Crear aquí" : "Crear historia"}</button>
-                {dual.otros.map(o => (
-                  <button key={o.id} onClick={() => crear(i, o)} title={o.datos.tarea ? o.nombre + " está ocupado ahora: empezará al terminar lo suyo si se lo vuelves a mandar" : ""}
-                    style={{ ...botonSec, color: "#60A5FA", borderColor: "rgba(96,165,250,.45)", opacity: o.datos.tarea ? .6 : 1 }}>Crear en {o.nombre}</button>))}
+                {i.estado === "en_cola" ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", padding: "8px 4px" }}>📋 En la cola</span>
+                  : <button onClick={() => crear(i)} className="grad-gold" style={botonOro}>📋 Añadir a la cola</button>}
                 <button onClick={() => poner(i, i.estado === "guardada" ? "nueva" : "guardada")} style={botonSec}>{i.estado === "guardada" ? "Quitar ⭐" : "⭐ Guardar"}</button>
                 {i.estado !== "descartada" ? <button onClick={() => poner(i, "descartada")} style={{ ...botonSec, color: "var(--text-3)" }}>Descartar</button>
                   : <button onClick={() => poner(i, "nueva")} style={botonSec}>Recuperar</button>}
@@ -473,8 +460,9 @@ export function HistoriasView({ toast }) {
           <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>De la idea al Short, con Claude, y tú decides en cada paso</div>
         </div>
         <span style={{ flex: 1 }} />
+        <BotonDisponible />
         <div style={{ display: "flex", gap: 4, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: 4 }}>
-          {[["proyectos", "📁 Historias"], ["ideas", "💡 Ideas"], ["ajustes", "⚙️ Ajustes"]].map(([k, t]) => (
+          {[["proyectos", "📁 Historias"], ["cola", "📋 Cola"], ["ideas", "💡 Ideas"], ["ajustes", "⚙️ Ajustes"]].map(([k, t]) => (
             <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>))}
         </div>
       </div>
@@ -491,7 +479,8 @@ export function HistoriasView({ toast }) {
           {informe.texto && <div style={{ fontSize: 12.5, color: "var(--text-2)", whiteSpace: "pre-wrap", marginTop: 8, lineHeight: 1.55 }}>{informe.texto}</div>}
         </div>)}
 
-      {pestana === "ideas" && <Ideas toast={toast} ocupado={!!enMarcha} locales={(lista || []).map(h => parseInt(h.id, 10)).filter(n => !isNaN(n))} onCreada={(id) => { setPestana("proyectos"); setSelId(id); cargar(); }} />}
+      {pestana === "ideas" && <Ideas toast={toast} onCreada={() => cargar()} />}
+      {pestana === "cola" && <ColaTrabajo toast={toast} />}
       {pestana === "ajustes" && <AjustesEstudio toast={toast} />}
 
       {pestana === "proyectos" && (
@@ -614,7 +603,7 @@ function HistoriasRemoto({ toast }) {
         <span style={{ fontSize: 12, fontWeight: 700, color: eq.en_linea ? "var(--green)" : "var(--red)" }}>● {eq.nombre} {eq.en_linea ? "en línea" : "apagado o sin conexión"}</span>
         <span style={{ flex: 1 }} />
         <div style={{ display: "flex", gap: 4 }}>
-          {[["proyectos", "📁 Historias"], ["ideas", "💡 Ideas"]].map(([k, t]) => <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>)}
+          {[["proyectos", "📁 Historias"], ["cola", "📋 Cola"], ["ideas", "💡 Ideas"]].map(([k, t]) => <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>)}
         </div>
       </div>
       {equipos.length > 1 && (
@@ -628,6 +617,7 @@ function HistoriasRemoto({ toast }) {
       {tarea && <TareaEnMarcha tarea={{ ...tarea, lineas: [] }} ahora={ahora} titulo={((d.historias || []).find(x => x.id === tarea.id) || {}).titulo}
         onCancelar={() => { if (confirm("¿Parar la tarea en el portátil?")) orden("cancelar", {}, "Parando en el portátil…"); }} />}
 
+      {pestana === "cola" && <ColaTrabajo toast={toast} />}
       {pestana === "ideas" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button disabled={d.generandoIdeas || !eq.en_linea} onClick={() => orden("ideas_generar", { n: 5 }, "💡 El portátil está pensando ideas")} className="grad-gold" style={{ ...botonOro, alignSelf: "flex-start", opacity: (d.generandoIdeas || !eq.en_linea) ? .5 : 1 }}>{d.generandoIdeas ? "Pensando ideas…" : "💡 Generar 5 ideas"}</button>
@@ -637,7 +627,8 @@ function HistoriasRemoto({ toast }) {
               <div style={{ fontSize: 12.5, color: "var(--gold)" }}>{i.regla}</div>
               <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{i.resumen}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <button disabled={!!tarea} onClick={() => { if (confirm("¿Crear «" + i.titulo + "»?")) orden("crear", { id: i.id }, "📝 El portátil empieza el guion"); }} className="grad-gold" style={{ ...botonOro, opacity: tarea ? .5 : 1 }}>Crear historia</button>
+                {i.estado === "en_cola" ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", padding: "8px 4px" }}>📋 En la cola</span>
+                  : <button onClick={async () => { try { const { id, estado, historia, ...idea } = i; await pedidosApi("POST", { accion: "crear", tipo: "historia", titulo: i.titulo, args: { idea } }); orden("idea_poner", { id: i.id, estado: "en_cola" }, "📋 Añadida a la cola"); } catch (e) { toast("❌ " + e.message); } }} className="grad-gold" style={botonOro}>📋 Añadir a la cola</button>}
                 <button onClick={() => orden("idea_poner", { id: i.id, estado: i.estado === "guardada" ? "nueva" : "guardada" })} style={botonSec}>{i.estado === "guardada" ? "Quitar ⭐" : "⭐ Guardar"}</button>
                 <button onClick={() => orden("idea_poner", { id: i.id, estado: "descartada" })} style={{ ...botonSec, color: "var(--text-3)" }}>Descartar</button>
               </div>

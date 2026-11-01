@@ -31,21 +31,26 @@ export function AvisoActualizacion() {
   useEffect(() => {
     if (!SF() || !SF().actInstalar) return;
     const mirar = async () => {
+      // 1) el portátil: versión ya preparada al lado (npm run instalar con la app abierta)
+      try { const l = await SF().actLocal(); if (l.ok && num(l.version) > num(APP_VERSION)) return setNueva({ version: l.version, local: true }); } catch (e) {}
       try {
         const [v, yo] = await Promise.all([actualizacionApi("GET"), SF().actInfo()]);
+        // 2) el portátil publica solo su versión si es más nueva que la publicada (el servidor solo se lo deja al dueño)
+        if (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version))) { publicarVersion(yo, "").catch(() => {}); return; }
+        // 3) los demás equipos: hay una más nueva publicada por el portátil
         if (v.version && num(v.version) > num(APP_VERSION)) setNueva({ ...v, otroElectron: v.electron && yo.electron && v.electron.split(".")[0] !== yo.electron.split(".")[0] });
       } catch (e) {}
     };
     mirar();
-    const t = setInterval(mirar, 30 * 60 * 1000);
+    const t = setInterval(mirar, 5 * 60 * 1000);
     return () => clearInterval(t);
   }, []);
   if (!nueva || oculto) return null;
   const instalar = async () => {
     setEstado("Bajando la versión " + nueva.version + "…");
     try {
-      const v = await actualizacionApi("GET");          // enlace recién firmado
-      await SF().actInstalar(v.url, v.sha256);
+      if (nueva.local) await SF().actLocalAplicar();
+      else { const v = await actualizacionApi("GET"); await SF().actInstalar(v.url, v.sha256); }   // enlace recién firmado
       setEstado("Listo: RandomStudio se reinicia…");
     } catch (e) { setEstado("No se pudo: " + e.message); }
   };
@@ -61,6 +66,14 @@ export function AvisoActualizacion() {
         : <button onClick={instalar} className="grad-gold" style={{ fontSize: 12.5, fontWeight: 700, color: "#000", borderRadius: 9, padding: "7px 14px" }}>Actualizar ahora</button>}
       {!estado && <button onClick={() => setOculto(true)} style={{ fontSize: 12, color: "var(--text-3)" }}>Luego</button>}
     </div>);
+}
+
+/** Sube el código de esta versión y la deja publicada (solo lo acepta el servidor si este equipo es el portátil). */
+async function publicarVersion(info, notas) {
+  const datos = { version: info.version, sha256: info.sha256, tam: info.tam, electron: info.electron, notas: notas || "" };
+  const p = await actualizacionApi("POST", { accion: "preparar", ...datos });
+  await SF().actSubir(p.url);
+  await actualizacionApi("POST", { accion: "confirmar", ...datos });
 }
 
 /** Administración (solo el portátil): publicar la versión instalada para que los demás se actualicen. */
@@ -80,10 +93,7 @@ export function PublicarVersion({ toast }) {
     if (!info || !info.sha256) return;
     setHaciendo(true);
     try {
-      const datos = { version: info.version, sha256: info.sha256, tam: info.tam, electron: info.electron, notas: notas.trim() };
-      const p = await actualizacionApi("POST", { accion: "preparar", ...datos });
-      await SF().actSubir(p.url);
-      await actualizacionApi("POST", { accion: "confirmar", ...datos });
+      await publicarVersion(info, notas.trim());
       toast("⬆️ Versión " + info.version + " publicada: los demás equipos verán el aviso");
       setNotas(""); cargar();
     } catch (e) { toast("❌ " + e.message); }

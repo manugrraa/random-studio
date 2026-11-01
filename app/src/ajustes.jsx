@@ -2,7 +2,7 @@ import React from "react";
 import { ATAJOS_EDITOR } from "./random_editor";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { Icons, STATUSES } from "./base";
-import { ytClearTokens, ytIsConnected } from "./datos";
+import { driveConectado, driveConectar, driveDesconectar, ytClearTokens, ytIsConnected } from "./datos";
 import { Field, inputStyle } from "./videos";
 import { ingresosEstimadosActivos } from "./youtube";
 import { SeguridadPanel } from "./acceso";
@@ -17,146 +17,187 @@ const GUIA_ATAJOS = [
   ["Clips (con un clip abierto)", [["← / →", "Clip anterior / siguiente"], ["A", "Aprobar / quitar el aprobado"], ["E", "Editar el clip en el RandomEditor"], ["Esc", "Cerrar el clip"]]],
 ];
 
+/* ============================ CONFIGURACIÓN (v3.33, rehecha) ============================
+ * Como cualquier app bien hecha: un menú de secciones a la izquierda (arriba en el móvil) y, a la derecha, solo lo de
+ * esa sección, en filas claras «qué es · para qué · control». Recuerda la última sección abierta.
+ */
+const SECCIONES = [
+  { id: "cuenta", icono: "👤", titulo: "Cuenta y conexiones", ayuda: "Con qué perfil estás, Google y Drive" },
+  { id: "apartados", icono: "🧭", titulo: "Apartados", ayuda: "Qué sale en la barra y en qué orden" },
+  { id: "apariencia", icono: "🎨", titulo: "Apariencia", ayuda: "Tema y cómo se ven las tarjetas" },
+  { id: "objetivos", icono: "🎯", titulo: "Objetivos e ingresos", ayuda: "Meta mensual, Shorts al día y RPM" },
+  { id: "carpetas", icono: "📁", titulo: "Carpetas", ayuda: "De dónde se coge y a dónde va todo", escritorio: true },
+  { id: "seguridad", icono: "🔒", titulo: "Seguridad", ayuda: "Este equipo y sus permisos" },
+  { id: "datos", icono: "💾", titulo: "Datos y copias", ayuda: "Exportar, importar y restablecer" },
+  { id: "atajos", icono: "⌨️", titulo: "Atajos de teclado", ayuda: "Todas las teclas rápidas" },
+];
+
+const Interruptor = ({ on, onClick }) => (
+  <button onClick={onClick} role="switch" aria-checked={on}
+    style={{ width: 42, height: 24, borderRadius: 20, position: "relative", flexShrink: 0, background: on ? "var(--gold)" : "var(--border)", transition: "background .15s" }}>
+    <span style={{ position: "absolute", top: 3, left: on ? 21 : 3, width: 18, height: 18, borderRadius: 20, background: "#fff", transition: "left .15s", boxShadow: "0 1px 3px rgba(0,0,0,.3)" }} />
+  </button>);
+
+/** Una fila de ajustes: título y explicación a la izquierda, el control a la derecha. */
+const Fila = ({ titulo, ayuda, children, ultima }) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 0", borderBottom: ultima ? "none" : "1px solid var(--border)", flexWrap: "wrap" }}>
+    <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+      <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text)" }}>{titulo}</div>
+      {ayuda && <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3, lineHeight: 1.5 }}>{ayuda}</div>}
+    </div>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>{children}</div>
+  </div>);
+
+const Tarjeta = ({ titulo, children }) => (
+  <div style={{ background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 16, padding: "6px 20px", marginBottom: 14 }}>
+    {titulo && <div style={{ fontSize: 11, fontWeight: 800, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".08em", padding: "14px 0 2px" }}>{titulo}</div>}
+    {children}
+  </div>);
+
+const btnOro = { color: "#000", fontWeight: 700, fontSize: 12.5, padding: "9px 15px", borderRadius: 10 };
+const btnSec = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 14px", background: "var(--card-2)" };
+const cajaPanel = { background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 14 };
+const tituloPanel = { fontSize: 11, fontWeight: 800, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 };
+
 export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExpanded, setCardsExpanded, onConnect, onExport, onImport, onReset, toast }) {
   const cfg = (goals && goals.cfg) || { targetEur:100, shortsPerDay:3, rpmManual:null };
   const [fTarget, setFTarget] = useState(String(cfg.targetEur));
   const [fShorts, setFShorts] = useState(String(cfg.shortsPerDay));
   const [fRpm, setFRpm] = useState(cfg.rpmManual!=null?String(cfg.rpmManual):"");
-  const [, setTick] = useState(0); // re-render tras conectar/desconectar Google
+  const [, setTick] = useState(0); // re-render tras conectar/desconectar Google o Drive
   const [estimado, setEstimadoCfg] = useState(ingresosEstimadosActivos());
   const [colorDia, setColorDiaCfg] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_dia")!=="0"; } catch(e){ return true; } });
   const [colorMes, setColorMesCfg] = useState(()=>{ try { return localStorage.getItem("rds_obj_color_mes")!=="0"; } catch(e){ return true; } });
   const [carpeta, setCarpeta] = useState(()=>{ try { return localStorage.getItem("rds_video_folder")||""; } catch(e){ return ""; } });
   const esEscritorio = !!(typeof window!=="undefined" && window.studioFS);
+  const secciones = SECCIONES.filter(x => !x.escritorio || esEscritorio);
+  const [sec, setSec0] = useState(()=>{ try { const v = localStorage.getItem("rds_config_seccion"); return secciones.some(x=>x.id===v) ? v : "cuenta"; } catch(e){ return "cuenta"; } });
+  const setSec = (v) => { setSec0(v); try { localStorage.setItem("rds_config_seccion", v); } catch(e){} };
   const fileRef = useRef(null);
   const conectado = ytIsConnected();
+  const perfil = PERFILES.find(p=>p.id===perfilActual()) || PERFILES[0] || {};
+  const actual = secciones.find(x=>x.id===sec) || secciones[0];
+  const ls = (k, v) => { try { localStorage.setItem(k, v); } catch(e){} };
 
   const guardarObjetivo = () => {
     const t = parseFloat(String(fTarget).replace(",","."));
-    const s = parseInt(fShorts,10);
+    const n = parseInt(fShorts,10);
     const rm = String(fRpm).trim()==="" ? null : parseFloat(String(fRpm).replace(",","."));
-    if(!(t>0) || !(s>0)){ toast("Revisa el objetivo y los Shorts diarios"); return; }
-    setGoals(g=>({ ...(g||{}), daily:(g&&g.daily)||{}, rpm:(g&&g.rpm)||null, cfg:{ targetEur:t, shortsPerDay:s, rpmManual:(rm&&rm>0)?rm:null, updatedAt:Date.now() } }));
+    if(!(t>0) || !(n>0)){ toast("Revisa el objetivo y los Shorts diarios"); return; }
+    setGoals(g=>({ ...(g||{}), daily:(g&&g.daily)||{}, rpm:(g&&g.rpm)||null, cfg:{ targetEur:t, shortsPerDay:n, rpmManual:(rm&&rm>0)?rm:null, updatedAt:Date.now() } }));
     toast("Objetivo guardado · todas las cuentas se recalculan solas");
   };
 
-  const Toggle = ({activo, onToggle, children}) => (
-    <button onClick={onToggle} style={{
-      display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"10px 13px",borderRadius:10,
-      border:"1px solid "+(activo?"var(--border-gold)":"var(--border)"),
-      background: activo?"rgba(212,175,55,0.05)":"var(--card)", transition:"all .15s"
-    }}>
-      <span style={{width:34,height:19,borderRadius:19,flexShrink:0,background:activo?"var(--gold)":"var(--card-2)",border:"1px solid "+(activo?"var(--gold)":"var(--border)"),position:"relative",transition:"background .18s"}}>
-        <span style={{position:"absolute",top:1.5,left:activo?16:2,width:14,height:14,borderRadius:"50%",background:activo?"#000":"var(--text-3)",transition:"left .18s"}}/>
-      </span>
-      <span style={{fontSize:12.5,color:"var(--text)",lineHeight:1.45}}>{children}</span>
-    </button>
-  );
-
-  const caja = { background:"var(--bg-2)", border:"1px solid var(--border)", borderRadius:14, padding:18 };
-  const tituloZona = { fontSize:11.5, fontWeight:700, color:"var(--gold)", textTransform:"uppercase", letterSpacing:".07em", marginBottom:13 };
-
   return (
     <div className="fade-in">
+      <style>{".cfg-nav button:hover { background: var(--card-2) !important; } @media (max-width: 820px) { .cfg-grid { grid-template-columns: 1fr !important; } .cfg-nav { flex-direction: row !important; overflow-x: auto; position: static !important; padding-bottom: 4px; } .cfg-nav .cfg-ayuda { display: none !important; } .cfg-nav button { flex: 0 0 auto; } }"}</style>
       <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700,marginBottom:4}}>Configuración</h2>
-      <p style={{fontSize:12.5,color:"var(--text-2)",marginBottom:18}}>Todo lo ajustable del Studio, en un solo sitio.</p>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:14,alignItems:"start"}}>
+      <p style={{fontSize:12.5,color:"var(--text-2)",marginBottom:18}}>Elige una sección.</p>
+      <div className="cfg-grid" style={{ display: "grid", gridTemplateColumns: "250px 1fr", gap: 22, alignItems: "start" }}>
+        <nav className="cfg-nav" style={{ display: "flex", flexDirection: "column", gap: 4, position: "sticky", top: 86 }}>
+          {secciones.map(x => {
+            const on = x.id === actual.id;
+            return (
+              <button key={x.id} onClick={() => setSec(x.id)}
+                style={{ display: "flex", alignItems: "center", gap: 11, textAlign: "left", padding: "10px 12px", borderRadius: 12,
+                  background: on ? "linear-gradient(135deg,rgba(212,175,55,.16),rgba(212,175,55,.04))" : "transparent", border: "1px solid " + (on ? "var(--border-gold)" : "transparent") }}>
+                <span style={{ fontSize: 17, width: 22, textAlign: "center" }}>{x.icono}</span>
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: on ? "var(--gold)" : "var(--text)" }}>{x.titulo}</span>
+                  <span className="cfg-ayuda" style={{ display: "block", fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{x.ayuda}</span>
+                </span>
+              </button>);
+          })}
+        </nav>
 
-        {/* v3.11, él: "que no se te olvide poner en la configuración una guía con todos los atajos" */}
-        <div style={{...caja, gridColumn:"1 / -1"}}>
-          <div style={tituloZona}>Atajos de teclado</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:"16px 28px"}}>
-            {GUIA_ATAJOS.map(([zona, lista])=>(
-              <div key={zona}>
-                <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>{zona}</div>
-                <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                  {lista.map(([k,que])=>(
-                    <div key={k} style={{display:"flex",gap:10,alignItems:"baseline",fontSize:12.5}}>
-                      <kbd style={{flexShrink:0,minWidth:118,fontFamily:"monospace",fontSize:11.5,padding:"2px 7px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--gold)"}}>{k}</kbd>
-                      <span style={{color:"var(--text-2)"}}>{que}</span>
-                    </div>))}
-                </div>
-              </div>))}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <span style={{ fontSize: 26 }}>{actual.icono}</span>
+            <div><div style={{ fontFamily: "'Sora'", fontSize: 19, fontWeight: 800 }}>{actual.titulo}</div><div style={{ fontSize: 12.5, color: "var(--text-3)" }}>{actual.ayuda}</div></div>
           </div>
+
+          {actual.id === "cuenta" && (<>
+            <Tarjeta titulo="Perfil">
+              <Fila titulo={<span style={{ display: "flex", alignItems: "center", gap: 10 }}>{(perfil.foto || perfil.avatar) && <img src={perfil.foto || perfil.avatar} referrerPolicy="no-referrer" style={{ width: 34, height: 34, borderRadius: 10 }} />}{perfil.nombre}</span>}
+                ayuda="Cada perfil es una cuenta de Google con su canal: sus vídeos, sus carpetas y sus ajustes van aparte." ultima>
+                <button onClick={cambiarPerfil} style={{ ...btnSec, color: "var(--gold)", borderColor: "var(--border-gold)" }}>Cambiar de perfil</button>
+              </Fila>
+            </Tarjeta>
+            <Tarjeta titulo="Conexiones">
+              <Fila titulo="Google · YouTube" ayuda={conectado ? "Conectado: subidas, analíticas, comentarios, edición y sincronización." : "Sin conectar: no se sincroniza ni se sube nada."}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: conectado ? "var(--green)" : "var(--text-3)" }}>{conectado ? "● Conectado" : "○ Sin conectar"}</span>
+                <button onClick={onConnect} className="grad-gold" style={btnOro}>{conectado ? "Reconectar" : "Conectar"}</button>
+                {conectado && <button onClick={() => { ytClearTokens(); setTick(t=>t+1); toast("Sesión de Google cerrada en este dispositivo"); }} style={{ ...btnSec, color: "var(--red)" }}>Desconectar</button>}
+              </Fila>
+              <Fila titulo="Google Drive" ayuda={esEscritorio ? "Donde se guardan los Shorts terminados (copia idéntica). Desde el móvil se descargan aunque el portátil esté apagado." : "Se conecta desde RandomStudio de escritorio, que es quien sube."} ultima>
+                {esEscritorio && (driveConectado()
+                  ? <><span style={{ fontSize: 12, fontWeight: 700, color: "var(--green)" }}>● Conectado</span>
+                      <button onClick={() => { driveDesconectar(); setTick(t=>t+1); toast("Drive desconectado"); }} style={{ ...btnSec, color: "var(--red)" }}>Desconectar</button></>
+                  : <button onClick={async () => { try { await driveConectar(); setTick(t=>t+1); toast("☁️ Drive conectado"); } catch (e) { toast(e.message); } }} className="grad-gold" style={btnOro}>Conectar Drive</button>)}
+              </Fila>
+            </Tarjeta>
+          </>)}
+
+          {actual.id === "apartados" && <Tarjeta><div style={{ padding: "14px 0" }}><ModulosPanel modulos={modulos} toast={toast} /></div></Tarjeta>}
+
+          {actual.id === "apariencia" && (
+            <Tarjeta>
+              <Fila titulo="Tema oscuro" ayuda="El negro y dorado de siempre. Apagado: tema claro."><Interruptor on={theme==="dark"} onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} /></Fila>
+              <Fila titulo="Tarjetas abiertas" ayuda="Las tarjetas de vídeo salen expandidas por defecto."><Interruptor on={cardsExpanded} onClick={()=>setCardsExpanded(x=>!x)} /></Fila>
+              <Fila titulo="Progreso del día" ayuda="Colorea cada día del calendario de Objetivos según lo que llevas."><Interruptor on={colorDia} onClick={()=>{ const n=!colorDia; setColorDiaCfg(n); ls("rds_obj_color_dia", n?"1":"0"); }} /></Fila>
+              <Fila titulo="Progreso del mes" ayuda="Fondo del calendario según cómo va el mes." ultima><Interruptor on={colorMes} onClick={()=>{ const n=!colorMes; setColorMesCfg(n); ls("rds_obj_color_mes", n?"1":"0"); }} /></Fila>
+            </Tarjeta>)}
+
+          {actual.id === "objetivos" && (
+            <Tarjeta>
+              <Fila titulo="Objetivo al mes" ayuda="Lo que quieres ganar cada mes, en euros."><input value={fTarget} onChange={e=>setFTarget(e.target.value)} inputMode="decimal" style={{ ...inputStyle, width: 120 }}/></Fila>
+              <Fila titulo="Shorts al día" ayuda="Cuántos quieres publicar cada día."><input value={fShorts} onChange={e=>setFShorts(e.target.value)} inputMode="numeric" style={{ ...inputStyle, width: 120 }}/></Fila>
+              <Fila titulo="RPM manual" ayuda="Déjalo vacío para usar el real de YouTube."><input value={fRpm} onChange={e=>setFRpm(e.target.value)} placeholder="p. ej. 0,06" inputMode="decimal" style={{ ...inputStyle, width: 120 }}/></Fila>
+              <Fila titulo="Guardar" ayuda="Las cuentas de Objetivos se recalculan solas."><button onClick={guardarObjetivo} className="grad-gold" style={btnOro}>Guardar objetivo</button></Fila>
+              <Fila titulo="Ingresos estimados" ayuda="Visitas × RPM, al momento. Apagado: solo los reales de YouTube (llegan con unos 2 días de retraso)." ultima>
+                <Interruptor on={estimado} onClick={()=>{ const n=!estimado; setEstimadoCfg(n); ls("rds_ingresos_reales", n?"0":"1"); }} /></Fila>
+            </Tarjeta>)}
+
+          {actual.id === "carpetas" && esEscritorio && (<>
+            <CarpetasPanel caja={cajaPanel} tituloZona={tituloPanel} toast={toast}/>
+            <Tarjeta titulo="Subida directa">
+              <Fila titulo="Carpeta de vídeos" ayuda={<span title={carpeta}>📁 {carpeta || "(sin elegir)"} — de aquí se cogen los vídeos al subirlos desde el PC.</span>} ultima>
+                <button onClick={async ()=>{ const dir = await window.studioFS.pickFolder(); if(dir){ setCarpeta(dir); ls("rds_video_folder",dir); toast("Carpeta guardada"); } }} style={{ ...btnSec, color: "var(--gold)", borderColor: "var(--border-gold)" }}>Cambiar</button>
+              </Fila>
+            </Tarjeta>
+          </>)}
+
+          {actual.id === "seguridad" && <SeguridadPanel caja={cajaPanel} tituloZona={tituloPanel} toast={toast}/>}
+
+          {actual.id === "datos" && (
+            <Tarjeta>
+              <Fila titulo="Exportar una copia" ayuda="Descarga todos los datos de este perfil en un archivo (JSON)."><button onClick={onExport} style={btnSec}>{Icons.download} Exportar</button></Fila>
+              <Fila titulo="Importar una copia" ayuda="Recupera los datos desde un archivo exportado antes.">
+                <button onClick={()=>fileRef.current && fileRef.current.click()} style={btnSec}>{Icons.copy} Importar</button>
+                <input ref={fileRef} type="file" accept="application/json" style={{display:"none"}} onChange={e=>{ onImport(e.target.files && e.target.files[0]); e.target.value=""; }}/>
+              </Fila>
+              {esEscritorio && <Fila titulo="Copias automáticas" ayuda="En este PC se guarda una copia cada día (los últimos 30 días) y todo se sincroniza con la nube."><span style={{ fontSize: 12, fontWeight: 700, color: "var(--green)" }}>● Activadas</span></Fila>}
+              <Fila titulo="Restablecer datos" ayuda="Borra los datos de este perfil en este dispositivo. Pide confirmación antes." ultima>
+                <button onClick={onReset} style={{ ...btnSec, color: "var(--red)", borderColor: "rgba(248,113,113,.35)" }}>{Icons.trash} Restablecer</button></Fila>
+            </Tarjeta>)}
+
+          {actual.id === "atajos" && (
+            <Tarjeta>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:"18px 28px", padding: "14px 0"}}>
+                {GUIA_ATAJOS.map(([zona, lista])=>(
+                  <div key={zona}>
+                    <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>{zona}</div>
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      {lista.map(([k,que])=>(
+                        <div key={k} style={{display:"flex",gap:10,alignItems:"baseline",fontSize:12.5}}>
+                          <kbd style={{flexShrink:0,minWidth:118,fontFamily:"monospace",fontSize:11.5,padding:"2px 7px",borderRadius:6,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--gold)"}}>{k}</kbd>
+                          <span style={{color:"var(--text-2)"}}>{que}</span>
+                        </div>))}
+                    </div>
+                  </div>))}
+              </div>
+            </Tarjeta>)}
         </div>
-
-        <div style={caja}>
-          <div style={tituloZona}>Objetivos e ingresos</div>
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <Field label="Objetivo € / mes"><input value={fTarget} onChange={e=>setFTarget(e.target.value)} inputMode="decimal" style={inputStyle}/></Field>
-              <Field label="Shorts al día"><input value={fShorts} onChange={e=>setFShorts(e.target.value)} inputMode="numeric" style={inputStyle}/></Field>
-            </div>
-            <Field label="RPM manual (vacío = usar el real de la API)"><input value={fRpm} onChange={e=>setFRpm(e.target.value)} placeholder="p. ej. 0,06" inputMode="decimal" style={inputStyle}/></Field>
-            <button onClick={guardarObjetivo} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:13,padding:"10px 16px",borderRadius:9,alignSelf:"flex-start"}}>Guardar objetivo</button>
-            <Toggle activo={estimado} onToggle={()=>{ const n=!estimado; setEstimadoCfg(n); try{localStorage.setItem("rds_ingresos_reales", n?"0":"1");}catch(e){} }}>
-              <b>Ingresos estimados</b> (visitas × RPM, al momento). Apagado = solo los reales que reporta YouTube (~2 días de retraso).
-            </Toggle>
-          </div>
-        </div>
-
-        <div style={caja}>
-          <div style={tituloZona}>Apariencia</div>
-          <div style={{display:"flex",flexDirection:"column",gap:9}}>
-            <Toggle activo={theme==="dark"} onToggle={()=>setTheme(t=>t==="dark"?"light":"dark")}>Tema oscuro</Toggle>
-            <Toggle activo={cardsExpanded} onToggle={()=>setCardsExpanded(x=>!x)}>Tarjetas expandidas por defecto</Toggle>
-            <Toggle activo={colorDia} onToggle={()=>{ const n=!colorDia; setColorDiaCfg(n); try{localStorage.setItem("rds_obj_color_dia", n?"1":"0");}catch(e){} }}>Progreso visual diario (calendario de Objetivos)</Toggle>
-            <Toggle activo={colorMes} onToggle={()=>{ const n=!colorMes; setColorMesCfg(n); try{localStorage.setItem("rds_obj_color_mes", n?"1":"0");}catch(e){} }}>Progreso visual mensual (fondo del calendario)</Toggle>
-          </div>
-        </div>
-
-        <div style={caja}>
-          <div style={tituloZona}>Google · YouTube</div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontSize:13,color:conectado?"var(--green)":"var(--text-2)",fontWeight:600}}>
-              {conectado ? "● Conectado — subidas, analíticas, comentarios y edición activos" : "○ Sin conectar"}
-            </div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <button onClick={onConnect} className="grad-gold" style={{color:"#000",fontWeight:700,fontSize:12.5,padding:"9px 14px",borderRadius:9}}>{conectado?"Reconectar":"Conectar con Google"}</button>
-              {conectado && <button onClick={()=>{ ytClearTokens(); setTick(t=>t+1); toast("Sesión de Google cerrada en este dispositivo"); }} style={{fontSize:12.5,fontWeight:600,color:"var(--red)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:9,padding:"9px 14px"}}>Desconectar</button>}
-            </div>
-            <div style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5}}>Reconecta si la app pide permisos nuevos (analíticas, comentarios).</div>
-          </div>
-        </div>
-
-        <div style={caja}>
-          <div style={tituloZona}>Perfil</div>
-          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-            <div style={{fontSize:13,fontWeight:600}}>Has entrado como <span className="gold-text">{(PERFILES.find(p=>p.id===perfilActual())||PERFILES[0]).nombre}</span></div>
-            <span style={{flex:1}}/>
-            <button onClick={cambiarPerfil} style={{fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:9,padding:"9px 14px",background:"rgba(212,175,55,0.05)"}}>Cambiar de perfil</button>
-          </div>
-        </div>
-
-        <ModulosPanel caja={caja} tituloZona={tituloZona} modulos={modulos} toast={toast}/>
-
-        <CarpetasPanel caja={caja} tituloZona={tituloZona} toast={toast}/>
-
-        <SeguridadPanel caja={caja} tituloZona={tituloZona} toast={toast}/>
-
-
-        {esEscritorio && (
-          <div style={caja}>
-            <div style={tituloZona}>Escritorio</div>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              <div style={{fontSize:12,color:"var(--text-2)"}}>Carpeta de vídeos para la subida directa desde el PC:</div>
-              <div style={{fontSize:11.5,color:"var(--text-3)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={carpeta}>📁 {carpeta||"(sin elegir)"}</div>
-              <button onClick={async ()=>{ const dir = await window.studioFS.pickFolder(); if(dir){ setCarpeta(dir); try{localStorage.setItem("rds_video_folder",dir);}catch(e){} toast("Carpeta guardada"); } }} style={{alignSelf:"flex-start",fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:9,padding:"9px 14px",background:"rgba(212,175,55,0.05)"}}>Cambiar carpeta</button>
-              <div style={{fontSize:11,color:"var(--text-3)",lineHeight:1.5}}>Tus datos viven en este PC con copia automática diaria (se guardan los últimos 30 días) y se sincronizan con la nube.</div>
-            </div>
-          </div>
-        )}
-
-        <div style={caja}>
-          <div style={tituloZona}>Datos</div>
-          <div style={{display:"flex",flexDirection:"column",gap:9}}>
-            <button onClick={onExport} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--text)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 14px"}}>{Icons.download} Exportar copia de seguridad (JSON)</button>
-            <button onClick={()=>fileRef.current && fileRef.current.click()} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--text)",border:"1px solid var(--border)",borderRadius:10,padding:"10px 14px"}}>{Icons.copy} Importar desde un archivo</button>
-            <input ref={fileRef} type="file" accept="application/json" style={{display:"none"}} onChange={e=>{ onImport(e.target.files && e.target.files[0]); e.target.value=""; }}/>
-            <button onClick={onReset} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,color:"var(--red)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:10,padding:"10px 14px"}}>{Icons.trash} Restablecer datos</button>
-          </div>
-        </div>
-
       </div>
     </div>
   );

@@ -41,6 +41,12 @@ ipcMain.handle("act-instalar", async (e, url, esperado) => {
   if (sha256(b) !== String(esperado || "").toLowerCase()) throw new Error("La descarga no coincide con la versión publicada: no se instala");
   const nueva = miAsar() + ".nueva";
   fs.writeFileSync(nueva, b);
+  reiniciarCon(nueva);
+  return { ok: true };
+});
+
+// el cambio de archivo al cerrar: un script espera a que la app se cierre, pone el app.asar nuevo y la vuelve a abrir
+function reiniciarCon(nueva) {
   const exe = process.execPath, pid = process.pid;
   const bat = path.join(os.tmpdir(), "randomstudio_actualizar.cmd");
   fs.writeFileSync(bat, [
@@ -49,12 +55,25 @@ ipcMain.handle("act-instalar", async (e, url, esperado) => {
     `tasklist /FI "PID eq ${pid}" | find "${pid}" >nul && (timeout /t 1 /nobreak >nul & goto espera)`,
     "timeout /t 2 /nobreak >nul",
     `move /Y "${nueva}" "${miAsar()}" >nul`,
+    `del "${nueva}.json" >nul 2>nul`,
     `start "" "${exe}"`,
     'del "%~f0"',
   ].join("\r\n"));
   spawn("cmd.exe", ["/c", bat], { detached: true, stdio: "ignore", windowsHide: true }).unref();
   setTimeout(() => app.quit(), 300);
   setTimeout(() => app.exit(0), 6000);        // por si algo frena el cierre normal
+}
+
+// el portátil: versión ya preparada al lado por `npm run instalar` (sin cerrar la app)
+ipcMain.handle("act-local", async () => {
+  try {
+    const j = JSON.parse(fs.readFileSync(miAsar() + ".nueva.json", "utf8"));
+    return fs.existsSync(miAsar() + ".nueva") ? { ok: true, version: j.version } : { ok: false };
+  } catch (e) { return { ok: false }; }
+});
+ipcMain.handle("act-local-aplicar", async () => {
+  if (!fs.existsSync(miAsar() + ".nueva")) throw new Error("No hay ninguna versión preparada");
+  reiniciarCon(miAsar() + ".nueva");
   return { ok: true };
 });
 
