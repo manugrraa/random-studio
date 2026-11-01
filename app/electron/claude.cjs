@@ -117,4 +117,28 @@ ipcMain.handle("claude-token", async (e, token) => {
 });
 app.whenReady().then(() => setTimeout(() => comprobar(false), 15000));   // se comprueba sola al poco de arrancar
 
-module.exports = { exeClaude, generar, MODELO, entornoClaude, comprobar, estadoClaude: () => estado };
+/** v3.40.4: ¿se paró por el LÍMITE de uso de Claude (o porque estaba saturado)? Devuelve la hora (ms) a la que conviene
+ * reintentar: la del aviso («resets 9pm», «resets Nov 5, 3:30am», «…limit reached|1730000000») con 2 min de margen, o, si no
+ * la dice, dentro de 30 min (saturado: 5 min). 0 si el fallo es otro. */
+const MESES = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+function limiteDe(texto) {
+  const s = String(texto || "");
+  const margen = 2 * 60000, ahora = Date.now();
+  if (/overloaded|529|saturad/i.test(s) && !/limit/i.test(s)) return ahora + 5 * 60000;
+  if (!/usage limit|limit reached|hit your limit|rate.?limit|429|out of (extra )?usage|limit will reset|weekly limit|session limit/i.test(s)) return 0;
+  const ep = s.match(/limit reached\|(\d{10})/i);
+  if (ep) return Math.max(Number(ep[1]) * 1000, ahora) + margen;
+  const m = s.match(/resets?\s+(?:at\s+)?(?:([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (m) {
+    let h = Number(m[3]) % 24;
+    if (m[5]) h = (Number(m[3]) % 12) + (/pm/i.test(m[5]) ? 12 : 0);
+    const d = new Date();
+    if (m[1] && MESES[m[1].toLowerCase()] !== undefined) d.setMonth(MESES[m[1].toLowerCase()], Number(m[2]));
+    d.setHours(h, Number(m[4] || 0), 0, 0);
+    if (d.getTime() <= ahora) d.setDate(d.getDate() + 1);
+    if (d.getTime() - ahora < 8 * 86400000) return d.getTime() + margen;
+  }
+  return ahora + 30 * 60000;
+}
+
+module.exports = { exeClaude, generar, MODELO, entornoClaude, comprobar, estadoClaude: () => estado, limiteDe };

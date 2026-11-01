@@ -470,7 +470,9 @@ export function HistoriasView({ toast }) {
         else if (d.tipo === "agente") { t.tipo = "agente"; t.accion = d.accion; t.acciones = [...(t.acciones || []).slice(-60), { t: Date.now(), a: d.accion }]; }
         else if (d.tipo === "agenteTexto") { t.tipo = "agente"; t.lineas = [...(t.lineas || []).slice(-200), d.texto]; }
         else if (d.tipo === "fin") {
-          if (!d.ok) { toast(`${nombreDe(d.id)}: se paró (mira los detalles)`); setInforme({ id: d.id, etapa: d.etapa, texto: d.informe, titulo: ((listaRef.current || []).find(x => x.id === d.id) || {}).titulo }); }
+          // v3.40.4: si fue el límite de Claude no es un fallo: sigue sola cuando se restablezca (lo lleva remoto.js)
+          if (!d.ok && d.limite) toast(`⏸ ${nombreDe(d.id)}: se acabó el límite de Claude. Sigue sola a las ${new Date(d.limite).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`);
+          else if (!d.ok) { toast(`${nombreDe(d.id)}: se paró (mira los detalles)`); setInforme({ id: d.id, etapa: d.etapa, texto: d.informe, titulo: ((listaRef.current || []).find(x => x.id === d.id) || {}).titulo }); }
           setTimeout(() => { cargar(); if (d.id === selRef.current) cargarDet(d.id); }, 400);
           return d.ok ? null : { ...t, terminado: true, fallo: true };
         }

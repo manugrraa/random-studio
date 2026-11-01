@@ -354,7 +354,9 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
       est.informes = { ...(est.informes || {}), [etapa]: { fecha: new Date().toISOString(), ok, texto: (final || err).slice(0, 4000) } };
       guardarEstudio(c, est);
     } catch (e) {}
-    emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500) });
+    // v3.40.4: si se paró por el límite de Claude, se dice a qué hora reintentar (la app la retoma sola entonces)
+    const limite = ok ? 0 : claude.limiteDe(final + "\n" + err);
+    emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), ...(limite ? { limite } : {}) });
     tarea = null;
     if (t && t.alTerminar) setTimeout(() => t.alTerminar(ok, t.sender), 200);
     setTimeout(() => sacarDeCola(t && t.sender), 1500);
@@ -436,7 +438,7 @@ ipcMain.handle("estudio-ideas-generar", async (e, cuantas, pista) => {
       escribirJson(ideasArchivo(), [...nuevas, ...leerIdeas()]);
       try { sender.send("estudio-ideas-listas", { ok: true, n: nuevas.length }); } catch (x) {}
     })
-    .catch(err => { try { sender.send("estudio-ideas-listas", { ok: false, error: err.message }); } catch (x) {} })
+    .catch(err => { const limite = claude.limiteDe(err.message); try { sender.send("estudio-ideas-listas", { ok: false, error: err.message, ...(limite ? { limite } : {}) }); } catch (x) {} })
     .finally(() => { ideasProc = null; });
   return { ok: true };
 });

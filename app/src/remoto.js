@@ -204,6 +204,12 @@ export function alCambiarDisponible(f) { _oyentes.add(f); return () => _oyentes.
 const K_MIOS = "rs_perfil_pedidos_mios";
 const mios = () => { try { return JSON.parse(localStorage.getItem(K_MIOS) || "{}"); } catch (e) { return {}; } };
 const guardarMios = (m) => { try { localStorage.setItem(K_MIOS, JSON.stringify(m)); } catch (e) {} };
+/* v3.40.4: lo que se paró por el LÍMITE de uso de Claude espera aquí a que se restablezca y luego sigue solo: historias
+ * (de la cola o empezadas a mano) y pedidos de ideas. { "h:<historia>": hora, "i:<pedido>": hora } */
+const K_LIM = "rs_perfil_limite";
+const esperas = () => { try { return JSON.parse(localStorage.getItem(K_LIM) || "{}"); } catch (e) { return {}; } };
+const guardarEsperas = (w) => { try { localStorage.setItem(K_LIM, JSON.stringify(w)); } catch (e) {} };
+const hora = (ms) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
 
 let _trabajador = false;
 export function iniciarTrabajador(t) {
@@ -224,11 +230,26 @@ export function iniciarTrabajador(t) {
     if (d.tipo !== "fin" || d.ok) return;
     if (Date.now() - _parando < 20000) return;
     const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id);
+    if (d.limite) {
+      const w = esperas(); w["h:" + d.id] = d.limite; guardarEsperas(w);
+      const txt = "Historia " + d.id.slice(0, 2) + " · sigue sola a las " + hora(d.limite);
+      if (p) { delete ultimoAviso[p + "trabajando"]; avisarPedido(Number(p), "trabajando", { historia_id: d.id, detalle: "⏸ límite de Claude: sigue a las " + hora(d.limite) }); }
+      avisar("⏸ Se acabó el límite de Claude", txt, "l" + d.id);
+      toast("⏸ Límite de Claude. " + txt);
+      return;
+    }
     if (p) { m[p].parada = true; guardarMios(m); }
     if (p) { avisarPedido(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") }); avisar("⚠️ Una historia se paró", "Historia " + d.id.slice(0, 2) + " (" + d.id.slice(3).replace(/_/g, " ") + ") · " + (d.etapa || "una etapa"), "f" + d.id); }
   });
   s.onEstudioIdeas && s.onEstudioIdeas((d) => {
     const m = mios(), p = Object.keys(m).find(k => m[k].tipo === "ideas" && !m[k].fin);
+    if (p && !d.ok && d.limite) {
+      const w = esperas(); w["i:" + p] = d.limite; guardarEsperas(w);
+      delete ultimoAviso[p + "trabajando"];
+      avisarPedido(Number(p), "trabajando", { detalle: "⏸ límite de Claude: sigue a las " + hora(d.limite) });
+      avisar("⏸ Se acabó el límite de Claude", "Las ideas siguen solas a las " + hora(d.limite), "li" + p);
+      return;
+    }
     if (p) { m[p].fin = true; guardarMios(m); avisarPedido(Number(p), d.ok ? "hecho" : "fallido", { detalle: d.ok ? d.n + " ideas nuevas" : d.error }); }
   });
 
@@ -236,8 +257,28 @@ export function iniciarTrabajador(t) {
     if (!navigator.onLine || ocupadoCogiendo) return;
     let aj, t, l;
     try { [aj, t, l] = await Promise.all([s.estudioAjustes(), s.historiasTareaEstado(), s.historiasLista()]); } catch (e) { return; }
+    const m = mios(), w = esperas();
+    // 0) lo que esperaba al límite de Claude: a su hora, sigue (de uno en uno, y solo si estoy disponible y libre)
+    const vencida = Object.keys(w).find(k => w[k] <= Date.now());
+    if (vencida && _disponible && !(t && t.activa)) {
+      delete w[vencida]; guardarEsperas(w);
+      const id = vencida.slice(2);
+      try {
+        if (vencida[0] === "h" && (l.historias || []).some(h => h.id === id)) {
+          const pid = Object.keys(m).find(k => m[k].historia === id);
+          if (pid) delete ultimoAviso[pid + "trabajando"];
+          await s.estudioAvanzar(id);
+          toast("▶ Límite de Claude restablecido: sigo con la historia " + id.slice(0, 2));
+          avisar("▶ Límite restablecido", "Sigo con la historia " + id.slice(0, 2), "l" + id);
+        } else if (vencida[0] === "i" && m[id] && !m[id].fin) {
+          delete ultimoAviso[id + "trabajando"];
+          await s.estudioIdeasGenerar(Number(m[id].n) || 5, String(m[id].pista || ""));
+          avisarPedido(Number(id), "trabajando", { detalle: "pensando ideas" });
+        }
+      } catch (e) {}
+      return;
+    }
     // 1) seguir el estado de mis pedidos
-    const m = mios();
     for (const [pid, x] of Object.entries(m)) {
       if (x.tipo !== "historia" || !x.historia || x.fin) continue;
       const h = (l.historias || []).find(y => y.id === x.historia);
@@ -248,7 +289,7 @@ export function iniciarTrabajador(t) {
       else if (t && t.activa && t.id === h.id) { x.parada = false; x.quieta = 0; delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
       // v3.38.2: se quedó a medias (equipo apagado o «Parar todo»): al volver a estar disponible y libre, sigue sola
       // (solo si lleva quieta dos vueltas seguidas, para no pisar el paso de una etapa a la siguiente, y nunca si falló)
-      else if (_disponible && !(t && t.activa) && !x.reanudada && !x.parada && et.some(e => e.estado === "pendiente") && (x.quieta = (x.quieta || 0) + 1) >= 3) {
+      else if (_disponible && !(t && t.activa) && !x.reanudada && !x.parada && !w["h:" + h.id] && et.some(e => e.estado === "pendiente") && (x.quieta = (x.quieta || 0) + 1) >= 3) {
         x.reanudada = Date.now(); x.quieta = 0;
         try { await s.estudioAvanzar(h.id); if (toast) toast("▶ Sigo con la historia " + h.id.slice(0, 2) + " donde se quedó"); } catch (e) {}
         break;
@@ -279,7 +320,7 @@ export function iniciarTrabajador(t) {
       } else {
         const g = await s.estudioIdeasGenerar(Number(p.args && p.args.n) || 5, String((p.args && p.args.pista) || ""));
         if (g && g.ok === false) { await pedidosApi("POST", { accion: "estado", id: p.id, estado: "fallido", detalle: g.error }); return; }
-        m[p.id] = { tipo: "ideas" }; guardarMios(m);
+        m[p.id] = { tipo: "ideas", n: Number(p.args && p.args.n) || 5, pista: String((p.args && p.args.pista) || "") }; guardarMios(m);
         await pedidosApi("POST", { accion: "estado", id: p.id, estado: "trabajando", detalle: "pensando ideas" });
       }
     } catch (e) {} finally { ocupadoCogiendo = false; }
