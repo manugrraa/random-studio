@@ -12,6 +12,10 @@ function Paso($t) { Write-Host ""; Write-Host "== $t ==" -ForegroundColor Yellow
 
 Paso "1/6 Copiando RandomStudio"
 New-Item -ItemType Directory -Force "$base\App", "$base\Datos" | Out-Null
+# cerrar RandomStudio de forma NORMAL (como la X) para que guarde las sesiones; a la fuerza solo si no responde en 30 s
+Get-Process RandomStudio -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | ForEach-Object { [void]$_.CloseMainWindow() }
+$fin = (Get-Date).AddSeconds(30)
+while ((Get-Process RandomStudio -ErrorAction SilentlyContinue) -and (Get-Date) -lt $fin) { Start-Sleep -Milliseconds 500 }
 Get-Process RandomStudio -ErrorAction SilentlyContinue | Stop-Process -Force
 robocopy "$origen\RandomStudio" "$base\App" /MIR /XD versiones /NFL /NDL /NJH /NJS /NP | Out-Null
 
