@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 
-export const APP_VERSION = "3.37.1";
+export const APP_VERSION = __APP_VERSION__;   // de package.json (vite.config.mjs)
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.

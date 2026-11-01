@@ -46,7 +46,7 @@ function exeClaude() {
 const { app, safeStorage } = require("electron");
 const tokenArchivo = () => path.join(app.getPath("userData"), "claude.token");
 function tokenClaude() {
-  try { const b = fs.readFileSync(tokenArchivo()); return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(b) : ""; } catch (e) { return ""; }
+  try { const b = fs.readFileSync(tokenArchivo()); return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(b).replace(/\s+/g, "") : ""; } catch (e) { return ""; }
 }
 /** El entorno para lanzar Claude: sin las variables de otra sesión de Claude, y con el permiso guardado si lo hay. */
 function entornoClaude(extra) {
@@ -66,7 +66,12 @@ async function comprobar(forzar) {
     estado = { ok: /ok/i.test(r), error: /ok/i.test(r) ? "" : "Respuesta rara: " + r.slice(0, 80), cuando: Date.now() };
   } catch (e) {
     const m = e.message || String(e);
-    estado = { ok: false, cuando: Date.now(), error: /auth|OAuth|login|401|expired/i.test(m) ? "La sesión de Claude Code ha caducado: pon el permiso de larga duración (Ajustes de RandomHistorias)" : m.slice(0, 200) };
+    // v3.37.2: el motivo real (antes todo salía como «caducada», también un permiso mal copiado)
+    const conPermiso = !!tokenClaude();
+    const error = conPermiso && /Not logged in|401|invalid/i.test(m) ? "El permiso pegado no vale (¿incompleto?): vuelve a sacarlo con «claude setup-token» y pégalo entero"
+      : /expired|Not logged in/i.test(m) ? "La sesión de Claude Code ha caducado: pon el permiso de larga duración (Ajustes de RandomHistorias)"
+      : m.slice(0, 200);
+    estado = { ok: false, cuando: Date.now(), error };
   }
   return estado;
 }
@@ -102,9 +107,10 @@ ipcMain.handle("claude-generar", async (e, prompt, opts) => {
 ipcMain.handle("claude-disponible", async () => ({ ok: !!exeClaude() }));
 ipcMain.handle("claude-comprobar", async (e, forzar) => comprobar(!!forzar));
 ipcMain.handle("claude-token", async (e, token) => {
-  const t = String(token || "").trim();
+  // al copiarlo de la terminal, el salto de línea del permiso se convierte en un espacio: se quitan todos
+  const t = String(token || "").replace(/\s+/g, "");
   if (!t) { try { fs.unlinkSync(tokenArchivo()); } catch (x) {} return comprobar(true); }
-  if (!/^sk-ant-/.test(t)) throw new Error("Eso no parece un permiso de Claude (empieza por sk-ant-)");
+  if (!/^sk-ant-[\w-]+$/.test(t)) throw new Error("Eso no parece un permiso de Claude (empieza por sk-ant-)");
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows no deja cifrar el permiso en este equipo");
   fs.writeFileSync(tokenArchivo(), safeStorage.encryptString(t));
   return comprobar(true);

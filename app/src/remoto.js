@@ -6,6 +6,7 @@
  * También sube solo a Drive los Shorts entregados (y lo que espera revisión, para poder verlo desde el móvil).
  * En la WEB/móvil: remotoApi() lee ese estado y manda órdenes (lo usa la vista de Historias).
  */
+import { APP_VERSION } from "./base";
 import { YT_BACKEND, cloudToken, driveConectado, driveToken } from "./datos";
 import { cabecerasEquipo } from "./seguridad";
 import { PERFILES, perfilActual } from "./perfiles";
@@ -97,7 +98,7 @@ export function iniciarRemotoEscritorio(toast) {
       historias.push(x);
     }
     const datos = {
-      tipo: "escritorio", ts: Date.now(), historias, disponible: _disponible,
+      tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible,
       capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
       tarea: t && t.activa ? { id: t.id, tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,

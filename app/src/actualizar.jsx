@@ -50,7 +50,9 @@ export function AvisoActualizacion() {
         // 2) el portátil publica solo su versión si es más nueva que la publicada (el servidor solo se lo deja al dueño)
         if (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version))) { publicarVersion(yo, "").catch(() => {}); return; }
         // 3) los demás equipos: hay una más nueva publicada por el portátil
-        if (v.version && num(v.version) > num(APP_VERSION)) setNueva({ ...v, otroElectron: v.electron && yo.electron && v.electron.split(".")[0] !== yo.electron.split(".")[0] });
+        // (y nunca si es justo el mismo código que ya lleva este equipo)
+        if (v.version && num(v.version) > num(APP_VERSION) && num(v.version) > num(yo.version) && v.sha256 !== yo.sha256) setNueva({ ...v, otroElectron: v.electron && yo.electron && v.electron.split(".")[0] !== yo.electron.split(".")[0] });
+        else setNueva(null);
       } catch (e) {}
     };
     mirar();
@@ -63,12 +65,11 @@ export function AvisoActualizacion() {
   }, []);
   if (!nueva || oculto) return null;
   const instalar = async () => {
-    setEstado("Bajando la versión " + nueva.version + "…");
+    setEstado(nueva.local ? "Guardando todo y reiniciando…" : "Bajando la versión " + nueva.version + " (unos segundos)… luego se reinicia sola");
     try {
-      setEstado("Guardando todo y reiniciando…");
       if (nueva.local) await SF().actLocalAplicar();
       else { const v = await actualizacionApi("GET"); await SF().actInstalar(v.url, v.sha256, v.version); }   // enlace recién firmado
-    } catch (e) { setEstado("No se pudo: " + e.message); }
+    } catch (e) { setEstado("❌ No se pudo: " + e.message); }
   };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 16px", background: "linear-gradient(90deg,rgba(96,165,250,.16),rgba(212,175,55,.10))",
@@ -78,7 +79,8 @@ export function AvisoActualizacion() {
       <span style={{ flex: 1 }} />
       {nueva.otroElectron
         ? <span style={{ color: "#F59E0B", fontWeight: 600 }}>Esta necesita el paquete completo: pídeselo al portátil.</span>
-        : estado ? <span style={{ fontWeight: 600 }}>{estado}</span>
+        : estado ? <><span style={{ fontWeight: 600 }}>{estado}</span>
+            {estado.startsWith("❌") && <button onClick={instalar} className="grad-gold" style={{ fontSize: 12.5, fontWeight: 700, color: "#000", borderRadius: 9, padding: "7px 14px" }}>Reintentar</button>}</>
         : <button onClick={instalar} className="grad-gold" style={{ fontSize: 12.5, fontWeight: 700, color: "#000", borderRadius: 9, padding: "7px 14px" }}>Actualizar ahora</button>}
       {!estado && <button onClick={() => setOculto(true)} style={{ fontSize: 12, color: "var(--text-3)" }}>Luego</button>}
     </div>);
