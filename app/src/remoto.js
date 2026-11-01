@@ -86,6 +86,15 @@ export function iniciarRemotoEscritorio(toast) {
         if (clave === "listo") avisar("🎉 Short listo", "«" + (h.titulo || h.id) + "» ya está terminado" + (h.drive ? " y en tu Drive" : ""), "h" + h.id);
         else avisar("📋 Te toca revisar", "Historia " + h.id.slice(0, 2) + " · " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[rev.id] || rev.id), "h" + h.id);
       }
+      // v3.37.4: cada etapa terminada (guion, voces, escena, animatic, render…), también avisa
+      const hechas = (h.etapas || []).filter(e => e.estado === "hecho").map(e => e.id);
+      ahora["e" + h.id] = hechas.join(",");
+      const antes = String(previos["e" + h.id] || "").split(",").filter(Boolean);
+      const nueva = [...hechas].reverse().find(id => !antes.includes(id));
+      if (nueva && previos.__iniciado && previos["e" + h.id] !== undefined && clave !== "listo" && !(clave && previos[h.id] !== clave)) {
+        const et = (h.etapas || []).find(e => e.id === nueva) || {};
+        avisar("✅ " + (et.nombre || nueva) + " hecho", "Historia " + h.id.slice(0, 2) + (h.titulo ? " · «" + h.titulo + "»" : "") + " sigue adelante", "e" + h.id + nueva);
+      }
     }
     ahora.__iniciado = 1;
     try { localStorage.setItem(K_AV, JSON.stringify(ahora)); } catch (e) {}

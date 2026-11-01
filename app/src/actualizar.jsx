@@ -3,6 +3,7 @@ const { useState, useEffect } = React;
 import { APP_VERSION } from "./base";
 import { YT_BACKEND } from "./datos";
 import { cabecerasEquipo } from "./seguridad";
+import { perfilActual } from "./perfiles";
 
 /* ============================ ACTUALIZACIONES (v3.32) ============================
  * El portátil publica su versión (Administración → «Publicar esta versión»). Los demás equipos de escritorio lo
@@ -66,6 +67,7 @@ export function AvisoActualizacion() {
   if (!nueva || oculto) return null;
   const instalar = async () => {
     setEstado(nueva.local ? "Guardando todo y reiniciando…" : "Bajando la versión " + nueva.version + " (unos segundos)… luego se reinicia sola");
+    try { if (perfilActual()) localStorage.setItem("rs_volver_perfil", localStorage.getItem("rs_perfil") || ""); } catch (e) {}
     try {
       if (nueva.local) await SF().actLocalAplicar();
       else { const v = await actualizacionApi("GET"); await SF().actInstalar(v.url, v.sha256, v.version); }   // enlace recién firmado
