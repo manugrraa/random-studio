@@ -187,6 +187,16 @@ ipcMain.handle("historias-cancelar", async (e, soloId) => {
   return { ok: true };
 });
 
+// v3.38.2: PARAR TODO (p. ej. antes de apagar el equipo): vacía la cola local y para lo que esté en marcha.
+// Lo hecho se queda guardado; al volver a estar disponible, la historia sigue sola por donde iba.
+ipcMain.handle("historias-parar-todo", async () => {
+  const habia = (tarea ? 1 : 0) + cola.length;
+  cola.length = 0;
+  if (tarea) tarea.alTerminar = null;
+  if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
+  return { ok: true, parados: habia };
+});
+
 // Elegir la miniatura: plano + momento (0..1) -> tools/miniatura.py y vuelve a entregar
 ipcMain.handle("historias-miniatura", async (e, id, plano, t) => {
   const c = carpetaDe(id);
@@ -593,6 +603,47 @@ ipcMain.handle("estudio-drive-subir", async (e, id, token, perfilNombre, que) =>
     return { ok: false, error: x.message };
   } finally { subiendo.delete(clave); }
 });
+
+/* v3.39: el KIT viaja con RandomStudio. Cada versión lleva dentro el código del proyecto de historias del portátil
+ * (proyecto/: kit/*.py, tools/*.py, tools/estudio/*.md, ver tools/proyecto.mjs). Al arrancar, los demás equipos lo
+ * instalan en su proyecto para rodar con el mismo kit (cámara, escenario, revisor...). El portátil (tiene .origen_kit)
+ * nunca se toca. Si este equipo cambió un archivo por su cuenta (p. ej. Claude añadió algo al kit aquí), se guarda una
+ * copia en _kit_local/<fecha>/ antes de sustituirlo; los archivos nuevos de este equipo no se borran. */
+function sincronizarKit() {
+  const crypto = require("crypto");
+  const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
+  try {
+    const R = raiz();
+    if (!R || !existe(path.join(R, "kit")) || existe(path.join(R, ".origen_kit"))) return { ok: true, nada: true };
+    const src = path.join(__dirname, "..", "proyecto");
+    const man = JSON.parse(fs.readFileSync(path.join(src, "manifiesto.json"), "utf8"));
+    const estF = path.join(R, ".kit_sync.json");
+    const est = leerJson(estF, { archivos: {} });
+    if (est.fecha === man.fecha) return { ok: true, al_dia: true };
+    const sello = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    let puestos = 0, guardados = 0;
+    for (const [rel, h] of Object.entries(man.archivos)) {
+      const dst = path.join(R, rel);
+      let actual = null;
+      try { actual = sha(fs.readFileSync(dst)); } catch (e) {}
+      if (actual === h) continue;
+      // cambiado aquí (o primera vez, sin saber de dónde viene): copia de seguridad antes de sustituirlo
+      if (actual && (!est.archivos[rel] || actual !== est.archivos[rel])) {
+        const bk = path.join(R, "_kit_local", sello, rel);
+        fs.mkdirSync(path.dirname(bk), { recursive: true });
+        fs.copyFileSync(dst, bk);
+        guardados++;
+      }
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.writeFileSync(dst, fs.readFileSync(path.join(src, rel)));
+      puestos++;
+    }
+    escribirJson(estF, { fecha: man.fecha, archivos: man.archivos, aplicado: new Date().toISOString(), puestos, guardados });
+    return { ok: true, puestos, guardados };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+app.whenReady().then(() => setTimeout(() => { const r = sincronizarKit(); if (r.puestos) console.log("kit actualizado:", r); }, 8000));
+ipcMain.handle("kit-sincronizar", async () => sincronizarKit());
 
 /* v3.38.1: borrar una historia del estudio. Va a la PAPELERA de este equipo (se puede recuperar), nunca se borra del todo.
  * Solo las hechas con el estudio (las 01-08 hechas a mano no se pueden borrar desde aquí) y nunca la que está trabajando.

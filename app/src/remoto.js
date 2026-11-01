@@ -41,6 +41,7 @@ async function ejecutar(o) {
     case "idea_poner": return s.estudioIdeaPoner(a.id, { estado: a.estado });
     // (v3.38.1: ya no hay orden «crear»: toda historia nueva pasa por la cola, que es la que impide repetirlas)
     case "borrar": return borrarHistoria(a.id);
+    case "parar_todo": return pararTodo();
     case "drive_subir": return s.estudioDriveSubir(a.id, await driveToken(), nombrePerfil(), a.que || "short");
     case "ajustes": return s.estudioAjustes(a.nuevos || {});
   }
@@ -167,6 +168,14 @@ export async function pedidosApi(metodo, cuerpo) {
   return j;
 }
 
+/** Parar todo en ESTE equipo: deja de coger trabajo y para lo que esté haciendo (lo hecho se queda). */
+let _parando = 0;
+export async function pararTodo() {
+  ponerDisponible(false);
+  _parando = Date.now();          // lo que se corte ahora no cuenta como fallo: mañana sigue sola
+  return SF().historiasPararTodo ? SF().historiasPararTodo() : { ok: true };
+}
+
 /** Borra una historia de ESTE equipo (a su papelera) y la quita de la cola compartida para que se pueda volver a pedir. */
 export async function borrarHistoria(id) {
   const r = await SF().estudioBorrar(id);
@@ -204,7 +213,9 @@ export function iniciarTrabajador(toast) {
   // los fallos de una etapa de una historia de la cola
   s.onHistoriasProgreso && s.onHistoriasProgreso((d) => {
     if (d.tipo !== "fin" || d.ok) return;
+    if (Date.now() - _parando < 20000) return;
     const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id);
+    if (p) { m[p].parada = true; guardarMios(m); }
     if (p) { avisarPedido(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") }); avisar("⚠️ Una historia se paró", "Historia " + d.id.slice(0, 2) + " (" + d.id.slice(3).replace(/_/g, " ") + ") · " + (d.etapa || "una etapa"), "f" + d.id); }
   });
   s.onEstudioIdeas && s.onEstudioIdeas((d) => {
@@ -224,8 +235,16 @@ export function iniciarTrabajador(toast) {
       if (!h) continue;
       const et = h.etapas || [];
       if (h.entregada || (et.length && et.every(e => e.estado === "hecho"))) { x.fin = true; avisarPedido(Number(pid), "hecho", { historia_id: h.id, detalle: "Short entregado" }); }
-      else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisarPedido(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + (et.find(e => e.estado === "revisar") || {}).nombre }); }
-      else if (t && t.activa && t.id === h.id) { delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
+      else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisarPedido(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[(et.find(e => e.estado === "revisar") || {}).id] || "una etapa") }); }
+      else if (t && t.activa && t.id === h.id) { x.parada = false; x.quieta = 0; delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
+      // v3.38.2: se quedó a medias (equipo apagado o «Parar todo»): al volver a estar disponible y libre, sigue sola
+      // (solo si lleva quieta dos vueltas seguidas, para no pisar el paso de una etapa a la siguiente, y nunca si falló)
+      else if (_disponible && !(t && t.activa) && !x.reanudada && !x.parada && et.some(e => e.estado === "pendiente") && (x.quieta = (x.quieta || 0) + 1) >= 3) {
+        x.reanudada = Date.now(); x.quieta = 0;
+        try { await s.estudioAvanzar(h.id); if (toast) toast("▶ Sigo con la historia " + h.id.slice(0, 2) + " donde se quedó"); } catch (e) {}
+        break;
+      }
+      else if (t && t.activa) x.reanudada = 0;
     }
     guardarMios(m);
     // 2) coger trabajo nuevo: solo si estoy disponible, libre y preparado

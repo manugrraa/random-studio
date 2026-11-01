@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useCallback, useRef } = React;
 import { Icons } from "./base";
 import { borrarHistoria, pedidosApi, remotoApi } from "./remoto";
-import { BotonDisponible, ColaTrabajo, NuevaPeticion } from "./cola";
+import { BotonDisponible, BotonPararTodo, ColaTrabajo, NuevaPeticion } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
@@ -507,6 +507,7 @@ export function HistoriasView({ toast }) {
           <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>De la idea al Short, con Claude, y tú decides en cada paso</div>
         </div>
         <span style={{ flex: 1 }} />
+        <BotonPararTodo toast={toast} />
         <BotonDisponible />
         <div style={{ display: "flex", gap: 4, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: 4 }}>
           {[["proyectos", "📁 Historias"], ["cola", "📋 Cola"], ["ideas", "💡 Ideas"], ["ajustes", "⚙️ Ajustes"]].map(([k, t]) => (
@@ -781,8 +782,13 @@ export function HistoriasRemoto({ toast }) {
         </div>
       </div>
 
-      {/* los equipos de un vistazo: una línea cada uno */}
+      {/* los equipos de un vistazo: una línea cada uno, y «Parar todo» para todos a la vez (p. ej. antes de dormir) */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {equipos.some(e => e.en_linea && (e.datos.tarea || e.datos.disponible !== false)) && (
+          <button onClick={() => {
+            if (!confirm("¿Parar todo en todos los equipos?\n\nDejan de coger trabajo y paran lo que estén haciendo. Lo hecho se queda: cuando vuelvan a estar disponibles, siguen solos.")) return;
+            equipos.filter(e => e.en_linea).forEach(e => ordenA(e, "parar_todo", {}, "⏹ Parando " + corto(e.nombre) + "…"));
+          }} style={{ ...botonSec, padding: "6px 10px", fontSize: 12, color: "var(--red)", borderColor: "rgba(248,113,113,.4)" }}>⏹ Parar todo</button>)}
         {equipos.length === 0 && <span style={{ fontSize: 12.5, color: "#F59E0B", fontWeight: 600 }}>Ningún equipo conectado: lo que pidas espera en la cola.</span>}
         {equipos.map(e => {
           const t = e.datos.tarea, cap = e.datos.capacidad || {};

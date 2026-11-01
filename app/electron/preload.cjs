@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   estudioIdeasGenerar: (n, pista) => ipcRenderer.invoke("estudio-ideas-generar", n, pista),
   estudioIdeaPoner: (id, cambios) => ipcRenderer.invoke("estudio-idea-poner", id, cambios),
   estudioBorrar: (id) => ipcRenderer.invoke("estudio-borrar", id),
+  historiasPararTodo: () => ipcRenderer.invoke("historias-parar-todo"),
   estudioRenumerar: (de, a) => ipcRenderer.invoke("estudio-renumerar", de, a),
   estudioIdeaBorrar: (id) => ipcRenderer.invoke("estudio-idea-borrar", id),
   onEstudioIdeas: (cb) => { const f = (e, d) => cb(d); ipcRenderer.on("estudio-ideas-listas", f); return () => ipcRenderer.removeListener("estudio-ideas-listas", f); },

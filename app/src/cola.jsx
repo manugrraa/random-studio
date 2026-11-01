@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useEffect, useCallback } = React;
-import { alCambiarDisponible, disponible, pedidosApi, ponerDisponible } from "./remoto";
+import { alCambiarDisponible, disponible, pararTodo, pedidosApi, ponerDisponible } from "./remoto";
 
 /* ============================ COLA DE TRABAJO (v3.33) ============================
  * La cola compartida de pedidos (/api/pedidos): se ve igual desde el portátil, el ordenador y el móvil.
@@ -34,6 +34,23 @@ export function BotonDisponible() {
     </button>);
 }
 
+
+/** v3.38.2: parar todo en ESTE equipo (p. ej. antes de apagarlo): deja de coger trabajo y para lo que esté haciendo.
+ * Lo hecho se queda; al volver a ponerlo disponible (o al abrir RandomStudio otro día) la historia sigue sola. */
+export function BotonPararTodo({ toast }) {
+  const [parando, setParando] = useState(false);
+  if (!window.studioFS || !window.studioFS.historiasPararTodo) return null;
+  return (
+    <button disabled={parando} onClick={async () => {
+      if (!confirm("¿Parar todo en este equipo?\n\nDeja de coger trabajo y para lo que esté haciendo. Lo hecho se queda guardado: cuando lo vuelvas a poner disponible (o abras RandomStudio otro día), sigue solo por donde iba.")) return;
+      setParando(true);
+      try { const r = await pararTodo(); if (toast) toast(r && r.parados ? "⏹ Parado. Ya puedes apagar el equipo." : "⏹ No había nada en marcha. Ya puedes apagar el equipo."); }
+      catch (e) { if (toast) toast("❌ " + e.message); }
+      setParando(false);
+    }} title="Para lo que esté haciendo este equipo y deja de coger trabajo (para apagarlo tranquilo)"
+      style={{ fontSize: 12.5, fontWeight: 700, borderRadius: 99, padding: "7px 13px", border: "1px solid rgba(248,113,113,.4)", background: "rgba(248,113,113,.08)", color: "var(--red)" }}>
+      {parando ? "Parando…" : "⏹ Parar todo"}</button>);
+}
 
 /** Pedir trabajo a la cola desde cualquier equipo (también el móvil): una historia con tu propia idea, o que piensen ideas.
  * No depende de que el portátil esté publicando: el pedido se queda en la cola y lo coge el primer equipo disponible. */
