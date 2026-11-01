@@ -84,7 +84,7 @@ export function iniciarRemotoEscritorio(toast) {
       ahora[h.id] = clave;
       if (clave && previos[h.id] !== clave && previos.__iniciado) {
         if (clave === "listo") avisar("🎉 Short listo", "«" + (h.titulo || h.id) + "» ya está terminado" + (h.drive ? " y en tu Drive" : ""), "h" + h.id);
-        else avisar("📋 Te toca revisar", "Historia " + h.id.slice(0, 2) + " · " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[rev.id] || rev.id), "h" + h.id);
+        else avisar("📋 Te toca revisar", "Historia " + h.id.slice(0, 2) + (h.titulo ? " «" + h.titulo + "»" : "") + " · " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[rev.id] || rev.id), "h" + h.id);
       }
       // v3.37.4: cada etapa terminada (guion, voces, escena, animatic, render…), también avisa
       const hechas = (h.etapas || []).filter(e => e.estado === "hecho").map(e => e.id);
@@ -110,7 +110,7 @@ export function iniciarRemotoEscritorio(toast) {
       tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible,
       capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
-      tarea: t && t.activa ? { id: t.id, tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
+      tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
       ajustes: aj.ajustes,
       ideas: (id.ideas || []).filter(i => i.estado !== "descartada").slice(0, 30).map(i => ({ id: i.id, titulo: i.titulo, regla: i.regla, resumen: i.resumen, estado: i.estado, temporada: i.temporada, historia: i.historia })),
       generandoIdeas: !!id.generando,
@@ -197,7 +197,7 @@ export function iniciarTrabajador(toast) {
   s.onHistoriasProgreso && s.onHistoriasProgreso((d) => {
     if (d.tipo !== "fin" || d.ok) return;
     const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id);
-    if (p) { avisarPedido(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") }); avisar("⚠️ Una historia se paró", "Historia " + d.id.slice(0, 2) + " · " + (d.etapa || "una etapa"), "f" + d.id); }
+    if (p) { avisarPedido(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") }); avisar("⚠️ Una historia se paró", "Historia " + d.id.slice(0, 2) + " (" + d.id.slice(3).replace(/_/g, " ") + ") · " + (d.etapa || "una etapa"), "f" + d.id); }
   });
   s.onEstudioIdeas && s.onEstudioIdeas((d) => {
     const m = mios(), p = Object.keys(m).find(k => m[k].tipo === "ideas" && !m[k].fin);

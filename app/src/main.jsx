@@ -37,4 +37,13 @@ function Inicio() {
   return <App/>;
 }
 
+// v3.37.5: cada botón «se hunde» un momento al pulsarlo, aunque el toque sea muy corto (en el móvil :active casi no se ve)
+document.addEventListener("pointerdown", (e) => {
+  const b = e.target && e.target.closest && e.target.closest("button");
+  if (!b || b.disabled) return;
+  b.classList.add("rs-pulso");
+  setTimeout(() => b.classList.remove("rs-pulso"), 160);
+}, { passive: true });
+document.addEventListener("touchstart", () => {}, { passive: true });   // iOS: sin esto no aplica :active
+
 ReactDOM.createRoot(document.getElementById("root")).render(esEditor ? <EditorApp/> : <Inicio/>);

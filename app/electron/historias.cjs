@@ -68,7 +68,8 @@ function resumen(id) {
   const hechos = PASOS.filter(p => estado[p]);
   const mini = existe(path.join(c, "miniatura.png")) ? path.join(c, "miniatura.png") : null;
   return {
-    id, titulo: t, carpeta: c, pasos: PASOS.map(p => ({ paso: p, hecho: !!estado[p], fin: estado[p] && estado[p].fin, s: estado[p] && estado[p].s })),
+    // v3.37.5: mientras se escribe el guion aún no hay titulo.txt: se enseña el de la idea (solo para verlo; la entrega usa el real)
+    id, titulo: t || (() => { try { return ((estudioDe(c).idea || {}).titulo || "").trim(); } catch (e) { return ""; } })(), provisional: !t, carpeta: c, pasos: PASOS.map(p => ({ paso: p, hecho: !!estado[p], fin: estado[p] && estado[p].fin, s: estado[p] && estado[p].s })),
     hechos: hechos.length, entregada: existe(path.join(entrega, tituloArchivo(t) + ".mp4")), carpetaEntrega: entrega,
     final: existe(path.join(c, `historia${id.slice(0, 2)}_final.mp4`)) ? path.join(c, `historia${id.slice(0, 2)}_final.mp4`) : null,
     miniatura: mini ? miniDataUrl(mini, 220) : null,

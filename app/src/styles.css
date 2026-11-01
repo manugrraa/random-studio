@@ -97,6 +97,12 @@
   .grad-gold { background: linear-gradient(135deg, #FFD700 0%, #D4AF37 55%, #b8941f 100%); }
 
   button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  /* v3.37.5: que se note al pulsar (también en el móvil, donde un toque corto apenas activa :active) */
+  button, [role="button"] { transition: scale .09s ease, filter .12s ease, opacity .15s ease; }
+  button:not(:disabled):hover { filter: brightness(1.08); }
+  button:not(:disabled):active, button.rs-pulso:not(:disabled), [role="button"]:active { scale: .95; filter: brightness(.9); }
+  button:disabled { cursor: default; }
+  button.rs-ocupado { opacity: .6; pointer-events: none; }
   input, textarea, select { font-family: inherit; }
   input:focus, textarea:focus, select:focus { outline: none; border-color: var(--gold-dim) !important; }
 

@@ -147,7 +147,7 @@ export function ColaTrabajo({ toast }) {
                   <b style={{ fontSize: 13 }}>{e.nombre}{e.id === r.yo ? " (este)" : ""}</b>
                   <span style={{ flex: 1 }} /><span style={{ fontSize: 11.5, fontWeight: 700, color: est[1] }}>{est[0]}</span>
                 </div>
-                {e.tarea && <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 4 }}>Historia {String(e.tarea.id || "").slice(0, 2)} · {ETAPA[e.tarea.etapa] || e.tarea.etapa || "en marcha"}{e.tarea.render ? " · plano " + e.tarea.render.plano : ""}</div>}
+                {e.tarea && <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 4 }}>Historia {String(e.tarea.id || "").slice(0, 2)}{e.tarea.titulo ? " · «" + e.tarea.titulo + "»" : ""} · {ETAPA[e.tarea.etapa] || e.tarea.etapa || "en marcha"}{e.tarea.render ? " · plano " + e.tarea.render.plano : ""}</div>}
                 {e.en_linea && !listo && <div style={{ fontSize: 11.5, color: "#F59E0B", marginTop: 4, lineHeight: 1.45 }}>
                   {!e.capacidad.proyecto ? "Le falta el proyecto de historias"
                     : e.capacidad.claudeInstalado === false ? "Le falta instalar Claude Code"

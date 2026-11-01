@@ -89,7 +89,7 @@ function TareaEnMarcha({ tarea, ahora, onCancelar, titulo }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span style={{ width: 10, height: 10, borderRadius: 9, background: "var(--gold)", animation: "rh-pulso 1.4s infinite" }} />
         <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15 }}>
-          {titulo || ("Historia " + tarea.id.slice(0, 2))}{etapa ? " · " + etapa : ""}
+          {"Historia " + tarea.id.slice(0, 2)}{titulo ? " · " + titulo : ""}{etapa ? " · " + etapa : ""}
         </div>
         {esAgente && <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", border: "1px solid var(--border-gold)", borderRadius: 99, padding: "2px 8px" }}>CLAUDE TRABAJANDO</span>}
         <span style={{ flex: 1 }} />
@@ -262,14 +262,22 @@ function Ideas({ toast, onCreada }) {
   };
   const poner = async (i, estado) => { await SF().estudioIdeaPoner(i.id, { estado }); cargar(); };
   // v3.33: las historias nuevas van a la cola compartida; la coge el primer equipo disponible (el portátil, si está libre)
+  // v3.37.5: un solo envío por idea (el botón se bloquea al momento; el servidor además rechaza las repetidas)
+  const [enviando, setEnviando] = useState({});
   const crear = async (i) => {
+    if (enviando[i.id]) return;
+    setEnviando(x => ({ ...x, [i.id]: true }));
     const { id, estado, historia, fecha, ...idea } = i;
     try {
       await pedidosApi("POST", { accion: "crear", tipo: "historia", titulo: i.titulo, args: { idea } });
       await SF().estudioIdeaPoner(i.id, { estado: "en_cola" });
       toast("📋 «" + i.titulo + "» añadida a la cola");
       cargar(); onCreada && onCreada();
-    } catch (e) { toast("❌ " + e.message); }
+    } catch (e) {
+      if (/ya está/.test(e.message)) { await SF().estudioIdeaPoner(i.id, { estado: "en_cola" }).catch(() => {}); cargar(); }
+      toast((/ya está/.test(e.message) ? "📋 " : "❌ ") + e.message);
+    }
+    setEnviando(x => { const y = { ...x }; delete y[i.id]; return y; });
   };
   const vis = (ideas || []).filter(i => filtro === "todas" ? !["descartada", "usada"].includes(i.estado) : i.estado === filtro);
   return (
@@ -302,7 +310,7 @@ function Ideas({ toast, onCreada }) {
             {i.estado !== "usada" && (
               <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
                 {i.estado === "en_cola" ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", padding: "8px 4px" }}>📋 En la cola</span>
-                  : <button onClick={() => crear(i)} className="grad-gold" style={botonOro}>📋 Añadir a la cola</button>}
+                  : <button disabled={!!enviando[i.id]} onClick={() => crear(i)} className="grad-gold" style={{ ...botonOro, opacity: enviando[i.id] ? .6 : 1 }}>{enviando[i.id] ? "Añadiendo…" : "📋 Añadir a la cola"}</button>}
                 <button onClick={() => poner(i, i.estado === "guardada" ? "nueva" : "guardada")} style={botonSec}>{i.estado === "guardada" ? "Quitar ⭐" : "⭐ Guardar"}</button>
                 {i.estado !== "descartada" ? <button onClick={() => poner(i, "descartada")} style={{ ...botonSec, color: "var(--text-3)" }}>Descartar</button>
                   : <button onClick={() => poner(i, "nueva")} style={botonSec}>Recuperar</button>}
@@ -422,12 +430,15 @@ export function HistoriasView({ toast }) {
   const [tarea, setTarea] = useState(null);
   const [ahora, setAhora] = useState(Date.now());
   const [informe, setInforme] = useState(null);
+  const listaRef = useRef([]);
+  // «Historia 07 · TÍTULO» (mientras no hay guion, el título de la idea)
+  const nombreDe = (id) => { const h = (listaRef.current || []).find(x => x.id === id); return "Historia " + id.slice(0, 2) + (h && h.titulo ? " · «" + h.titulo + "»" : ""); };
 
   const cargar = useCallback(async () => {
     try {
       const r = await SF().historiasLista();
       if (!r.ok) { setError(r.error); return; }
-      setLista(r.historias); setError("");
+      setLista(r.historias); listaRef.current = r.historias; setError("");
       setSelId(s => s || (r.historias[0] && r.historias[0].id));
     } catch (e) { setError(e.message || String(e)); }
   }, []);
@@ -446,8 +457,8 @@ export function HistoriasView({ toast }) {
     cargar();
     SF().historiasTareaEstado().then(st => st.activa && setTarea({ ...st })).catch(() => {});
     const off = SF().onHistoriasProgreso((d) => {
-      if (d.tipo === "espera") { toast(`📋 Historia ${d.id.slice(0, 2)}: te toca revisar ${ETAPA_NOMBRE[d.etapa] || ""}`); cargar(); if (d.id === selRef.current) cargarDet(d.id); return; }
-      if (d.tipo === "terminado") { toast(`🎉 Historia ${d.id.slice(0, 2)} terminada`); cargar(); if (d.id === selRef.current) cargarDet(d.id); return; }
+      if (d.tipo === "espera") { toast(`📋 ${nombreDe(d.id)}: te toca revisar ${ETAPA_NOMBRE[d.etapa] || ""}`); cargar(); if (d.id === selRef.current) cargarDet(d.id); return; }
+      if (d.tipo === "terminado") { toast(`🎉 ${nombreDe(d.id)} terminada`); cargar(); if (d.id === selRef.current) cargarDet(d.id); return; }
       setTarea(prev => {
         const t = prev && prev.id === d.id ? { ...prev } : { id: d.id, inicio: Date.now(), lineas: [], acciones: [] };
         if (d.tipo === "paso") { t.tipo = t.tipo || "cadena"; t.paso = d.paso; t.render = null; }
@@ -456,7 +467,7 @@ export function HistoriasView({ toast }) {
         else if (d.tipo === "agente") { t.tipo = "agente"; t.accion = d.accion; t.acciones = [...(t.acciones || []).slice(-60), { t: Date.now(), a: d.accion }]; }
         else if (d.tipo === "agenteTexto") { t.tipo = "agente"; t.lineas = [...(t.lineas || []).slice(-200), d.texto]; }
         else if (d.tipo === "fin") {
-          if (!d.ok) { toast(`Historia ${d.id.slice(0, 2)}: se paró (mira los detalles)`); setInforme({ id: d.id, etapa: d.etapa, texto: d.informe }); }
+          if (!d.ok) { toast(`${nombreDe(d.id)}: se paró (mira los detalles)`); setInforme({ id: d.id, etapa: d.etapa, texto: d.informe, titulo: ((listaRef.current || []).find(x => x.id === d.id) || {}).titulo }); }
           setTimeout(() => { cargar(); if (d.id === selRef.current) cargarDet(d.id); }, 400);
           return d.ok ? null : { ...t, terminado: true, fallo: true };
         }
@@ -508,7 +519,7 @@ export function HistoriasView({ toast }) {
       {informe && (
         <div style={{ ...tarjeta, borderColor: "rgba(248,113,113,.4)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <b style={{ color: "var(--red)" }}>Historia {informe.id.slice(0, 2)} · {ETAPA_NOMBRE[informe.etapa] || "tarea"}: se paró</b>
+            <b style={{ color: "var(--red)" }}>Historia {informe.id.slice(0, 2)}{informe.titulo ? " · " + informe.titulo : ""} · {ETAPA_NOMBRE[informe.etapa] || "tarea"}: se paró</b>
             <span style={{ flex: 1 }} /><button onClick={() => { setInforme(null); setTarea(null); }} style={botonSec}>Cerrar</button>
           </div>
           {informe.texto && <div style={{ fontSize: 12.5, color: "var(--text-2)", whiteSpace: "pre-wrap", marginTop: 8, lineHeight: 1.55 }}>{informe.texto}</div>}
@@ -596,6 +607,7 @@ function HistoriasRemoto({ toast }) {
   const [error, setError] = useState("");
   const [selId, setSelId] = useState(null);
   const [pestana, setPestana] = useState("proyectos");
+  const [enviandoIdea, setEnviandoIdea] = useState({});
   const [eqId, setEqId] = useState(null);
   const [ahora, setAhora] = useState(Date.now());
   const cargar = useCallback(async () => {
@@ -612,11 +624,12 @@ function HistoriasRemoto({ toast }) {
   equipos.sort((a, b) => (b.en_linea - a.en_linea) || ((b.rol === "dueno") - (a.rol === "dueno")));
   const eq = equipos.find(e => e.id === eqId) || equipos[0];
   const d = eq && eq.datos;
-  const orden = async (que, args, ok) => {
-    if (!eq) return;
-    try { await remotoApi("POST", { accion: "orden", para: eq.id, que, args }); toast(ok || "Orden enviada"); setTimeout(cargar, 1500); }
+  const ordenA = async (para, que, args, ok) => {
+    if (!para) return;
+    try { await remotoApi("POST", { accion: "orden", para: para.id, que, args }); toast(ok || "Orden enviada"); setTimeout(cargar, 1500); }
     catch (e) { toast("❌ " + e.message); }
   };
+  const orden = (que, args, ok) => ordenA(eq, que, args, ok);
 
   if (!r) return <div style={{ ...tarjeta, margin: "30px auto", maxWidth: 520, fontSize: 13, color: error ? "var(--red)" : "var(--text-3)" }}>{error || "Conectando con el portátil…"}</div>;
   // sin ningún escritorio publicando, el móvil no se queda en un callejón: puede pedir trabajo y ver la cola igualmente
@@ -655,9 +668,25 @@ function HistoriasRemoto({ toast }) {
               <span style={{ color: e.en_linea ? "var(--green)" : "var(--red)" }}>●</span> {e.nombre}{e.datos.tarea ? " · trabajando" : ""}
             </button>))}
         </div>)}
-      {!eq.en_linea && <div style={{ ...tarjeta, fontSize: 12.5, color: "var(--text-2)" }}>El portátil no responde desde {new Date(eq.actualizado).toLocaleString("es-ES")}. Ves lo último que publicó; las órdenes esperarán a que vuelva. Lo que ya está en Drive se puede descargar igual.</div>}
-      {tarea && <TareaEnMarcha tarea={{ ...tarea, lineas: [] }} ahora={ahora} titulo={((d.historias || []).find(x => x.id === tarea.id) || {}).titulo}
-        onCancelar={() => { if (confirm("¿Parar la tarea en el portátil?")) orden("cancelar", {}, "Parando en el portátil…"); }} />}
+      {!eq.en_linea && <div style={{ ...tarjeta, fontSize: 12.5, color: "var(--text-2)" }}>{eq.nombre} no responde desde {new Date(eq.actualizado).toLocaleString("es-ES")}. Ves lo último que publicó; las órdenes esperarán a que vuelva. Lo que ya está en Drive se puede descargar igual.</div>}
+      {/* v3.37.5: lo que hace CADA equipo ahora mismo, a la vez (antes solo se veía el elegido) */}
+      {equipos.map(e => {
+        const t = e.datos.tarea, cap = (e.datos.capacidad || {});
+        const estado = !e.en_linea ? ["var(--red)", "apagado o sin conexión"] : t ? ["var(--gold)", "trabajando"]
+          : e.datos.disponible === false ? ["var(--text-3)", "no disponible"] : cap.claude === false ? ["#F59E0B", cap.claudeError || "le falta Claude Code"]
+          : e.datos.generandoIdeas ? ["var(--gold)", "pensando ideas…"] : ["var(--green)", "libre"];
+        const enRevision = (e.datos.historias || []).filter(x => (x.etapas || []).some(y => y.estado === "revisar"));
+        return (
+          <div key={e.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>
+              <b style={{ fontFamily: "'Sora'" }}>{e.rol === "dueno" ? "💻" : "🖥️"} {e.nombre}</b>
+              <span style={{ color: estado[0], fontWeight: 700 }}>● {estado[1]}</span>
+              {enRevision.length > 0 && <span style={{ color: "var(--gold)", fontWeight: 600 }}>· 📋 {enRevision.length} esperando tu revisión</span>}
+            </div>
+            {t && <TareaEnMarcha tarea={{ ...t, lineas: [] }} ahora={ahora} titulo={t.titulo || ((e.datos.historias || []).find(x => x.id === t.id) || {}).titulo}
+              onCancelar={() => { if (confirm("¿Parar la tarea en " + e.nombre + "?")) ordenA(e, "cancelar", {}, "Parando en " + e.nombre + "…"); }} />}
+          </div>);
+      })}
 
       {pestana === "cola" && <ColaTrabajo toast={toast} />}
       {pestana === "ideas" && (
@@ -671,7 +700,12 @@ function HistoriasRemoto({ toast }) {
               <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{i.resumen}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {i.estado === "en_cola" ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", padding: "8px 4px" }}>📋 En la cola</span>
-                  : <button onClick={async () => { try { const { id, estado, historia, ...idea } = i; await pedidosApi("POST", { accion: "crear", tipo: "historia", titulo: i.titulo, args: { idea } }); orden("idea_poner", { id: i.id, estado: "en_cola" }, "📋 Añadida a la cola"); } catch (e) { toast("❌ " + e.message); } }} className="grad-gold" style={botonOro}>📋 Añadir a la cola</button>}
+                  : <button disabled={!!enviandoIdea[i.id]} onClick={async () => {
+                      if (enviandoIdea[i.id]) return;
+                      setEnviandoIdea(x => ({ ...x, [i.id]: true }));
+                      try { const { id, estado, historia, ...idea } = i; await pedidosApi("POST", { accion: "crear", tipo: "historia", titulo: i.titulo, args: { idea } }); orden("idea_poner", { id: i.id, estado: "en_cola" }, "📋 Añadida a la cola"); }
+                      catch (e) { if (/ya está/.test(e.message)) orden("idea_poner", { id: i.id, estado: "en_cola" }); toast((/ya está/.test(e.message) ? "📋 " : "❌ ") + e.message); setEnviandoIdea(x => { const y = { ...x }; delete y[i.id]; return y; }); }
+                    }} className="grad-gold" style={{ ...botonOro, opacity: enviandoIdea[i.id] ? .6 : 1 }}>{enviandoIdea[i.id] ? "Añadiendo…" : "📋 Añadir a la cola"}</button>}
                 <button onClick={() => orden("idea_poner", { id: i.id, estado: i.estado === "guardada" ? "nueva" : "guardada" })} style={botonSec}>{i.estado === "guardada" ? "Quitar ⭐" : "⭐ Guardar"}</button>
                 <button onClick={() => orden("idea_poner", { id: i.id, estado: "descartada" })} style={{ ...botonSec, color: "var(--text-3)" }}>Descartar</button>
               </div>

@@ -102,8 +102,8 @@ export async function comprobarAcceso() {
   if (j.baneado) return { bloqueado: true, ip: j.ip };
   ponerPerfiles(j.perfiles || []);
   // v3.37.4: tras reiniciarse para actualizar, vuelve sola al perfil en el que estaba (si no, el equipo dejaba de trabajar)
-  const volver = leer("rs_volver_perfil");
-  if (volver) try { localStorage.removeItem("rs_volver_perfil"); } catch (e) {}
+  const volver = leer("rs_perfil_volver");
+  if (volver) try { localStorage.removeItem("rs_perfil_volver"); } catch (e) {}
   const auto = (leer(K_SIEMPRE) === "1" || (volver && volver === leer(K_PERFIL))) && PERFILES.find(p => p.id === leer(K_PERFIL) && p.activo);
   return auto ? { auto: auto.id } : { lista: PERFILES, dispositivo: j.dispositivo };
 }

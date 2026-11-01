@@ -67,7 +67,7 @@ export function AvisoActualizacion() {
   if (!nueva || oculto) return null;
   const instalar = async () => {
     setEstado(nueva.local ? "Guardando todo y reiniciando…" : "Bajando la versión " + nueva.version + " (unos segundos)… luego se reinicia sola");
-    try { if (perfilActual()) localStorage.setItem("rs_volver_perfil", localStorage.getItem("rs_perfil") || ""); } catch (e) {}
+    try { if (perfilActual()) localStorage.setItem("rs_perfil_volver", localStorage.getItem("rs_perfil") || ""); } catch (e) {}
     try {
       if (nueva.local) await SF().actLocalAplicar();
       else { const v = await actualizacionApi("GET"); await SF().actInstalar(v.url, v.sha256, v.version); }   // enlace recién firmado
