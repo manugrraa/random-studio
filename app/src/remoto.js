@@ -39,7 +39,8 @@ async function ejecutar(o) {
     case "cancelar": return s.historiasCancelar(a.historia || undefined);
     case "ideas_generar": return s.estudioIdeasGenerar(Number(a.n) || 5, String(a.pista || ""));
     case "idea_poner": return s.estudioIdeaPoner(a.id, { estado: a.estado });
-    case "crear": return s.estudioCrear(a.id, { nn: Number.isInteger(a.nn) ? a.nn : undefined, idea: a.idea });
+    // (v3.38.1: ya no hay orden «crear»: toda historia nueva pasa por la cola, que es la que impide repetirlas)
+    case "borrar": return borrarHistoria(a.id);
     case "drive_subir": return s.estudioDriveSubir(a.id, await driveToken(), nombrePerfil(), a.que || "short");
     case "ajustes": return s.estudioAjustes(a.nuevos || {});
   }
@@ -166,6 +167,13 @@ export async function pedidosApi(metodo, cuerpo) {
   return j;
 }
 
+/** Borra una historia de ESTE equipo (a su papelera) y la quita de la cola compartida para que se pueda volver a pedir. */
+export async function borrarHistoria(id) {
+  const r = await SF().estudioBorrar(id);
+  if (r && r.ok) await pedidosApi("POST", { accion: "borrada", historia_id: id }).catch(() => {});
+  return r;
+}
+
 /* Disponible para trabajar: al abrir RandomStudio siempre empieza en «disponible»; el botón lo cambia hasta cerrar. */
 let _disponible = true;
 const _oyentes = new Set();
@@ -248,9 +256,29 @@ export function iniciarTrabajador(toast) {
       }
     } catch (e) {} finally { ocupadoCogiendo = false; }
   };
-  // que el número global de historia nunca vaya por detrás de las que ya existen aquí
+  // v3.38.1: numeración seguida: si se borró una historia, las de este equipo que van detrás se renumeran (cada 30 s,
+  // nunca la que está trabajando)
+  let ultimaNumeracion = 0;
+  const renumerar = async () => {
+    if (Date.now() - ultimaNumeracion < 30000 || !s.estudioRenumerar) return;
+    ultimaNumeracion = Date.now();
+    try {
+      const r = await pedidosApi("POST", { accion: "numeracion" });
+      for (const c of (r.cambios || [])) {
+        const x = await s.estudioRenumerar(c.de, c.a);
+        if (x && x.ok) {
+          await pedidosApi("POST", { accion: "renombrada", id: c.pedido, a: c.a }).catch(() => {});
+          const m = mios(); if (m[c.pedido]) { m[c.pedido].historia = c.a; guardarMios(m); }
+          if (toast) toast("🔢 Historia " + c.de.slice(0, 2) + " → " + c.a.slice(0, 2));
+        }
+      }
+    } catch (e) {}
+  };
+  setInterval(renumerar, 10000);
+  // que el número global de historia nunca vaya por detrás de las hechas A MANO que existen aquí (las del estudio las
+  // numera el servidor, y así no vuelve a subir el contador después de borrar una)
   s.historiasLista().then(l => {
-    const max = Math.max(0, ...((l && l.historias) || []).map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)));
+    const max = Math.max(0, ...((l && l.historias) || []).filter(h => h.legado).map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)));
     if (max) pedidosApi("POST", { accion: "contador", minimo: max }).catch(() => {});
   }).catch(() => {});
   vuelta();

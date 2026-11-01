@@ -594,5 +594,48 @@ ipcMain.handle("estudio-drive-subir", async (e, id, token, perfilNombre, que) =>
   } finally { subiendo.delete(clave); }
 });
 
+/* v3.38.1: borrar una historia del estudio. Va a la PAPELERA de este equipo (se puede recuperar), nunca se borra del todo.
+ * Solo las hechas con el estudio (las 01-08 hechas a mano no se pueden borrar desde aquí) y nunca la que está trabajando.
+ * El Short ya entregado (.historiaslistas) no se toca; la idea vuelve a «por mirar». */
+ipcMain.handle("estudio-borrar", async (e, id) => {
+  if (!/^\d{2}_[\w-]+$/.test(String(id || ""))) return { ok: false, error: "Historia no válida" };
+  const c = carpetaDe(id), est = estudioDe(c);
+  if (!est.creado) return { ok: false, error: "Esta historia se hizo a mano: no se borra desde el estudio" };
+  if (tarea && tarea.id === id) return { ok: false, error: "Está trabajando: párala primero" };
+  { const i = cola.indexOf(id); if (i >= 0) cola.splice(i, 1); }
+  try { await shell.trashItem(c); } catch (x) { return { ok: false, error: "No se pudo mover a la papelera: " + x.message }; }
+  try {
+    const ideas = leerIdeas(), idea = ideas.find(x => x.historia === id);
+    if (idea) { idea.estado = "nueva"; delete idea.historia; escribirJson(ideasArchivo(), ideas); }
+  } catch (x) {}
+  return { ok: true };
+});
+
+/* v3.38.1: renumerar una historia (cuando se borra otra, las de detrás se corren para que no queden huecos).
+ * Nunca la que está trabajando (se hace al acabar). Cambia la carpeta, su vídeo historiaNN_final, el guion de guiones/
+ * y la referencia de la idea. */
+ipcMain.handle("estudio-renumerar", async (e, de, a) => {
+  const ok = (x) => /^\d{2}_[\w-]+$/.test(String(x || ""));
+  if (!ok(de) || !ok(a) || de.slice(2) !== a.slice(2)) return { ok: false, error: "Números no válidos" };
+  if (tarea && tarea.id === de) return { ok: false, espera: true, error: "Está trabajando: se renumera al acabar" };
+  const c = path.join(histDir(), de), nueva = path.join(histDir(), a);
+  if (!existe(c)) return { ok: false, error: "No existe " + de };
+  if (existe(nueva)) return { ok: false, espera: true, error: "Ya hay una carpeta " + a + " (se reintenta luego)" };
+  if (!estudioDe(c).creado) return { ok: false, error: "Las hechas a mano no se renumeran" };
+  const viejo = de.slice(0, 2), nn = a.slice(0, 2);
+  fs.renameSync(c, nueva);
+  for (const f of fs.readdirSync(nueva).filter(n => n.startsWith("historia" + viejo + "_final"))) {
+    try { fs.renameSync(path.join(nueva, f), path.join(nueva, "historia" + nn + f.slice(("historia" + viejo).length))); } catch (x) {}
+  }
+  try {
+    const g = path.join(raiz(), "guiones");
+    for (const f of fs.readdirSync(g).filter(n => n.startsWith("historia-" + viejo + "-")))
+      fs.renameSync(path.join(g, f), path.join(g, "historia-" + nn + "-" + f.slice(("historia-" + viejo + "-").length)));
+  } catch (x) {}
+  try { const ideas = leerIdeas(), i = ideas.find(x => x.historia === de); if (i) { i.historia = a; escribirJson(ideasArchivo(), ideas); } } catch (x) {}
+  { const i = cola.indexOf(de); if (i >= 0) cola[i] = a; }
+  return { ok: true };
+});
+
 module.exports = { etapasDe };
 

@@ -1,7 +1,7 @@
 import React from "react";
 const { useState, useEffect, useCallback, useRef } = React;
 import { Icons } from "./base";
-import { pedidosApi, remotoApi } from "./remoto";
+import { borrarHistoria, pedidosApi, remotoApi } from "./remoto";
 import { BotonDisponible, ColaTrabajo, NuevaPeticion } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 
@@ -439,7 +439,8 @@ export function HistoriasView({ toast }) {
       const r = await SF().historiasLista();
       if (!r.ok) { setError(r.error); return; }
       setLista(r.historias); listaRef.current = r.historias; setError("");
-      setSelId(s => s || (r.historias[0] && r.historias[0].id));
+      // (si la elegida se borró o se renumeró, se elige otra)
+      setSelId(s => (s && r.historias.some(h => h.id === s)) ? s : (r.historias[0] && r.historias[0].id));
     } catch (e) { setError(e.message || String(e)); }
   }, []);
 
@@ -586,6 +587,12 @@ export function HistoriasView({ toast }) {
                   <span style={{ flex: 1 }} />
                   <button onClick={() => SF().historiasAbrir(det.id, "carpeta")} style={botonSec}>Carpeta</button>
                   {det.final && <button onClick={() => SF().historiasAbrir(det.id, "video")} style={botonSec}>Abrir vídeo</button>}
+                  {!mat.legado && !(enMarcha && tarea.id === det.id) && (
+                    <button onClick={async () => {
+                      if (!confirm("¿Borrar «" + (det.titulo || det.id) + "»?\n\nSe mueve a la papelera de este equipo (se puede recuperar desde ahí). Si ya tiene un Short entregado, ese vídeo no se toca. Las historias de detrás se renumeran solas.")) return;
+                      try { const r = await borrarHistoria(det.id); if (!r.ok) return toast("❌ " + r.error); toast("🗑 Historia borrada (está en la papelera)"); setSelId(null); cargar(); }
+                      catch (e) { toast("❌ " + e.message); }
+                    }} style={{ ...botonSec, color: "var(--red)" }}>🗑 Borrar</button>)}
                 </div>
               </div>
 
@@ -753,6 +760,9 @@ export function HistoriasRemoto({ toast }) {
               </div>)}
             {h.entregada && !h.drive && <button onClick={() => ordenA(e, "drive_subir", { id: h.id, que: "short" }, "☁️ Subiendo a Drive")} style={{ ...botonSec, alignSelf: "flex-start" }}>☁️ Subir a Drive</button>}
             {h.entregada && <NotaRemota h={h} onOrden={(q, a, ok) => ordenA(e, q, a, ok)} />}
+            {!it.t && (
+              <button onClick={() => { if (confirm("¿Borrar «" + (h.titulo || h.id) + "»?\n\nSe mueve a la papelera de " + corto(e.nombre) + " (se puede recuperar). Las de detrás se renumeran solas.")) ordenA(e, "borrar", { id: h.id }, "🗑 Borrando en " + corto(e.nombre) + "…"); }}
+                style={{ ...botonSec, alignSelf: "flex-start", color: "var(--red)" }}>🗑 Borrar historia</button>)}
             {it.p && ["asignado", "trabajando", "revision"].includes(it.p.estado) && (
               <button onClick={() => { if (confirm("¿Cancelar «" + (h.titulo || h.id) + "»? Lo hecho se queda en " + e.nombre + ".")) pedido({ accion: "cancelar", id: it.p.id }, "Cancelada"); }}
                 style={{ ...botonSec, alignSelf: "flex-start", color: "var(--red)" }}>Cancelar esta historia</button>)}
