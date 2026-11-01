@@ -373,7 +373,8 @@ function promptEtapa(id, etapa, nota) {
   const c = carpetaDe(id), est = estudioDe(c);
   const rel = path.relative(raiz(), c).replace(/\\/g, "/");
   const base = etapa === "animatic" ? "escena" : etapa;   // los cambios del animatic se hacen en la escena
-  let p = instrucciones(base) + `\n\n---\nHISTORIA: ${rel} (número ${id.slice(0, 2)}).\n`;
+  // v3.41.1: las REGLAS (todo lo que el usuario ha pedido) van delante de cada etapa, también en el ordenador, sin memoria
+  let p = instrucciones("reglas") + "\n\n---\n\n" + instrucciones(base) + `\n\n---\nHISTORIA: ${rel} (número ${id.slice(0, 2)}).\n`;
   if (est.idea) p += "IDEA ELEGIDA:\n" + JSON.stringify(est.idea, null, 1) + "\n";
   if (nota) p += `\nNOTA DEL USUARIO (aplícala por encima de todo):\n${nota}\n`;
   return p;
@@ -516,7 +517,7 @@ ipcMain.handle("estudio-ideas-generar", async (e, cuantas, pista) => {
   if (ideasProc) return { ok: false, error: "Ya está generando ideas" };
   const n = Math.max(1, Math.min(10, Number(cuantas) || 5));
   const sender = e.sender;
-  const prompt = instrucciones("ideas") + `\n\nPropón ${n} ideas.` + (pista ? `\nPista del usuario: ${String(pista).slice(0, 500)}` : "")
+  const prompt = instrucciones("reglas") + "\n\n---\n\n" + instrucciones("ideas") + `\n\nPropón ${n} ideas.` + (pista ? `\nPista del usuario: ${String(pista).slice(0, 500)}` : "")
     + `\nFecha de hoy: ${new Date().toISOString().slice(0, 10)}.`;
   ideasProc = claude.generar(prompt, { cwd: raiz(), herramientas: "lectura", segundos: 900 })
     .then(txt => {
