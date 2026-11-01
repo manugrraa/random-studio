@@ -240,6 +240,21 @@ const esperas = () => { try { return JSON.parse(localStorage.getItem(K_LIM) || "
 const guardarEsperas = (w) => { try { localStorage.setItem(K_LIM, JSON.stringify(w)); } catch (e) {} };
 const hora = (ms) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
 
+/* v3.41.2 REPARTO: el ordenador prepara (guion y voces) y el portátil anima (escena, animatic, render, montaje). */
+const BLENDER = ["escena", "animatic", "render", "montaje"];
+const ETAPA_TXT = { guion: "guion", voces: "voces y efectos", escena: "escena 3D", animatic: "animatic", render: "render", montaje: "montaje" };
+/** Historia preparada en este equipo: si el servidor dice que el portátil puede animarla, se sube su copia y se le pasa. */
+async function pasarAlPortatil(pid, id) {
+  const s = SF();
+  const c = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), consulta: true });
+  if (!c.pasar || !s.estudioRelevoPreparar || !driveConectadoTrabajo()) return { traspasado: false };
+  const pr = await s.estudioRelevoPreparar(id);
+  if (!pr || !pr.ok) return { traspasado: false };
+  const up = await s.estudioRelevoSubir(id, await driveTokenTrabajo());
+  if (!up || !up.ok) return { traspasado: false };
+  return pedidosApi("POST", { accion: "fase_blender", id: Number(pid), relevo: { archivo: up.archivo, md5: up.md5, tam: up.tam } });
+}
+
 let _trabajador = false;
 export function iniciarTrabajador(t) {
   if (t) _toast = t;
@@ -256,9 +271,11 @@ export function iniciarTrabajador(t) {
 
   // los fallos de una etapa de una historia de la cola
   s.onHistoriasProgreso && s.onHistoriasProgreso((d) => {
-    if (d.tipo !== "fin" || d.ok) return;
-    if (Date.now() - _parando < 20000) return;
+    if (d.tipo !== "fin") return;
     const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id);
+    if (d.ok) { if (p && m[p].fallos) { m[p].fallos = 0; guardarMios(m); } return; }
+    // parada a mano (botón «Parar» o «Parar todo»): no se reintenta hasta que la sigas tú
+    if (d.cancelada || Date.now() - _parando < 20000) { if (p) { m[p].pausada = true; guardarMios(m); } return; }
     if (d.limite) {
       const w = esperas(); w["h:" + d.id] = d.limite; guardarEsperas(w);
       const txt = "Historia " + d.id.slice(0, 2) + " · sigue sola a las " + hora(d.limite);
@@ -267,8 +284,17 @@ export function iniciarTrabajador(t) {
       toast("⏸ Límite de Claude. " + txt);
       return;
     }
-    if (p) { m[p].parada = true; guardarMios(m); }
-    if (p) { avisarPedido(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") }); avisar("⚠️ Una historia se paró", "Historia " + d.id.slice(0, 2) + " (" + d.id.slice(3).replace(/_/g, " ") + ") · " + (d.etapa || "una etapa"), "f" + d.id); }
+    // v3.41.2: un fallo se reintenta solo a los 2 min, hasta 3 veces (muchos «fallos» eran la app reiniciándose al
+    // actualizar, y esas historias se quedaban paradas para siempre)
+    if (p) {
+      const x = m[p];
+      x.fallos = (x.fallos || 0) + 1; x.reintentar = Date.now() + 2 * 60000; x.parada = x.fallos >= 3; guardarMios(m);
+      delete ultimoAviso[p + "trabajando"]; delete ultimoAviso[p + "fallido"];
+      if (x.parada) {
+        avisarPedido(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") + " (3 intentos)" });
+        avisar("⚠️ Una historia se paró", "Historia " + d.id.slice(0, 2) + " (" + d.id.slice(3).replace(/_/g, " ") + ") · " + (d.etapa || "una etapa") + " · 3 intentos", "f" + d.id);
+      } else avisarPedido(Number(p), "trabajando", { historia_id: d.id, detalle: "falló " + (d.etapa || "una etapa") + ": lo reintento en 2 min (" + x.fallos + "/3)" });
+    }
   });
   s.onEstudioIdeas && s.onEstudioIdeas((d) => {
     const m = mios(), p = Object.keys(m).find(k => m[k].tipo === "ideas" && !m[k].fin);
@@ -306,6 +332,8 @@ export function iniciarTrabajador(t) {
         if (x.tipo !== "historia" || x.fin) continue;
         const ped = (r.pedidos || []).find(q => String(q.id) === String(pid));
         if (!ped || !ped.equipo || ped.equipo === r.yo) continue;
+        // v3.41.2: la que pasó al portátil ya la está animando él: aquí se aparta sin avisar (es lo previsto)
+        if (x.traspasada) { x.fin = true; cambio = true; if (s.estudioRelevada) await s.estudioRelevada(x.historia).catch(() => {}); continue; }
         x.fin = true; x.relevada = true; cambio = true;
         if (s.estudioRelevada) await s.estudioRelevada(x.historia).catch(() => {});
         toast("🔁 La historia " + String(x.historia).slice(0, 2) + " la siguió otro equipo mientras este estaba apagado");
@@ -340,30 +368,46 @@ export function iniciarTrabajador(t) {
       } catch (e) {}
       return;
     }
-    // 1) seguir el estado de mis pedidos
-    for (const [pid, x] of Object.entries(m)) {
-      if (x.tipo !== "historia" || !x.historia || x.fin) continue;
+    // 1) seguir el estado de mis pedidos. v3.41.2: las historias EMPEZADAS van antes que cualquier pedido nuevo (de la más
+    // antigua a la más nueva); se apunta la primera que puede seguir aquí
+    let empezada = null;
+    const ordenadas = Object.entries(m).sort((a, b) => String(a[1].historia || "").localeCompare(String(b[1].historia || "")));
+    for (const [pid, x] of ordenadas) {
+      if (x.tipo !== "historia" || !x.historia || x.fin || x.traspasada) continue;
       const h = (l.historias || []).find(y => y.id === x.historia);
       if (!h) continue;
       const et = h.etapas || [];
+      if (x.parada && x.fallos === undefined) { x.parada = false; x.fallos = 1; }   // las paradas de antes: se reintentan
       if (h.entregada || (et.length && et.every(e => e.estado === "hecho"))) {
         x.fin = true; avisarPedido(Number(pid), "hecho", { historia_id: h.id, detalle: "Short entregado" });
         // v3.41: la copia de relevo ya no hace falta (ni aquí ni en Drive)
         if (s.estudioRelevoBorrar) driveTokenTrabajo().then(tk => s.estudioRelevoBorrar(h.id, tk, x.relevo || null)).catch(() => {});
       }
       else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisarPedido(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[(et.find(e => e.estado === "revisar") || {}).id] || "una etapa") }); }
-      else if (t && t.activa && t.id === h.id) { x.parada = false; x.quieta = 0; delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
-      // v3.38.2: se quedó a medias (equipo apagado o «Parar todo»): al volver a estar disponible y libre, sigue sola
-      // (solo si lleva quieta dos vueltas seguidas, para no pisar el paso de una etapa a la siguiente, y nunca si falló)
-      else if (_disponible && revisadoRelevo && !(t && t.activa) && !x.reanudada && !x.parada && !w["h:" + h.id] && et.some(e => e.estado === "pendiente") && (x.quieta = (x.quieta || 0) + 1) >= 3) {
-        x.reanudada = Date.now(); x.quieta = 0;
-        try { await s.estudioAvanzar(h.id); if (toast) toast("▶ Sigo con la historia " + h.id.slice(0, 2) + " donde se quedó"); } catch (e) {}
-        break;
+      else if (t && t.activa && t.id === h.id) { x.parada = false; x.pausada = false; x.quieta = 0; delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
+      // a medias (equipo apagado, app actualizada, fallo que se reintenta…): se apunta para seguirla (si lleva quieta dos
+      // vueltas, para no pisar el paso de una etapa a la siguiente; nunca la parada a mano ni la que espera al límite)
+      else if (!(t && t.activa) && !x.parada && !x.pausada && !w["h:" + h.id] && Date.now() >= (x.reintentar || 0)) {
+        const sig = et.find(e => e.estado === "pendiente");
+        if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2 && !empezada) empezada = { pid, x, h, sig };
       }
-      else if (t && t.activa) x.reanudada = 0;
     }
     guardarMios(m);
-    // 2) coger trabajo nuevo: solo si estoy disponible, libre y preparado
+    // 2) seguir la empezada antes de coger nada nuevo. Lo de Blender (escena, animatic, render, montaje) es del portátil:
+    // el ordenador, al terminar de prepararla, se la pasa si el portátil puede animarla (y si no, la anima él)
+    if (empezada && _disponible && revisadoRelevo && !(t && t.activa)) {
+      const { pid, x, h, sig } = empezada;
+      x.quieta = 0;
+      if (BLENDER.includes(sig.id) && !x.faseOk) {
+        const r = await pasarAlPortatil(pid, h.id).catch(() => null);
+        if (r && r.traspasado) { x.traspasada = true; guardarMios(m); toast("➡️ Historia " + h.id.slice(0, 2) + " preparada: pasa al portátil para animarla"); return; }
+        x.faseOk = true;
+      }
+      try { delete ultimoAviso[pid + "trabajando"]; await s.estudioAvanzar(h.id); toast("▶ Sigo con la historia " + h.id.slice(0, 2) + " (" + (ETAPA_TXT[sig.id] || sig.id) + ")"); } catch (e) {}
+      guardarMios(m);
+      return;
+    }
+    // 3) coger trabajo nuevo: solo si estoy disponible, libre y preparado
     if (!_disponible || (t && t.activa) || !aj.proyecto || !aj.claude) return;
     const tipos = aj.blender ? ["historia", "ideas"] : ["ideas"];
     ocupadoCogiendo = true;
@@ -372,6 +416,21 @@ export function iniciarTrabajador(t) {
       const r = await pedidosApi("POST", { accion: "reclamar", tipos, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) });
       const p = r.pedido;
       if (!p) return;
+      if (p.porAnimar && p.historia_id) {
+        // v3.41.2: historia preparada para animar. Si la preparó este equipo, ya la tiene; si no, se baja su copia de Drive
+        const rv = (p.args || {}).relevo || {}, mia = (p.args || {}).de && (l.historias || []).some(h => h.id === p.historia_id) && Object.values(m).some(x => x.historia === p.historia_id);
+        if (!mia) {
+          let ok = false, err = "";
+          try { const x = await s.estudioRelevoRecibir(p.historia_id, await driveTokenTrabajo(), rv.archivo, rv.md5); ok = !!(x && x.ok); err = (x && x.error) || ""; }
+          catch (e) { err = e.message || String(e); }
+          if (!ok) { await pedidosApi("POST", { accion: "estado", id: p.id, estado: "fallido", detalle: "no se pudo bajar la copia: " + err }).catch(() => {}); toast("❌ No pude bajar «" + (p.titulo || p.historia_id) + "»: " + err); return; }
+        }
+        m[p.id] = { tipo: "historia", historia: p.historia_id, faseOk: true }; guardarMios(m);
+        await pedidosApi("POST", { accion: "estado", id: p.id, estado: "trabajando", historia_id: p.historia_id, detalle: "escena 3D" });
+        toast("🎬 Animo aquí la historia " + p.historia_id.slice(0, 2) + " «" + (p.titulo || "") + "»");
+        await s.estudioAvanzar(p.historia_id);
+        return;
+      }
       if (p.relevo && p.historia_id) {
         // relevo de un equipo desconectado: se baja su copia de Drive y la historia sigue aquí
         const rv = (p.args || {}).relevo || {};

@@ -126,7 +126,7 @@ function lanzar(sender, id, args, etapa, alTerminar) {
   proc.on("close", (code) => {
     if (resto.trim()) analizarLinea(resto.trim());
     const t = tarea;
-    emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa });
+    emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa, cancelada: !!(t && t.cancelada) });
     tarea = null;
     trasEtapa(t, id, code === 0, t && t.etapa);
   });
@@ -182,7 +182,7 @@ ipcMain.handle("historias-tarea-estado", async (e) => {
 ipcMain.handle("historias-cancelar", async (e, soloId) => {
   // soloId: cancelar solo si lo que está en marcha es esa historia (lo pide la cola compartida); y sacarla de la cola local
   if (soloId) { const i = cola.indexOf(soloId); if (i >= 0) cola.splice(i, 1); if (!tarea || tarea.id !== soloId) return { ok: true }; }
-  if (tarea) tarea.alTerminar = null;            // cancelar también para el avance automático
+  if (tarea) { tarea.alTerminar = null; tarea.cancelada = true; }   // cancelar también para el avance automático (y no se reintenta)
   if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
   return { ok: true };
 });
@@ -192,7 +192,7 @@ ipcMain.handle("historias-cancelar", async (e, soloId) => {
 ipcMain.handle("historias-parar-todo", async () => {
   const habia = (tarea ? 1 : 0) + cola.length;
   cola.length = 0;
-  if (tarea) tarea.alTerminar = null;
+  if (tarea) { tarea.alTerminar = null; tarea.cancelada = true; }
   if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
   return { ok: true, parados: habia };
 });
@@ -359,7 +359,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
     } catch (e) {}
     // v3.40.4: si se paró por el límite de Claude, se dice a qué hora reintentar (la app la retoma sola entonces)
     const limite = ok ? 0 : claude.limiteDe(final + "\n" + err);
-    emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), ...(limite ? { limite } : {}) });
+    emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), cancelada: !!(t && t.cancelada), ...(limite ? { limite } : {}) });
     tarea = null;
     trasEtapa(t, id, ok, etapa);
   });
@@ -465,6 +465,13 @@ function apartar(id) {
   fs.renameSync(c, dest);
   return { ok: true, a: dest };
 }
+// v3.41.2: copia al momento (al pasar una historia preparada al portátil, con las revisiones ya aprobadas)
+ipcMain.handle("estudio-relevo-preparar", async (e, id) => {
+  if (!/^\d{2}_[\w-]+$/.test(String(id))) return { ok: false, error: "historia no válida" };
+  if (tarea || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
+  await instantanea(null, id, "voces");
+  return existe(path.join(relevoDir(), id + ".tgz")) ? { ok: true } : { ok: false, error: "No se pudo preparar la copia" };
+});
 ipcMain.handle("estudio-relevo-subir", async (e, id, token) => {
   const f = path.join(relevoDir(), String(id) + ".tgz");
   if (!/^\d{2}_[\w-]+$/.test(String(id)) || !existe(f)) return { ok: false, error: "No hay copia de relevo" };

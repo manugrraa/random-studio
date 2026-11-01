@@ -680,8 +680,17 @@ export function HistoriasRemoto({ toast, incrustado }) {
   const pedidos = (cola && cola.pedidos) || [];
   const pedidoDe = (hid) => pedidos.find(p => p.historia_id === hid);
   const items = [];
+  // v3.41.2: una historia preparada en un equipo y animada en otro está en los dos: se enseña la del equipo que la lleva
+  // (o, si nadie la lleva ahora, la más avanzada)
+  const avance = (h) => (h.etapas || []).filter(x => x.estado === "hecho").length;
+  const quien = {};
   for (const e of equipos) for (const h of (e.datos.historias || [])) {
-    if (h.legado) continue;
+    const p = pedidoDe(h.id), q = quien[h.id];
+    const mejor = !q || (p && p.equipo === e.id) || (!(p && p.equipo === q.e.id) && avance(h) > avance(q.h));
+    if (mejor) quien[h.id] = { e, h };
+  }
+  for (const e of equipos) for (const h of (e.datos.historias || [])) {
+    if (h.legado || quien[h.id].e !== e) continue;
     const t = e.datos.tarea && e.datos.tarea.id === h.id ? e.datos.tarea : null;
     const rev = (h.etapas || []).find(x => x.estado === "revisar");
     const p = pedidoDe(h.id);

@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   estudioRelevoSubir: (id, token) => ipcRenderer.invoke("estudio-relevo-subir", id, token),
   estudioRelevoRecibir: (id, token, archivo, md5) => ipcRenderer.invoke("estudio-relevo-recibir", id, token, archivo, md5),
   estudioRelevada: (id) => ipcRenderer.invoke("estudio-relevada", id),
+  estudioRelevoPreparar: (id) => ipcRenderer.invoke("estudio-relevo-preparar", id),
   estudioRelevoBorrar: (id, token, archivo) => ipcRenderer.invoke("estudio-relevo-borrar", id, token, archivo),
   instalarGit: () => ipcRenderer.invoke("instalar-git"),
   estudioIdeaBorrar: (id) => ipcRenderer.invoke("estudio-idea-borrar", id),

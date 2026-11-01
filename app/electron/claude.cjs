@@ -61,7 +61,10 @@ const GUIA_POWERSHELL = "ESTE EQUIPO NO TIENE BASH: tus comandos se ejecutan en 
   + "pon todas las rutas entre comillas (tienen espacios), usa «python» (no «python3») y, para leer o buscar, las herramientas Read, Grep y Glob, "
   + "que son mucho más rápidas que Get-Content o Select-String. Si tienes que hacer varios pasos seguidos, escríbelos en un .py y ejecútalo de una vez "
   + "en lugar de muchos comandos sueltos. No uses sed, grep, cat, head, tail, ls -la ni rm -rf: aquí no existen.";
-ipcMain.handle("instalar-git", async () => new Promise((ok) => {
+let instalandoGit = false;   // (un segundo clic mientras instala hacía fallar a winget: «archivo en uso»)
+ipcMain.handle("instalar-git", async () => instalandoGit ? { ok: false, error: "Ya se está instalando" } : new Promise((ok0) => {
+  instalandoGit = true;
+  const ok = (r) => { instalandoGit = false; ok0(r); };
   const p = spawn("winget", ["install", "--id", "Git.Git", "-e", "--scope", "user", "--silent", "--accept-package-agreements", "--accept-source-agreements"], { windowsHide: true });
   let out = "";
   p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
