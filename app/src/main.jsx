@@ -4,7 +4,7 @@ import "./styles.css";
 import { App } from "./Principal";
 import { EditorApp } from "./editor/EditorApp";
 import { PantallaBloqueo, PantallaPerfiles, comprobarAcceso, entrarEnPerfil } from "./perfiles";
-import { publicarSiToca } from "./actualizar";
+import { AvisoActualizacion, publicarSiToca } from "./actualizar";
 
 // v3.14: la misma página sirve a las dos ventanas; la del RandomEditor se abre con #editor
 // v3.21: antes de la app, la pantalla para elegir perfil (canal)
@@ -31,7 +31,9 @@ function Inicio() {
   }, []);
   if (estado === null) return null;
   if (estado.bloqueado) return <PantallaBloqueo ip={estado.ip}/>;
-  if (!perfil) return <PantallaPerfiles onElegir={setPerfil} codigo={codigoEntrar} inicial={estado}/>;
+  // el aviso de versión nueva también en la pantalla de cuentas (encima de todo)
+  if (!perfil) return <><div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 10000 }}><AvisoActualizacion/></div>
+    <PantallaPerfiles onElegir={setPerfil} codigo={codigoEntrar} inicial={estado}/></>;
   return <App/>;
 }
 

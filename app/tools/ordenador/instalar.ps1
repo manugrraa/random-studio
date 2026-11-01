@@ -13,7 +13,7 @@ function Paso($t) { Write-Host ""; Write-Host "== $t ==" -ForegroundColor Yellow
 Paso "1/6 Copiando RandomStudio"
 New-Item -ItemType Directory -Force "$base\App", "$base\Datos" | Out-Null
 Get-Process RandomStudio -ErrorAction SilentlyContinue | Stop-Process -Force
-robocopy "$origen\RandomStudio" "$base\App" /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+robocopy "$origen\RandomStudio" "$base\App" /MIR /XD versiones /NFL /NDL /NJH /NJS /NP | Out-Null
 
 Paso "2/6 Copiando el motor de historias"
 robocopy "$origen\RandomHistorias" "$base\Datos\RandomHistorias" /E /XO /NFL /NDL /NJH /NJS /NP | Out-Null

@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   almAbrir: (ruta) => ipcRenderer.invoke("alm-abrir", ruta),
   onAlmProgreso: (cb) => { const f = (e, d) => cb(d); ipcRenderer.on("alm-progreso", f); return () => ipcRenderer.removeListener("alm-progreso", f); },
   actLocalAplicar: () => ipcRenderer.invoke("act-local-aplicar"),
+  onActCambio: (cb) => { const f = () => cb(); ipcRenderer.on("act-cambio", f); return () => ipcRenderer.removeListener("act-cambio", f); },
   carpetasLeer: (id) => ipcRenderer.invoke("carpetas-leer", id),
   carpetasGuardar: (id, clave, ruta) => ipcRenderer.invoke("carpetas-guardar", id, clave, ruta),
   carpetasElegir: (actual) => ipcRenderer.invoke("carpetas-elegir", actual),

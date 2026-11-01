@@ -27,8 +27,13 @@ if (Number(abiertas) > 0) {
   // el .exe cambia en cada build (lleva la huella del código), así que se compara la versión de Electron apuntada al instalar
   let instalado = ""; try { instalado = fs.readFileSync(path.join(destino, "electron-version.txt"), "utf8").trim(); } catch (e) {}
   if (instalado && instalado === electronVersion) {
-    fs.copyFileSync(path.join(origen, "resources", "app.asar"), path.join(destino, "resources", "app.asar.nueva"));
-    fs.writeFileSync(path.join(destino, "resources", "app.asar.nueva.json"), JSON.stringify({ version }));
+    // v3.35: la versión nueva se deja APARTE (no se toca la instalada); la app la carga al pulsar «Actualizar ahora»
+    const dirV = path.join(destino, "versiones"), archivo = `RandomStudio-${version}.asar`;
+    fs.mkdirSync(dirV, { recursive: true });
+    const datos = fs.readFileSync(path.join(origen, "resources", "app.asar"));
+    fs.writeFileSync(path.join(dirV, archivo), datos);
+    const sha256 = (await import("crypto")).createHash("sha256").update(datos).digest("hex");
+    fs.writeFileSync(path.join(dirV, "pendiente.json"), JSON.stringify({ version, archivo, sha256 }));
     console.log(`OK: RandomStudio ${version} preparada; la app avisará para actualizar (sin cerrarla ahora).`);
     process.exit(0);
   }
@@ -36,11 +41,12 @@ if (Number(abiertas) > 0) {
 }
 
 // copia espejo (lo que sobra de la versión anterior se quita)
-const r = spawnSync("robocopy", [origen, destino, "/MIR", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:2", "/W:1"], { encoding: "utf8" });
+const r = spawnSync("robocopy", [origen, destino, "/MIR", "/XD", "versiones", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:2", "/W:1"], { encoding: "utf8" });
 if (r.status >= 8) { console.error("robocopy falló:", r.stdout, r.stderr); process.exit(1); }
 
 fs.writeFileSync(path.join(destino, "electron-version.txt"), electronVersion);
-try { fs.unlinkSync(path.join(destino, "resources", "app.asar.nueva")); fs.unlinkSync(path.join(destino, "resources", "app.asar.nueva.json")); } catch (e) {}
+for (const f of ["app.asar.nueva", "app.asar.nueva.json"]) { try { fs.unlinkSync(path.join(destino, "resources", f)); } catch (e) {} }   // restos del sistema antiguo
+try { fs.unlinkSync(path.join(destino, "versiones", "pendiente.json")); } catch (e) {}
 
 // accesos directos: junto a la carpeta y en el menú Inicio
 const atajo = (lnk) => ps(`$s=(New-Object -ComObject WScript.Shell).CreateShortcut('${lnk}'); $s.TargetPath='${exe}'; ` +

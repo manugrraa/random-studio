@@ -54,16 +54,20 @@ export function AvisoActualizacion() {
       } catch (e) {}
     };
     mirar();
-    const t = setInterval(mirar, 5 * 60 * 1000);
-    return () => clearInterval(t);
+    // cada minuto, al volver a la ventana y al momento si aparece una versión preparada en el portátil
+    const t = setInterval(mirar, 60 * 1000);
+    const alFoco = () => mirar();
+    window.addEventListener("focus", alFoco);
+    const off = SF().onActCambio ? SF().onActCambio(mirar) : null;
+    return () => { clearInterval(t); window.removeEventListener("focus", alFoco); off && off(); };
   }, []);
   if (!nueva || oculto) return null;
   const instalar = async () => {
     setEstado("Bajando la versión " + nueva.version + "…");
     try {
+      setEstado("Guardando todo y reiniciando…");
       if (nueva.local) await SF().actLocalAplicar();
       else { const v = await actualizacionApi("GET"); await SF().actInstalar(v.url, v.sha256, v.version); }   // enlace recién firmado
-      setEstado("Listo: RandomStudio se reinicia…");
     } catch (e) { setEstado("No se pudo: " + e.message); }
   };
   return (

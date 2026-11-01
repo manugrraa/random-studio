@@ -789,7 +789,7 @@ export function App() {
     {id:"clips", label:"Clips", icon:Icons.scissors, primary:true, grupo:"produccion", pc:true},
     {id:"editor", label:"RandomEditor", icon:Icons.edit, grupo:"produccion", pc:true},
     {id:"ranking", label:"Ranking de Shorts", icon:Icons.chart, primary:true, grupo:"produccion", pc:true},
-    {id:"historias", label:"Historias", icon:Icons.camera, primary:true, grupo:"produccion", pc:true},
+    {id:"historias", label:"RandomHistorias", icon:Icons.camera, primary:true, grupo:"produccion", pc:true},
     {id:"convertidor", label:"Convertidor", icon:Icons.download, primary:true, grupo:"produccion", pc:true},
     {id:"randomchat", label:"RandomChat", icon:Icons.chat, grupo:"produccion", pc:true},
     {id:"agent", label:"Agente", icon:Icons.sparkles, grupo:"asistente"},
