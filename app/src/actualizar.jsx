@@ -32,8 +32,16 @@ export async function publicarSiToca() {
   _publicando = true;
   try {
     const [v, yo] = await Promise.all([actualizacionApi("GET"), SF().actInfo()]);
-    if (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version))) await publicarVersion(yo, "");
+    const pend = await pendientePublicable(v);
+    if (pend) await publicarVersion(pend, "", "pendiente");
+    else if (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version))) await publicarVersion(yo, "");
   } catch (e) {} finally { _publicando = false; }
+}
+/** v3.40.3: la versión preparada en el portátil (npm run instalar con la app abierta), si es más nueva que la publicada:
+ * se publica ya para todos los equipos, sin esperar a que el portátil pulse «Actualizar ahora». */
+async function pendientePublicable(v) {
+  if (!SF().actInfoPendiente) return null;
+  try { const p = await SF().actInfoPendiente(); return p.ok && (!v.version || num(p.version) > num(v.version)) ? p : null; } catch (e) { return null; }
 }
 
 /** Aviso arriba en la app cuando hay una versión más nueva publicada por el portátil. */
@@ -44,8 +52,11 @@ export function AvisoActualizacion() {
   useEffect(() => {
     if (!SF() || !SF().actInstalar) return;
     const mirar = async () => {
-      // 1) el portátil: versión ya preparada al lado (npm run instalar con la app abierta)
-      try { const l = await SF().actLocal(); if (l.ok && num(l.version) > num(APP_VERSION)) return setNueva({ version: l.version, local: true }); } catch (e) {}
+      // 1) el portátil: versión ya preparada al lado (npm run instalar con la app abierta); además se publica ya para los demás
+      try {
+        const l = await SF().actLocal();
+        if (l.ok && num(l.version) > num(APP_VERSION)) { setNueva({ version: l.version, local: true }); publicarSiToca(); return; }
+      } catch (e) {}
       try {
         const [v, yo] = await Promise.all([actualizacionApi("GET"), SF().actInfo()]);
         // 2) el portátil publica solo su versión si es más nueva que la publicada (el servidor solo se lo deja al dueño)
@@ -89,10 +100,10 @@ export function AvisoActualizacion() {
 }
 
 /** Sube el código de esta versión y la deja publicada (solo lo acepta el servidor si este equipo es el portátil). */
-async function publicarVersion(info, notas) {
+async function publicarVersion(info, notas, cual) {
   const datos = { version: info.version, sha256: info.sha256, tam: info.tam, electron: info.electron, notas: notas || "" };
   const p = await actualizacionApi("POST", { accion: "preparar", ...datos });
-  await SF().actSubir(p.url);
+  await SF().actSubir(p.url, cual);
   await actualizacionApi("POST", { accion: "confirmar", ...datos });
 }
 

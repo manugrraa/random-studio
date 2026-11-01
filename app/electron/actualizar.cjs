@@ -34,9 +34,12 @@ ipcMain.handle("act-info", async () => {
 });
 
 // el portátil sube su código al enlace firmado que le da el servidor
-ipcMain.handle("act-subir", async (e, url) => {
+// v3.40.3: con cual = "pendiente" sube la versión preparada por `npm run instalar` (aún sin aplicar en el portátil)
+ipcMain.handle("act-subir", async (e, url, cual) => {
   if (!/^https:\/\/[a-z0-9]+\.supabase\.co\/storage\/v1\/object\/upload\/sign\//.test(String(url))) throw new Error("Enlace de subida no válido");
-  const b = ofs.readFileSync(miAsar());
+  let archivo = miAsar();
+  if (cual === "pendiente") { const p = pendiente(); if (!p.ok) throw new Error("No hay versión preparada: " + p.motivo); archivo = path.join(dirVersiones(), p.archivo); }
+  const b = ofs.readFileSync(archivo);
   const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/octet-stream", "x-upsert": "true" }, body: b });
   if (!r.ok) throw new Error("No se pudo subir: " + r.status + " " + (await r.text()).slice(0, 200));
   return { ok: true };
@@ -93,6 +96,16 @@ function pendiente() {
   if (num(p.version) <= num(VERSION)) return { ok: false, motivo: "no es más nueva (" + p.version + " ≤ " + VERSION + ")" };
   return { ok: true, version: p.version, archivo: path.basename(p.archivo), sha256: p.sha256 || null, f };
 }
+// v3.40.3: la versión preparada se publica para los demás equipos NADA MÁS INSTALARLA (sin esperar a «Actualizar ahora»
+// en el portátil): él quiere que cada versión llegue siempre a todos los equipos
+ipcMain.handle("act-info-pendiente", async () => {
+  const p = pendiente();
+  if (!p.ok || !app.isPackaged) return { ok: false, motivo: p.motivo };
+  try {
+    const b = ofs.readFileSync(path.join(dirVersiones(), p.archivo));
+    return { ok: true, version: p.version, electron: process.versions.electron, sha256: sha256(b), tam: b.length, empaquetada: true, pendiente: true };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
 ipcMain.handle("act-local", async () => { const p = pendiente(); return p.ok ? { ok: true, version: p.version } : p; });
 ipcMain.handle("act-local-aplicar", async () => {
   const p = pendiente();
