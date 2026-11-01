@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 
-export const APP_VERSION = "3.36.0";
+export const APP_VERSION = "3.37.0";
 
 /* ============================ DATOS BASE ============================ */
 /* Formatos v2 (23/8/2026): 8 formatos que resumen todo el contenido real del canal.
@@ -163,7 +163,7 @@ export function useToast() {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3000);
   };
   const node = (
-    <div style={{position:"fixed", bottom:24, right:24, zIndex:9999, display:"flex", flexDirection:"column", gap:10}}>
+    <div style={{position:"fixed", bottom:"calc(env(safe-area-inset-bottom, 0px) + 24px)", right:"calc(env(safe-area-inset-right, 0px) + 24px)", zIndex:9999, display:"flex", flexDirection:"column", gap:10}}>
       {toasts.map(t => (
         <div key={t.id} className="pop" style={{
           background:"var(--card-2)", border:`1px solid ${t.kind==="gold"?"var(--border-gold)":"var(--border)"}`,

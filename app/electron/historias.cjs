@@ -312,8 +312,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   if (!exe) throw new Error("No encuentro Claude Code en este equipo");
   const args = ["-p", "--model", claude.MODELO, "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits",
     "--allowedTools", "Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "TodoWrite"];
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_AGENT_SDK|ANTHROPIC_BASE_URL)/.test(k)));
-  Object.assign(env, { PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), BLENDER: blenderExe() || "" });
+  const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), BLENDER: blenderExe() || "" });
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
   tarea = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0 };
   let resto = "", final = "", fallo = false;
@@ -373,6 +372,10 @@ function correrEtapa(sender, id, etapaId, nota, encadenar) {
   if (etapaId === "animatic" && nota) {
     // cambios del animatic: Claude corrige la escena y rehace las fotos; después se vuelve a montar el animatic
     return lanzarAgente(sender, id, "escena", promptEtapa(id, "animatic", nota), (ok, snd) => { if (ok) lanzar(snd, id, e.args, "animatic", seguir); });
+  }
+  if (etapaId === "voces" && !claveEleven()) {
+    try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, etapa: "voces", informe: "Falta la clave de ElevenLabs para hacer las voces: ponla en RandomHistorias → Ajustes y pulsa «Seguir»." }); } catch (x) {}
+    return { ok: false, error: "Falta la clave de ElevenLabs" };
   }
   if (e.tipo === "agente") return lanzarAgente(sender, id, etapaId, promptEtapa(id, etapaId, nota), seguir);
   return lanzar(sender, id, e.args, etapaId, seguir);
@@ -518,7 +521,9 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
     if (typeof nuevos.equipoDePaso === "boolean") a.equipoDePaso = nuevos.equipoDePaso;
     escribirJson(path.join(estudioDir(), "ajustes.json"), a);
   }
-  return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), claude: !!claude.exeClaude(), blender: !!blenderExe(), proyecto: existe(histDir()) };
+  const cl = claude.estadoClaude();
+  return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
+    claudeOk: cl.ok, claudeError: cl.error, blender: !!blenderExe(), proyecto: existe(histDir()) };
 });
 
 ipcMain.handle("estudio-clave-eleven", async (e, clave) => {

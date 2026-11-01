@@ -34,6 +34,46 @@ export function BotonDisponible() {
     </button>);
 }
 
+
+/** Pedir trabajo a la cola desde cualquier equipo (también el móvil): una historia con tu propia idea, o que piensen ideas.
+ * No depende de que el portátil esté publicando: el pedido se queda en la cola y lo coge el primer equipo disponible. */
+export function NuevaPeticion({ toast, alHacer }) {
+  const [abierto, setAbierto] = useState(false);
+  const [titulo, setTitulo] = useState("");
+  const [idea, setIdea] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const pedir = async (cuerpo, ok) => {
+    setEnviando(true);
+    try { await pedidosApi("POST", cuerpo); toast(ok); setTitulo(""); setIdea(""); setAbierto(false); alHacer && alHacer(); }
+    catch (e) { toast("❌ " + e.message); }
+    setEnviando(false);
+  };
+  const t = titulo.trim().toUpperCase();
+  const listo = t.length >= 6 && idea.trim().length >= 10;
+  return (
+    <div style={{ background: "var(--card)", border: "1px solid var(--border-gold)", borderRadius: 16, padding: 16 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 15, marginRight: "auto" }}>Pedir trabajo</div>
+        <button onClick={() => setAbierto(a => !a)} className={abierto ? "" : "grad-gold"} style={{ ...boton, color: abierto ? "var(--text)" : "#000", border: abierto ? boton.border : "none", padding: "8px 13px" }}>
+          {abierto ? "Cerrar" : "✍️ Nueva historia con mi idea"}</button>
+        <button disabled={enviando} onClick={() => pedir({ accion: "crear", tipo: "ideas", titulo: "Pensar 5 ideas", args: { n: 5 } }, "💡 Pedido: pensar 5 ideas (salen en Ideas)")}
+          style={{ ...boton, padding: "8px 13px" }}>💡 Pedir 5 ideas</button>
+      </div>
+      {abierto && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+          <input value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Título (p. ej. EN ESTE PUEBLO TODOS VUELAN!!!)"
+            style={{ fontSize: 16, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)", textTransform: "uppercase" }} />
+          <textarea value={idea} onChange={e => setIdea(e.target.value)} rows={4} placeholder="¿Cuál es la regla del pueblo y qué pasa? (lo que tengas: Claude escribe el guion con nuestro criterio)"
+            style={{ fontSize: 16, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)", resize: "vertical", lineHeight: 1.5 }} />
+          <button disabled={!listo || enviando} className="grad-gold"
+            onClick={() => pedir({ accion: "crear", tipo: "historia", titulo: t, args: { idea: { titulo: t, regla: idea.trim().split(/[.\n]/)[0], resumen: idea.trim(), fundamento: "idea del usuario" } } }, "📋 «" + t + "» añadida a la cola")}
+            style={{ ...boton, color: "#000", border: "none", alignSelf: "flex-start", padding: "9px 15px", opacity: (!listo || enviando) ? .5 : 1 }}>
+            {enviando ? "Añadiendo…" : "📋 Añadir a la cola"}</button>
+          <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>La coge el primer equipo disponible (el portátil tiene preferencia) y la ves avanzar aquí mismo.</div>
+        </div>)}
+    </div>);
+}
+
 export function ColaTrabajo({ toast }) {
   const [r, setR] = useState(null);
   const [error, setError] = useState("");
@@ -86,6 +126,7 @@ export function ColaTrabajo({ toast }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <NuevaPeticion toast={toast} alHacer={cargar} />
       <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
           <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16 }}>

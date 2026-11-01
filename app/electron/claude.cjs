@@ -40,6 +40,37 @@ function exeClaude() {
   return null;
 }
 
+/* v3.37: el permiso de LARGA DURACIÓN de Claude Code (`claude setup-token`, el que Anthropic recomienda para automatizar).
+ * Se guarda cifrado en este equipo (safeStorage) y se le pasa a Claude en CLAUDE_CODE_OAUTH_TOKEN: así no depende de la
+ * sesión normal de Claude Code, que caduca y entonces RandomStudio no podía escribir guiones. */
+const { app, safeStorage } = require("electron");
+const tokenArchivo = () => path.join(app.getPath("userData"), "claude.token");
+function tokenClaude() {
+  try { const b = fs.readFileSync(tokenArchivo()); return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(b) : ""; } catch (e) { return ""; }
+}
+/** El entorno para lanzar Claude: sin las variables de otra sesión de Claude, y con el permiso guardado si lo hay. */
+function entornoClaude(extra) {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_AGENT_SDK|ANTHROPIC_BASE_URL)/.test(k)));
+  const t = tokenClaude();
+  if (t) env.CLAUDE_CODE_OAUTH_TOKEN = t;
+  return Object.assign(env, extra || {});
+}
+
+// ¿Claude funciona DE VERDAD? (no basta con que esté instalado: la sesión puede haber caducado). Se recuerda 30 min.
+let estado = { ok: null, error: "", cuando: 0 };
+async function comprobar(forzar) {
+  if (!forzar && estado.cuando && Date.now() - estado.cuando < 30 * 60 * 1000) return estado;
+  if (!exeClaude()) return (estado = { ok: false, error: "No encuentro Claude Code en este equipo", cuando: Date.now() });
+  try {
+    const r = await generar("Responde solo: ok", { segundos: 90, modelo: "claude-haiku-5-5" });
+    estado = { ok: /ok/i.test(r), error: /ok/i.test(r) ? "" : "Respuesta rara: " + r.slice(0, 80), cuando: Date.now() };
+  } catch (e) {
+    const m = e.message || String(e);
+    estado = { ok: false, cuando: Date.now(), error: /auth|OAuth|login|401|expired/i.test(m) ? "La sesión de Claude Code ha caducado: pon el permiso de larga duración (Ajustes de RandomHistorias)" : m.slice(0, 200) };
+  }
+  return estado;
+}
+
 /** Ejecuta Claude con un prompt (por stdin) y devuelve el texto. */
 function generar(prompt, { sistema, cwd, modelo, segundos = 300, herramientas = false } = {}) {
   return new Promise((ok, ko) => {
@@ -49,9 +80,7 @@ function generar(prompt, { sistema, cwd, modelo, segundos = 300, herramientas = 
     if (sistema) args.push("--append-system-prompt", String(sistema));
     if (herramientas === "lectura") args.push("--tools", "Read", "Glob", "Grep");   // solo mirar el proyecto, sin tocar nada
     else if (!herramientas) args.push("--tools", "");
-    // sin las variables de una sesión de Claude que lo haya lanzado (si no, intenta usar su autenticación)
-    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_AGENT_SDK|ANTHROPIC_BASE_URL)/.test(k)));
-    const p = spawn(exe, args, { cwd: cwd || process.env.USERPROFILE, env, windowsHide: true, shell: /\.cmd$/i.test(exe) });
+    const p = spawn(exe, args, { cwd: cwd || process.env.USERPROFILE, env: entornoClaude(), windowsHide: true, shell: /\.cmd$/i.test(exe) });
     let out = "", err = "";
     const t = setTimeout(() => { try { p.kill(); } catch (e) {} ko(new Error("Claude tardó demasiado")); }, segundos * 1000);
     p.stdout.on("data", d => out += d);
@@ -71,5 +100,15 @@ ipcMain.handle("claude-generar", async (e, prompt, opts) => {
   catch (x) { return { ok: false, error: x.message }; }
 });
 ipcMain.handle("claude-disponible", async () => ({ ok: !!exeClaude() }));
+ipcMain.handle("claude-comprobar", async (e, forzar) => comprobar(!!forzar));
+ipcMain.handle("claude-token", async (e, token) => {
+  const t = String(token || "").trim();
+  if (!t) { try { fs.unlinkSync(tokenArchivo()); } catch (x) {} return comprobar(true); }
+  if (!/^sk-ant-/.test(t)) throw new Error("Eso no parece un permiso de Claude (empieza por sk-ant-)");
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows no deja cifrar el permiso en este equipo");
+  fs.writeFileSync(tokenArchivo(), safeStorage.encryptString(t));
+  return comprobar(true);
+});
+app.whenReady().then(() => setTimeout(() => comprobar(false), 15000));   // se comprueba sola al poco de arrancar
 
-module.exports = { exeClaude, generar, MODELO };
+module.exports = { exeClaude, generar, MODELO, entornoClaude, comprobar, estadoClaude: () => estado };

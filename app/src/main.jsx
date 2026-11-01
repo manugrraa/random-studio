@@ -32,7 +32,7 @@ function Inicio() {
   if (estado === null) return null;
   if (estado.bloqueado) return <PantallaBloqueo ip={estado.ip}/>;
   // el aviso de versión nueva también en la pantalla de cuentas (encima de todo)
-  if (!perfil) return <><div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 10000 }}><AvisoActualizacion/></div>
+  if (!perfil) return <><div style={{ position: "fixed", top: "env(safe-area-inset-top, 0px)", left: 0, right: 0, zIndex: 10000 }}><AvisoActualizacion/></div>
     <PantallaPerfiles onElegir={setPerfil} codigo={codigoEntrar} inicial={estado}/></>;
   return <App/>;
 }

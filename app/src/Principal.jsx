@@ -1065,7 +1065,7 @@ export function App() {
       <div className="app-col" style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
       <AvisoActualizacion/>
       {/* HEADER */}
-      <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:0,zIndex:50,backdropFilter:"blur(12px)",background:"var(--header-bg)"}}>
+      <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:"env(safe-area-inset-top, 0px)",zIndex:50,backdropFilter:"blur(12px)",background:"var(--header-bg)"}}>
         <div className="app-header" style={{maxWidth:1500,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
           <div style={{display:"flex",alignItems:"center",gap:13}}>
             <button onClick={()=>setMenuOpen(true)} title="Abrir menú" className="menu-btn" style={{

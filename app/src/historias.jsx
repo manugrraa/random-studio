@@ -2,7 +2,7 @@ import React from "react";
 const { useState, useEffect, useCallback, useRef } = React;
 import { Icons } from "./base";
 import { pedidosApi, remotoApi } from "./remoto";
-import { BotonDisponible, ColaTrabajo } from "./cola";
+import { BotonDisponible, ColaTrabajo, NuevaPeticion } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
@@ -312,6 +312,41 @@ function Ideas({ toast, onCreada }) {
     </div>);
 }
 
+// ------------------------------------------------------------------ Claude: estado real y permiso de larga duración
+function ClaudeEstado({ a, toast, recargar }) {
+  const [token, setToken] = useState("");
+  const [probando, setProbando] = useState(false);
+  const probar = async (t) => {
+    setProbando(true);
+    try {
+      const r = t !== undefined ? await SF().claudeToken(t) : await SF().claudeComprobar(true);
+      toast(r.ok ? "✅ Claude funciona en este equipo" : "❌ " + r.error);
+      setToken(""); recargar();
+    } catch (e) { toast("❌ " + e.message); }
+    setProbando(false);
+  };
+  const color = !a.claudeInstalado ? "var(--red)" : a.claudeOk === false ? "var(--red)" : a.claudeOk ? "var(--green)" : "var(--text-2)";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color }}>
+          {!a.claudeInstalado ? "● No encuentro Claude Code en este equipo" : a.claudeOk === false ? "● Claude Code no puede trabajar: " + a.claudeError : a.claudeOk ? "● Claude Code funciona en este equipo" : "○ Comprobando Claude Code…"}</span>
+        <span style={{ flex: 1 }} />
+        <button disabled={probando} onClick={() => probar()} style={{ ...botonSec, padding: "6px 11px", fontSize: 12 }}>{probando ? "Probando…" : "Probar"}</button>
+      </div>
+      {a.claudeInstalado && a.claudeOk !== true && (
+        <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.6, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+          Para que Claude trabaje aquí sin caducar: abre una terminal, escribe <code style={{ color: "var(--gold)" }}>claude setup-token</code>, entra con tu cuenta
+          de Claude en el navegador y pega aquí el permiso que te da (empieza por <code>sk-ant-</code>). Se guarda cifrado en este equipo.
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="sk-ant-…" autoComplete="off"
+              style={{ flex: 1, fontSize: 13, padding: "8px 10px", borderRadius: 9, border: "1px solid var(--border)", background: "var(--card-2)", color: "var(--text)" }} />
+            <button disabled={!token.trim() || probando} onClick={() => probar(token)} className="grad-gold" style={{ ...botonOro, opacity: (!token.trim() || probando) ? .5 : 1 }}>Guardar y probar</button>
+          </div>
+        </div>)}
+    </div>);
+}
+
 // ------------------------------------------------------------------ ajustes del estudio
 function AjustesEstudio({ toast }) {
   const [a, setA] = useState(null);
@@ -345,7 +380,7 @@ function AjustesEstudio({ toast }) {
       </div>
       <div style={{ ...tarjeta }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8 }}>Herramientas</div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: a.claude ? "var(--green)" : "var(--red)" }}>{a.claude ? "● Claude Code está listo en este equipo" : "● No encuentro Claude Code en este equipo"}</div>
+        <ClaudeEstado a={a} toast={toast} recargar={cargar} />
         <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, color: a.blender ? "var(--green)" : "var(--red)" }}>{a.blender ? "● Blender 4.5 está listo" : "● Falta Blender 4.5 (sin él no se hacen escenas ni render)"}</div>
         <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, color: a.proyecto ? "var(--green)" : "var(--red)" }}>{a.proyecto ? "● El proyecto de historias está en este equipo" : "● Falta el proyecto de historias (Configuración → Carpetas)"}</div>
         <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, color: a.eleven ? "var(--green)" : "#F59E0B" }}>{a.eleven ? "● Clave de ElevenLabs guardada (cifrada en este equipo)" : "● Falta la clave de ElevenLabs para las voces"}</div>
@@ -584,10 +619,17 @@ function HistoriasRemoto({ toast }) {
   };
 
   if (!r) return <div style={{ ...tarjeta, margin: "30px auto", maxWidth: 520, fontSize: 13, color: error ? "var(--red)" : "var(--text-3)" }}>{error || "Conectando con el portátil…"}</div>;
+  // sin ningún escritorio publicando, el móvil no se queda en un callejón: puede pedir trabajo y ver la cola igualmente
   if (!eq) return (
-    <div style={{ ...tarjeta, maxWidth: 560, margin: "40px auto", textAlign: "center" }}>
-      <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Historias</div>
-      <div style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6 }}>Todavía no hay ningún portátil publicando. Abre RandomStudio en el portátil con este mismo perfil.</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900, margin: "0 auto", width: "100%" }}>
+      <style>{CSS}</style>
+      <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 22 }}>Random<span className="gold-text">Historias</span></div>
+      <div style={{ ...tarjeta, fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+        <b style={{ color: "#F59E0B" }}>Ningún equipo de escritorio está conectado ahora.</b> Puedes pedir historias igualmente: se quedan en la cola
+        y las hace el primero que esté disponible. Si el portátil está encendido y no sale aquí: ábrelo, entra en tu perfil y mira que
+        Google esté conectado (Configuración → Cuenta y conexiones).
+      </div>
+      <ColaTrabajo toast={toast} />
     </div>);
 
   const h = (d.historias || []).find(x => x.id === selId) || (d.historias || [])[0];
@@ -620,6 +662,7 @@ function HistoriasRemoto({ toast }) {
       {pestana === "cola" && <ColaTrabajo toast={toast} />}
       {pestana === "ideas" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <NuevaPeticion toast={toast} />
           <button disabled={d.generandoIdeas || !eq.en_linea} onClick={() => orden("ideas_generar", { n: 5 }, "💡 El portátil está pensando ideas")} className="grad-gold" style={{ ...botonOro, alignSelf: "flex-start", opacity: (d.generandoIdeas || !eq.en_linea) ? .5 : 1 }}>{d.generandoIdeas ? "Pensando ideas…" : "💡 Generar 5 ideas"}</button>
           {(d.ideas || []).filter(i => i.estado !== "usada").map(i => (
             <div key={i.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 6 }}>

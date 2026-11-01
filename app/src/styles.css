@@ -71,6 +71,8 @@
     touch-action: manipulation;
     overscroll-behavior-y: none; /* evita el rebote raro al hacer scroll en modo app */
   }
+  /* iPhone: una franja del color de fondo bajo la isla de la cámara, para que lo que se desplaza no pase por detrás */
+  body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 60; pointer-events: none; }
   /* Evita el zoom de iOS al enfocar inputs (fuente mínima 16px) y mejora el tacto */
   input, textarea, select { font-size: 16px; }
   button { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }

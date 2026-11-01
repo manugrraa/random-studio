@@ -149,13 +149,15 @@ function Fondo({ children, saliendo, rojo }) {
   const c = rojo ? "220,38,38" : "212,175,55";
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#000", color: "#F5F5F5", overflow: "auto",
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 16px 60px",
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      // iPhone: la isla de la cámara y la barra de abajo (viewport-fit=cover) no tapan nada
+      padding: "calc(env(safe-area-inset-top, 0px) + 92px) 16px calc(env(safe-area-inset-bottom, 0px) + 64px)",
       animation: saliendo ? "rsp-sale .42s ease forwards" : "none" }}>
       <style>{CSS}</style>
       <div style={{ position: "fixed", left: "50%", top: "38%", width: "90vmax", height: "90vmax", borderRadius: "50%",
         background: `radial-gradient(circle, rgba(${c},.20) 0%, rgba(${c},.06) 35%, transparent 65%)`, animation: "rsp-brillo 7s ease-in-out infinite", pointerEvents: "none" }} />
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none" }}><Particulas color={rojo ? "#DC2626" : "#D4AF37"} /></div>
-      <div style={{ position: "fixed", top: 26, left: 0, right: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 10 }}>
+      <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 24px)", left: 0, right: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 10 }}>
         <div className="grad-gold gold-glow" style={{ width: 34, height: 34, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", color: "#000" }}>
           <span style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16 }}>R</span>
         </div>
@@ -374,7 +376,7 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
           </span>
           <span onClick={() => setSiempre(s => !s)}>Entrar siempre con este perfil</span>
         </label>)}
-      <div style={{ position: "fixed", bottom: 16, left: 0, right: 0, textAlign: "center", fontSize: 11.5, color: "#555" }}>
+      <div style={{ position: "fixed", bottom: "calc(env(safe-area-inset-bottom, 0px) + 14px)", left: 0, right: 0, textAlign: "center", fontSize: 11.5, color: "#555", padding: "0 16px" }}>
         {disp ? <>Este equipo: <b style={{ color: "#8a8a8a" }}>{disp.nombre}</b>{disp.rol === "dueno" ? " · manda en todo" : disp.rol === "admin" ? " · administrador" : ""}</> : "Equipo sin registrar"}
         {primera ? " · Pulsa Intro para entrar con " + primera.nombre : ""}
       </div>
