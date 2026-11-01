@@ -6,7 +6,7 @@
  * Se registra solo con require("./actualizar.cjs") (desde historias.cjs).
  */
 const { app, ipcMain } = require("electron");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
 // el app.asar hay que leerlo con «original-fs»: el fs de Electron lo trata como una carpeta (EISDIR)
@@ -67,7 +67,13 @@ function reiniciarCon(nueva) {
     `Start-Process -FilePath ${q(exe)}`,
     `Remove-Item -LiteralPath ${q(ps1)} -ErrorAction SilentlyContinue`,
   ].join("\r\n"), "utf8");
-  spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ps1],
+  // v3.34.2: se lanza con WMI para que NO sea hijo de RandomStudio: si la app estaba dentro de un «trabajo» de Windows
+  // (p. ej. abierta desde otra herramienta), sus hijos mueren al cerrarse y la actualización se quedaba a medias.
+  const linea = `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${ps1}"`;
+  const r = spawnSync("powershell.exe", ["-NoProfile", "-Command",
+    `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '${linea.replace(/'/g, "''")}' }; exit $r.ReturnValue`],
+    { windowsHide: true, timeout: 20000 });
+  if (r.status !== 0) spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ps1],
     { detached: true, stdio: "ignore", windowsHide: true }).unref();
   setTimeout(() => app.quit(), 300);
   setTimeout(() => app.exit(0), 2500);        // por si algo frena el cierre normal
