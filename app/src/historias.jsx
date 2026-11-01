@@ -602,16 +602,42 @@ export function HistoriasView({ toast }) {
 
 // ------------------------------------------------------------------ desde el móvil (o cualquier equipo sin el proyecto)
 /** Ve el portátil en vivo y le manda órdenes (api/remoto). Las descargas van por Drive: funcionan aunque el portátil esté apagado. */
-function HistoriasRemoto({ toast }) {
+/* v3.38: el panel del móvil, UNIFICADO. Todas las historias juntas (las de los dos equipos y las que esperan en la cola),
+ * ordenadas por lo que necesita tu atención; el equipo es solo una etiqueta pequeña en cada tarjeta. Desde aquí se lanzan,
+ * se reordenan, se revisan y se paran, sin pensar en qué equipo está cada una. Las órdenes van solas a su equipo. */
+const norm = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+const icoEquipo = (e) => (e && e.rol === "dueno") ? "💻" : "🖥️";
+const corto = (n) => String(n || "").replace(/\s*\(.*\)\s*$/, "");
+
+function EtiquetaEquipo({ e }) {
+  if (!e) return null;
+  return <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--text-3)", whiteSpace: "nowrap" }}>{icoEquipo(e)} {corto(e.nombre)}</span>;
+}
+
+function BarraEtapas({ etapas }) {
+  const n = (etapas || []).length || 6;
+  return (
+    <div style={{ display: "flex", gap: 3 }}>
+      {Array.from({ length: n }).map((_, i) => {
+        const e = (etapas || [])[i] || {};
+        const c = e.estado === "hecho" ? "var(--green)" : e.estado === "revisar" ? "#F59E0B" : e.estado === "trabajando" ? "var(--gold)" : "var(--border)";
+        return <span key={i} style={{ flex: 1, height: 4, borderRadius: 3, background: c }} />;
+      })}
+    </div>);
+}
+
+export function HistoriasRemoto({ toast }) {
   const [r, setR] = useState(null);
+  const [cola, setCola] = useState(null);
   const [error, setError] = useState("");
-  const [selId, setSelId] = useState(null);
-  const [pestana, setPestana] = useState("proyectos");
+  const [abierta, setAbierta] = useState(null);         // clave de la tarjeta abierta
+  const [pestana, setPestana] = useState("historias");
+  const [filtro, setFiltro] = useState("todas");
   const [enviandoIdea, setEnviandoIdea] = useState({});
-  const [eqId, setEqId] = useState(null);
   const [ahora, setAhora] = useState(Date.now());
   const cargar = useCallback(async () => {
     try { setR(await remotoApi("GET")); setError(""); } catch (e) { setError(e.message); }
+    try { setCola(await pedidosApi("GET")); } catch (e) {}
   }, []);
   useEffect(() => {
     cargar();
@@ -622,124 +648,200 @@ function HistoriasRemoto({ toast }) {
 
   const equipos = (r && r.equipos || []).filter(e => e.datos && e.datos.historias);
   equipos.sort((a, b) => (b.en_linea - a.en_linea) || ((b.rol === "dueno") - (a.rol === "dueno")));
-  const eq = equipos.find(e => e.id === eqId) || equipos[0];
-  const d = eq && eq.datos;
   const ordenA = async (para, que, args, ok) => {
-    if (!para) return;
+    if (!para) return toast("Ese equipo no está conectado");
     try { await remotoApi("POST", { accion: "orden", para: para.id, que, args }); toast(ok || "Orden enviada"); setTimeout(cargar, 1500); }
     catch (e) { toast("❌ " + e.message); }
   };
-  const orden = (que, args, ok) => ordenA(eq, que, args, ok);
+  const pedido = async (cuerpo, ok) => { try { await pedidosApi("POST", cuerpo); if (ok) toast(ok); cargar(); } catch (e) { toast("❌ " + e.message); } };
 
-  if (!r) return <div style={{ ...tarjeta, margin: "30px auto", maxWidth: 520, fontSize: 13, color: error ? "var(--red)" : "var(--text-3)" }}>{error || "Conectando con el portátil…"}</div>;
-  // sin ningún escritorio publicando, el móvil no se queda en un callejón: puede pedir trabajo y ver la cola igualmente
-  if (!eq) return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900, margin: "0 auto", width: "100%" }}>
-      <style>{CSS}</style>
-      <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 22 }}>Random<span className="gold-text">Historias</span></div>
-      <div style={{ ...tarjeta, fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
-        <b style={{ color: "#F59E0B" }}>Ningún equipo de escritorio está conectado ahora.</b> Puedes pedir historias igualmente: se quedan en la cola
-        y las hace el primero que esté disponible. Si el portátil está encendido y no sale aquí: ábrelo, entra en tu perfil y mira que
-        Google esté conectado (Configuración → Cuenta y conexiones).
-      </div>
-      <ColaTrabajo toast={toast} />
-    </div>);
+  if (!r) return <div style={{ ...tarjeta, margin: "30px auto", maxWidth: 520, fontSize: 13, color: error ? "var(--red)" : "var(--text-3)" }}>{error || "Conectando con los equipos…"}</div>;
 
-  const h = (d.historias || []).find(x => x.id === selId) || (d.historias || [])[0];
-  const espera = h && (h.etapas || []).find(e => e.estado === "revisar");
-  const siguiente = h && (h.etapas || []).find(e => e.estado === "pendiente");
-  const tarea = d.tarea;
-  const tipoArchivo = (n) => /\.mp4$/i.test(n) ? "Short" : /\.png$/i.test(n) ? "Miniatura" : n;
+  // ---------------------------------------------------------------- todas las historias, juntas
+  const pedidos = (cola && cola.pedidos) || [];
+  const pedidoDe = (hid) => pedidos.find(p => p.historia_id === hid);
+  const items = [];
+  for (const e of equipos) for (const h of (e.datos.historias || [])) {
+    if (h.legado) continue;
+    const t = e.datos.tarea && e.datos.tarea.id === h.id ? e.datos.tarea : null;
+    const rev = (h.etapas || []).find(x => x.estado === "revisar");
+    const p = pedidoDe(h.id);
+    const grupo = rev ? "revisar" : t ? "marcha" : h.entregada ? "hechas" : (p && p.estado === "cancelado") ? "paradas"
+      : (h.etapas || []).some(x => x.estado === "fallo" || x.estado === "error") || (p && p.estado === "fallido") ? "paradas" : "marcha_pausa";
+    items.push({ clave: "h" + h.id, tipo: "historia", h, e, t, rev, p, grupo, nn: h.id.slice(0, 2), titulo: h.titulo });
+  }
+  const enCola = pedidos.filter(p => p.tipo === "historia" && ["en_cola", "asignado"].includes(p.estado) && !p.historia_id);
+  enCola.forEach((p, i) => items.push({ clave: "p" + p.id, tipo: "pedido", p, grupo: "cola", pos: i, titulo: p.titulo, nn: p.numero ? String(p.numero).padStart(2, "0") : null }));
+  pedidos.filter(p => p.tipo === "historia" && p.estado === "fallido" && !p.historia_id)
+    .forEach(p => items.push({ clave: "p" + p.id, tipo: "pedido", p, grupo: "paradas", titulo: p.titulo }));
+  const ideasEnMarcha = pedidos.filter(p => p.tipo === "ideas" && ["en_cola", "asignado", "trabajando"].includes(p.estado));
+
+  const GRUPOS = [
+    ["revisar", "📋 Te toca revisar", "#F59E0B"],
+    ["marcha", "⚡ En marcha ahora", "var(--gold)"],
+    ["cola", "⏳ En la cola", "var(--text-2)"],
+    ["marcha_pausa", "⏸ A medias", "var(--text-2)"],
+    ["paradas", "⚠️ Paradas", "var(--red)"],
+    ["hechas", "✅ Terminadas", "var(--green)"],
+  ];
+  const FILTROS = [["todas", "Todas"], ["revisar", "📋 Te toca"], ["marcha", "⚡ En marcha"], ["cola", "⏳ En cola"], ["hechas", "✅ Hechas"]];
+  const cuenta = (g) => items.filter(x => x.grupo === g).length;
+  const visibles = (g) => filtro === "todas" || filtro === g || (filtro === "marcha" && g === "marcha_pausa");
+
+  // ---------------------------------------------------------------- ideas de todos los equipos, juntas
+  const ideasVistas = new Set(), ideas = [];
+  for (const e of equipos) for (const i of (e.datos.ideas || [])) {
+    if (i.estado === "usada" || i.estado === "descartada" || ideasVistas.has(norm(i.titulo))) continue;
+    ideasVistas.add(norm(i.titulo)); ideas.push({ ...i, e });
+  }
+  const pensando = equipos.some(e => e.datos.generandoIdeas) || ideasEnMarcha.length > 0;
+
+  // (una función y no un componente: así la nota que estés escribiendo no se borra cuando se refresca cada 4 s)
+  const tarjetaDe = (it) => {
+    const abiertaYa = abierta === it.clave;
+    const h = it.h, e = it.e;
+    let estado, color;
+    if (it.tipo === "pedido") {
+      estado = it.grupo === "paradas" ? "No se pudo empezar" + (it.p.detalle ? ": " + it.p.detalle : "")
+        : it.p.estado === "asignado" ? "Empezando en " + (it.p.equipo_nombre || "un equipo") + "…" : it.pos === 0 ? "La siguiente en empezar" : "Esperando · puesto " + (it.pos + 1);
+      color = it.grupo === "paradas" ? "var(--red)" : "var(--text-3)";
+    } else if (it.rev) { estado = "Revisa: " + ETAPA_NOMBRE[it.rev.id]; color = "#F59E0B"; }
+    else if (it.t) {
+      estado = (ETAPA_NOMBRE[it.t.etapa] || "Trabajando") + (it.t.render ? " · plano " + it.t.render.plano + (it.t.render.total ? " (" + it.t.render.hechos + "/" + it.t.render.total + ")" : "") : it.t.accion ? " · " + String(it.t.accion).slice(0, 60) : "");
+      color = "var(--gold)";
+    } else if (h.entregada) { estado = h.drive ? "Lista y en tu Drive" : "Lista"; color = "var(--green)"; }
+    else if (it.grupo === "paradas") { estado = "Parada" + (it.p && it.p.detalle ? ": " + it.p.detalle : ""); color = "var(--red)"; }
+    else { const s = (h.etapas || []).find(x => x.estado === "pendiente"); estado = s ? "Siguiente: " + ETAPA_NOMBRE[s.id] : "A medias"; color = "var(--text-2)"; }
+    const siguiente = h && (h.etapas || []).find(x => x.estado === "pendiente");
+    return (
+      <div key={it.clave} style={{ ...tarjeta, padding: 12, borderColor: it.grupo === "revisar" ? "rgba(245,158,11,.5)" : it.grupo === "marcha" ? "var(--border-gold)" : "var(--border)" }}>
+        <div role="button" onClick={() => setAbierta(abiertaYa ? null : it.clave)} style={{ display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            {it.nn && <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-3)" }}>{it.nn}</span>}
+            <b style={{ fontSize: 13.5, lineHeight: 1.3, flex: 1, minWidth: 0 }}>{it.titulo || "(escribiendo el título…)"}</b>
+            <EtiquetaEquipo e={e || (it.p && it.p.equipo ? equipos.find(x => x.id === it.p.equipo) : null)} />
+          </div>
+          <div style={{ fontSize: 11.5, fontWeight: 700, color }}>{it.grupo === "marcha" && <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: 9, background: "var(--gold)", marginRight: 6, animation: "rh-pulso 1.4s infinite" }} />}{estado}</div>
+          {h && <BarraEtapas etapas={h.etapas} />}
+        </div>
+        {/* acciones rápidas sin abrir */}
+        {it.tipo === "pedido" && it.grupo === "cola" && (
+          <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+            <button disabled={it.pos === 0} onClick={() => pedido({ accion: "mover", id: it.p.id, al_principio: true }, "Será la siguiente")} style={{ ...botonSec, padding: "6px 10px", opacity: it.pos === 0 ? .4 : 1 }}>⤒ Primera</button>
+            <button disabled={it.pos === 0} onClick={() => pedido({ accion: "mover", id: it.p.id, antes_de: enCola[it.pos - 1].id })} style={{ ...botonSec, padding: "6px 10px", opacity: it.pos === 0 ? .4 : 1 }}>↑</button>
+            <button disabled={it.pos === enCola.length - 1} onClick={() => pedido({ accion: "mover", id: it.p.id, antes_de: enCola[it.pos + 2] ? enCola[it.pos + 2].id : undefined, al_final: !enCola[it.pos + 2] })} style={{ ...botonSec, padding: "6px 10px", opacity: it.pos === enCola.length - 1 ? .4 : 1 }}>↓</button>
+            <span style={{ flex: 1 }} />
+            <button onClick={() => { if (confirm("¿Quitar «" + it.titulo + "» de la cola?")) pedido({ accion: "cancelar", id: it.p.id }, "Quitada de la cola"); }} style={{ ...botonSec, padding: "6px 10px", color: "var(--red)" }}>Quitar</button>
+          </div>)}
+        {it.tipo === "pedido" && it.grupo === "paradas" && (
+          <button onClick={() => pedido({ accion: "reintentar", id: it.p.id }, "De vuelta en la cola")} style={{ ...botonSec, marginTop: 8 }}>↻ Volver a intentarlo</button>)}
+        {abiertaYa && h && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+            {it.t && <TareaEnMarcha tarea={{ ...it.t, lineas: [] }} ahora={ahora} titulo={h.titulo}
+              onCancelar={() => { if (confirm("¿Parar «" + (h.titulo || h.id) + "»?")) ordenA(e, "cancelar", {}, "Parando…"); }} />}
+            <Etapas etapas={(h.etapas || []).map(x => ({ ...x, nombre: ETAPA_NOMBRE[x.id] }))} />
+            {!it.t && !it.rev && siguiente && !h.entregada && (
+              <button disabled={!e.en_linea || !!e.datos.tarea} onClick={() => ordenA(e, "avanzar", { id: h.id }, "▶ En marcha")} className="grad-gold"
+                style={{ ...botonOro, alignSelf: "flex-start", opacity: (!e.en_linea || e.datos.tarea) ? .5 : 1 }}>
+                ▶ Seguir: {ETAPA_NOMBRE[siguiente.id]}{e.datos.tarea ? " (cuando " + e.nombre + " acabe lo que hace)" : !e.en_linea ? " (" + e.nombre + " apagado)" : ""}</button>)}
+            {it.rev && <RevisionRemota h={h} etapa={it.rev.id} onOrden={(q, a, ok) => ordenA(e, q, a, ok)} />}
+            {h.drive && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ fontSize: 12.5, color: "var(--green)", fontWeight: 700 }}>☁️ En tu Drive{h.drive.archivos && h.drive.archivos.every(a => a.verificado) ? " · copia idéntica" : ""}</span>
+                {(h.drive.archivos || []).map(a => <a key={a.nombre} href={a.ver} target="_blank" rel="noopener" style={{ ...botonSec, textDecoration: "none" }}>⬇ {/\.mp4$/i.test(a.nombre) ? "Short" : /\.png$/i.test(a.nombre) ? "Miniatura" : a.nombre}</a>)}
+                <a href={h.drive.carpeta} target="_blank" rel="noopener" style={{ ...botonSec, textDecoration: "none" }}>Carpeta</a>
+              </div>)}
+            {h.entregada && !h.drive && <button onClick={() => ordenA(e, "drive_subir", { id: h.id, que: "short" }, "☁️ Subiendo a Drive")} style={{ ...botonSec, alignSelf: "flex-start" }}>☁️ Subir a Drive</button>}
+            {h.entregada && <NotaRemota h={h} onOrden={(q, a, ok) => ordenA(e, q, a, ok)} />}
+            {it.p && ["asignado", "trabajando", "revision"].includes(it.p.estado) && (
+              <button onClick={() => { if (confirm("¿Cancelar «" + (h.titulo || h.id) + "»? Lo hecho se queda en " + e.nombre + ".")) pedido({ accion: "cancelar", id: it.p.id }, "Cancelada"); }}
+                style={{ ...botonSec, alignSelf: "flex-start", color: "var(--red)" }}>Cancelar esta historia</button>)}
+          </div>)}
+      </div>);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900, margin: "0 auto", width: "100%" }}>
       <style>{CSS}</style>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 22 }}>Random<span className="gold-text">Historias</span></div>
-        <span style={{ fontSize: 12, fontWeight: 700, color: eq.en_linea ? "var(--green)" : "var(--red)" }}>● {eq.nombre} {eq.en_linea ? "en línea" : "apagado o sin conexión"}</span>
         <span style={{ flex: 1 }} />
         <div style={{ display: "flex", gap: 4 }}>
-          {[["proyectos", "📁 Historias"], ["cola", "📋 Cola"], ["ideas", "💡 Ideas"]].map(([k, t]) => <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>)}
+          {[["historias", "📚 Historias"], ["ideas", "💡 Ideas"], ["equipos", "🖥️ Equipos"]].map(([k, t]) => <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>)}
         </div>
       </div>
-      {equipos.length > 1 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {equipos.map(e => (
-            <button key={e.id} onClick={() => { setEqId(e.id); setSelId(null); }} style={{ ...botonSec, borderColor: e.id === eq.id ? "var(--gold)" : "var(--border)", color: e.id === eq.id ? "var(--gold)" : "var(--text)" }}>
-              <span style={{ color: e.en_linea ? "var(--green)" : "var(--red)" }}>●</span> {e.nombre}{e.datos.tarea ? " · trabajando" : ""}
-            </button>))}
-        </div>)}
-      {!eq.en_linea && <div style={{ ...tarjeta, fontSize: 12.5, color: "var(--text-2)" }}>{eq.nombre} no responde desde {new Date(eq.actualizado).toLocaleString("es-ES")}. Ves lo último que publicó; las órdenes esperarán a que vuelva. Lo que ya está en Drive se puede descargar igual.</div>}
-      {/* v3.37.5: lo que hace CADA equipo ahora mismo, a la vez (antes solo se veía el elegido) */}
-      {equipos.map(e => {
-        const t = e.datos.tarea, cap = (e.datos.capacidad || {});
-        const estado = !e.en_linea ? ["var(--red)", "apagado o sin conexión"] : t ? ["var(--gold)", "trabajando"]
-          : e.datos.disponible === false ? ["var(--text-3)", "no disponible"] : cap.claude === false ? ["#F59E0B", cap.claudeError || "le falta Claude Code"]
-          : e.datos.generandoIdeas ? ["var(--gold)", "pensando ideas…"] : ["var(--green)", "libre"];
-        const enRevision = (e.datos.historias || []).filter(x => (x.etapas || []).some(y => y.estado === "revisar"));
-        return (
-          <div key={e.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5 }}>
-              <b style={{ fontFamily: "'Sora'" }}>{e.rol === "dueno" ? "💻" : "🖥️"} {e.nombre}</b>
-              <span style={{ color: estado[0], fontWeight: 700 }}>● {estado[1]}</span>
-              {enRevision.length > 0 && <span style={{ color: "var(--gold)", fontWeight: 600 }}>· 📋 {enRevision.length} esperando tu revisión</span>}
-            </div>
-            {t && <TareaEnMarcha tarea={{ ...t, lineas: [] }} ahora={ahora} titulo={t.titulo || ((e.datos.historias || []).find(x => x.id === t.id) || {}).titulo}
-              onCancelar={() => { if (confirm("¿Parar la tarea en " + e.nombre + "?")) ordenA(e, "cancelar", {}, "Parando en " + e.nombre + "…"); }} />}
-          </div>);
-      })}
 
-      {pestana === "cola" && <ColaTrabajo toast={toast} />}
+      {/* los equipos de un vistazo: una línea cada uno */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {equipos.length === 0 && <span style={{ fontSize: 12.5, color: "#F59E0B", fontWeight: 600 }}>Ningún equipo conectado: lo que pidas espera en la cola.</span>}
+        {equipos.map(e => {
+          const t = e.datos.tarea, cap = e.datos.capacidad || {};
+          const [c, txt] = !e.en_linea ? ["var(--red)", "apagado"] : t ? ["var(--gold)", "trabajando"] : e.datos.disponible === false ? ["var(--text-3)", "no disponible"]
+            : cap.claude === false ? ["#F59E0B", "le falta Claude"] : e.datos.generandoIdeas ? ["var(--gold)", "pensando ideas"] : ["var(--green)", "libre"];
+          return <button key={e.id} onClick={() => setPestana("equipos")} style={{ ...botonSec, padding: "6px 10px", fontSize: 12 }}>{icoEquipo(e)} {corto(e.nombre)} <b style={{ color: c }}>● {txt}</b></button>;
+        })}
+      </div>
+
+      {pestana === "historias" && (<>
+        <NuevaPeticion toast={toast} alHacer={cargar} />
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+          {FILTROS.map(([k, t]) => {
+            const n = k === "todas" ? items.length : k === "marcha" ? cuenta("marcha") + cuenta("marcha_pausa") : cuenta(k);
+            return <button key={k} onClick={() => setFiltro(k)} className={"rh-tab" + (filtro === k ? " on" : "")} style={{ whiteSpace: "nowrap" }}>{t}{n ? " · " + n : ""}</button>;
+          })}
+        </div>
+        {GRUPOS.filter(([g]) => visibles(g) && cuenta(g)).map(([g, t, c]) => (
+          <div key={g} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: c, textTransform: "uppercase", letterSpacing: ".05em" }}>{t} · {cuenta(g)}</div>
+            {items.filter(x => x.grupo === g).map(tarjetaDe)}
+          </div>))}
+        {!items.length && <div style={{ ...tarjeta, fontSize: 13, color: "var(--text-3)" }}>Aún no hay historias. Pide una arriba o lanza una idea desde 💡 Ideas.</div>}
+      </>)}
+
       {pestana === "ideas" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <NuevaPeticion toast={toast} />
-          <button disabled={d.generandoIdeas || !eq.en_linea} onClick={() => orden("ideas_generar", { n: 5 }, "💡 El portátil está pensando ideas")} className="grad-gold" style={{ ...botonOro, alignSelf: "flex-start", opacity: (d.generandoIdeas || !eq.en_linea) ? .5 : 1 }}>{d.generandoIdeas ? "Pensando ideas…" : "💡 Generar 5 ideas"}</button>
-          {(d.ideas || []).filter(i => i.estado !== "usada").map(i => (
-            <div key={i.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 6 }}>
+          <button disabled={pensando} onClick={() => pedido({ accion: "crear", tipo: "ideas", titulo: "Pensar 5 ideas", args: { n: 5 } }, "💡 Pedido: pensar 5 ideas")} className="grad-gold"
+            style={{ ...botonOro, alignSelf: "flex-start", opacity: pensando ? .5 : 1 }}>{pensando ? "Pensando ideas…" : "💡 Pedir 5 ideas"}</button>
+          {!ideas.length && <div style={{ ...tarjeta, fontSize: 13, color: "var(--text-3)" }}>No hay ideas por mirar.</div>}
+          {ideas.map(i => (
+            <div key={i.e.id + i.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 6 }}>
               <b style={{ fontFamily: "'Sora'" }}>{i.titulo}</b>
               <div style={{ fontSize: 12.5, color: "var(--gold)" }}>{i.regla}</div>
               <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{i.resumen}</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {i.estado === "en_cola" ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", padding: "8px 4px" }}>📋 En la cola</span>
                   : <button disabled={!!enviandoIdea[i.id]} onClick={async () => {
                       if (enviandoIdea[i.id]) return;
                       setEnviandoIdea(x => ({ ...x, [i.id]: true }));
-                      try { const { id, estado, historia, ...idea } = i; await pedidosApi("POST", { accion: "crear", tipo: "historia", titulo: i.titulo, args: { idea } }); orden("idea_poner", { id: i.id, estado: "en_cola" }, "📋 Añadida a la cola"); }
-                      catch (e) { if (/ya está/.test(e.message)) orden("idea_poner", { id: i.id, estado: "en_cola" }); toast((/ya está/.test(e.message) ? "📋 " : "❌ ") + e.message); setEnviandoIdea(x => { const y = { ...x }; delete y[i.id]; return y; }); }
+                      try { const { id, estado, historia, e, ...idea } = i; await pedidosApi("POST", { accion: "crear", tipo: "historia", titulo: i.titulo, args: { idea } }); ordenA(i.e, "idea_poner", { id: i.id, estado: "en_cola" }, "📋 Añadida a la cola"); }
+                      catch (x) { if (/ya está/.test(x.message)) ordenA(i.e, "idea_poner", { id: i.id, estado: "en_cola" }); toast((/ya está/.test(x.message) ? "📋 " : "❌ ") + x.message); setEnviandoIdea(y => { const z = { ...y }; delete z[i.id]; return z; }); }
                     }} className="grad-gold" style={{ ...botonOro, opacity: enviandoIdea[i.id] ? .6 : 1 }}>{enviandoIdea[i.id] ? "Añadiendo…" : "📋 Añadir a la cola"}</button>}
-                <button onClick={() => orden("idea_poner", { id: i.id, estado: i.estado === "guardada" ? "nueva" : "guardada" })} style={botonSec}>{i.estado === "guardada" ? "Quitar ⭐" : "⭐ Guardar"}</button>
-                <button onClick={() => orden("idea_poner", { id: i.id, estado: "descartada" })} style={{ ...botonSec, color: "var(--text-3)" }}>Descartar</button>
+                <button onClick={() => ordenA(i.e, "idea_poner", { id: i.id, estado: i.estado === "guardada" ? "nueva" : "guardada" })} style={botonSec}>{i.estado === "guardada" ? "Quitar ⭐" : "⭐ Guardar"}</button>
+                <button onClick={() => ordenA(i.e, "idea_poner", { id: i.id, estado: "descartada" })} style={{ ...botonSec, color: "var(--text-3)" }}>Descartar</button>
               </div>
             </div>))}
         </div>)}
 
-      {pestana === "proyectos" && (<>
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
-          {(d.historias || []).map(x => {
-            const rev = (x.etapas || []).find(e => e.estado === "revisar");
+      {pestana === "equipos" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {equipos.map(e => {
+            const t = e.datos.tarea, cap = e.datos.capacidad || {};
+            const falta = !cap.proyecto ? "le falta el proyecto de historias" : cap.claude === false ? (cap.claudeError || "le falta Claude Code") : cap.eleven === false ? "le falta la clave de ElevenLabs (no podrá hacer voces)" : "";
             return (
-              <button key={x.id} onClick={() => setSelId(x.id)} style={{ flex: "0 0 180px", textAlign: "left", padding: 10, borderRadius: 12, border: "1px solid " + ((h && h.id === x.id) ? "var(--border-gold)" : rev ? "rgba(245,158,11,.5)" : "var(--border)"), background: "var(--card)" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--text-3)" }}>HISTORIA {x.id.slice(0, 2)}</div>
-                <div style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.3, margin: "2px 0 4px" }}>{x.titulo || "(escribiendo…)"}</div>
-                <div style={{ fontSize: 10.5, fontWeight: 700, color: x.entregada ? "var(--green)" : rev ? "#F59E0B" : "var(--text-3)" }}>{x.entregada ? "● Entregada" : rev ? "● Revisa: " + ETAPA_NOMBRE[rev.id] : (x.etapas || []).filter(e => e.estado === "hecho").length + "/6"}</div>
-              </button>);
+              <div key={e.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <b style={{ fontFamily: "'Sora'", fontSize: 15 }}>{icoEquipo(e)} {corto(e.nombre)}</b>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: e.en_linea ? "var(--green)" : "var(--red)" }}>● {e.en_linea ? "en línea" : "sin conexión desde " + new Date(e.actualizado).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</span>
+                  {e.datos.version && <span style={{ fontSize: 11, color: "var(--text-3)" }}>v{e.datos.version}</span>}
+                  <span style={{ fontSize: 12, color: e.datos.disponible === false ? "var(--text-3)" : "var(--green)" }}>{e.datos.disponible === false ? "· no disponible" : "· disponible"}</span>
+                </div>
+                {falta && <div style={{ fontSize: 12, color: "#F59E0B", fontWeight: 600 }}>⚠️ {falta}</div>}
+                {t ? <TareaEnMarcha tarea={{ ...t, lineas: [] }} ahora={ahora} titulo={t.titulo}
+                  onCancelar={() => { if (confirm("¿Parar la tarea en " + e.nombre + "?")) ordenA(e, "cancelar", {}, "Parando en " + e.nombre + "…"); }} />
+                  : <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>{e.datos.generandoIdeas ? "Pensando ideas…" : "Sin tarea ahora mismo."}</div>}
+              </div>);
           })}
-        </div>
-        {h && (
-          <div style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 17 }}>{h.titulo || h.id}</div>
-            <Etapas etapas={(h.etapas || []).map(e => ({ ...e, nombre: ETAPA_NOMBRE[e.id] }))} />
-            {!h.legado && !tarea && siguiente && !espera && <button disabled={!eq.en_linea} onClick={() => orden("avanzar", { id: h.id }, "▶ En marcha en el portátil")} className="grad-gold" style={{ ...botonOro, alignSelf: "flex-start" }}>▶ Seguir: {ETAPA_NOMBRE[siguiente.id]}</button>}
-            {espera && <RevisionRemota h={h} etapa={espera.id} onOrden={orden} />}
-            {h.drive && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <span style={{ fontSize: 12.5, color: "var(--green)", fontWeight: 700 }}>☁️ En tu Drive{h.drive.archivos && h.drive.archivos.every(a => a.verificado) ? " · copia idéntica" : ""}</span>
-                {(h.drive.archivos || []).map(a => <a key={a.nombre} href={a.ver} target="_blank" rel="noopener" style={{ ...botonSec, textDecoration: "none" }}>⬇ {tipoArchivo(a.nombre)}</a>)}
-                <a href={h.drive.carpeta} target="_blank" rel="noopener" style={{ ...botonSec, textDecoration: "none" }}>Carpeta</a>
-              </div>)}
-            {h.entregada && !h.drive && <button onClick={() => orden("drive_subir", { id: h.id, que: "short" }, "☁️ Subiendo a Drive desde el portátil")} style={{ ...botonSec, alignSelf: "flex-start" }}>☁️ Subir a Drive</button>}
-            {h.entregada && <NotaRemota h={h} onOrden={orden} />}
-          </div>)}
-      </>)}
+        </div>)}
     </div>);
 }
 

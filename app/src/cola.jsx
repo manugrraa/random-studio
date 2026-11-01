@@ -54,7 +54,7 @@ export function NuevaPeticion({ toast, alHacer }) {
     <div style={{ background: "var(--card)", border: "1px solid var(--border-gold)", borderRadius: 16, padding: 16 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 15, marginRight: "auto" }}>Pedir trabajo</div>
-        <button onClick={() => setAbierto(a => !a)} className={abierto ? "" : "grad-gold"} style={{ ...boton, color: abierto ? "var(--text)" : "#000", border: abierto ? boton.border : "none", padding: "8px 13px" }}>
+        <button onClick={() => setAbierto(a => !a)} className={abierto ? "" : "grad-gold"} style={{ ...boton, color: abierto ? "var(--text)" : "#000", border: abierto ? boton.border : "none", background: abierto ? boton.background : undefined, padding: "8px 13px" }}>
           {abierto ? "Cerrar" : "✍️ Nueva historia con mi idea"}</button>
         <button disabled={enviando} onClick={() => pedir({ accion: "crear", tipo: "ideas", titulo: "Pensar 5 ideas", args: { n: 5 } }, "💡 Pedido: pensar 5 ideas (salen en Ideas)")}
           style={{ ...boton, padding: "8px 13px" }}>💡 Pedir 5 ideas</button>
@@ -67,7 +67,7 @@ export function NuevaPeticion({ toast, alHacer }) {
             style={{ fontSize: 16, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)", resize: "vertical", lineHeight: 1.5 }} />
           <button disabled={!listo || enviando} className="grad-gold"
             onClick={() => pedir({ accion: "crear", tipo: "historia", titulo: t, args: { idea: { titulo: t, regla: idea.trim().split(/[.\n]/)[0], resumen: idea.trim(), fundamento: "idea del usuario" } } }, "📋 «" + t + "» añadida a la cola")}
-            style={{ ...boton, color: "#000", border: "none", alignSelf: "flex-start", padding: "9px 15px", opacity: (!listo || enviando) ? .5 : 1 }}>
+            style={{ ...boton, color: "#000", border: "none", background: undefined, alignSelf: "flex-start", padding: "9px 15px", opacity: (!listo || enviando) ? .5 : 1 }}>
             {enviando ? "Añadiendo…" : "📋 Añadir a la cola"}</button>
           <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>La coge el primer equipo disponible (el portátil tiene preferencia) y la ves avanzar aquí mismo.</div>
         </div>)}
