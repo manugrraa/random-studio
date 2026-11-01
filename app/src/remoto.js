@@ -9,6 +9,7 @@
 import { APP_VERSION } from "./base";
 import { YT_BACKEND } from "./datos";
 import { driveConectadoTrabajo, driveHistorias, driveTokenTrabajo, tokenTrabajo } from "./sesion_historias";
+import { alTimbre, fijarTimbre } from "./timbre";
 import { cabecerasEquipo } from "./seguridad";
 import { PERFILES, perfilActual } from "./perfiles";
 import { avisar } from "./avisos";
@@ -24,6 +25,7 @@ export async function remotoApi(metodo, cuerpo) {
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
+  if (j.timbre) fijarTimbre(j.timbre);
   return j;
 }
 
@@ -47,6 +49,7 @@ async function ejecutar(o) {
     case "parar_todo": return pararTodo();
     case "drive_subir": return s.estudioDriveSubir(a.id, await driveTokenTrabajo(), perfilDrive(), a.que || "short");
     case "ajustes": return s.estudioAjustes(a.nuevos || {});
+    case "instalar_git": return s.instalarGit ? s.instalarGit() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
   }
   throw new Error("Orden desconocida");
 }
@@ -118,7 +121,9 @@ export function iniciarRemotoEscritorio(t) {
     }
     const datos = {
       tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible,
-      capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven },
+      capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven,
+        // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
+        bash: aj.bash !== false, disco: aj.disco || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, esperandoLimite: Object.keys(esperas()).length },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
       tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
       ajustes: aj.ajustes,
@@ -127,8 +132,27 @@ export function iniciarRemotoEscritorio(t) {
       // v3.40.6: el uso de Claude de este equipo (lo ve el móvil en su marcador); se lee como mucho cada 10 min
       claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,
     };
-    await remotoApi("POST", { accion: "publicar", datos }).catch(() => {});
+    const r = await remotoApi("POST", { accion: "publicar", datos }).catch(() => null);
+    if (r) vigilarOtros(r.otros || []);
   };
+  // v3.41: si otro equipo se desconecta a mitad de una historia, aviso (una vez hasta que vuelva); a los 10 min, el
+  // primer equipo libre la sigue con su copia de Drive (relevo, en el servidor)
+  const caidos = {};
+  const vigilarOtros = (otros) => {
+    for (const o of otros) {
+      if (o.en_linea) { delete caidos[o.id]; continue; }
+      if (!o.tarea || caidos[o.id]) continue;
+      caidos[o.id] = 1;
+      const txt = "Estaba con «" + (o.tarea.titulo || o.tarea.id) + "». Si en 10 min no vuelve, la sigue otro equipo.";
+      avisar("⚠️ " + o.nombre + " se ha desconectado", txt, "off" + o.id);
+      toast("⚠️ " + o.nombre + " se ha desconectado. " + txt);
+    }
+  };
+  // publicar al momento lo que cambia aquí (sin esperar a la siguiente vuelta)
+  let pronto = null;
+  const publicarPronto = () => { clearTimeout(pronto); pronto = setTimeout(publicar, 1500); };
+  s.onHistoriasProgreso && s.onHistoriasProgreso((d) => { if (["fin", "terminado", "espera", "driveListo"].includes(d.tipo)) publicarPronto(); });
+  alCambiarDisponible(publicarPronto);
 
   const recoger = async () => {
     if (!navigator.onLine) return;
@@ -144,8 +168,10 @@ export function iniciarRemotoEscritorio(t) {
   };
 
   publicar(); recoger();
-  setInterval(publicar, 8000);
-  setInterval(recoger, 5000);
+  // v3.41: con el timbre, las órdenes llegan al instante; las vueltas de siempre quedan de respaldo, más espaciadas
+  alTimbre((d) => { if (d.que === "orden") recoger(); });
+  setInterval(publicar, 20000);
+  setInterval(recoger, 20000);
 }
 
 // ------------------------------------------------------------------ trabajo dual
@@ -175,6 +201,7 @@ export async function pedidosApi(metodo, cuerpo) {
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.success) throw new Error(j.error || ("Error " + r.status));
+  if (j.timbre) fijarTimbre(j.timbre);
   return j;
 }
 
@@ -254,15 +281,48 @@ export function iniciarTrabajador(t) {
     }
     if (p) { m[p].fin = true; guardarMios(m); avisarPedido(Number(p), d.ok ? "hecho" : "fallido", { detalle: d.ok ? d.n + " ideas nuevas" : d.error }); }
   });
+  // v3.41 RELEVO: al terminar cada etapa, el motor prepara una copia de la historia y aquí se sube a Drive; si este equipo
+  // se apaga, otro la sigue desde ahí. Solo las historias de la cola, y si este equipo tiene Drive conectado.
+  s.onHistoriasProgreso && s.onHistoriasProgreso(async (d) => {
+    if (d.tipo !== "relevo" || !s.estudioRelevoSubir || !driveConectadoTrabajo()) return;
+    const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id && !m[k].fin);
+    if (!p) return;
+    try {
+      const r = await s.estudioRelevoSubir(d.id, await driveTokenTrabajo());
+      if (r && r.ok) {
+        await pedidosApi("POST", { accion: "relevo", id: Number(p), relevo: { archivo: r.archivo, md5: r.md5, tam: r.tam, etapa: d.etapa } });
+        const m2 = mios(); if (m2[p]) { m2[p].relevo = r.archivo; guardarMios(m2); }
+      }
+    } catch (e) {}
+  });
+  // v3.41: ¿alguna historia de este equipo la siguió otro mientras este estaba apagado? Entonces aquí se aparta (no se
+  // borra: va a historias/_relevadas) y no se reanuda. Hasta comprobarlo, este equipo no reanuda nada.
+  let revisadoRelevo = false;
+  const comprobarRelevos = async () => {
+    try {
+      const r = await pedidosApi("GET");
+      const m = mios(); let cambio = false;
+      for (const [pid, x] of Object.entries(m)) {
+        if (x.tipo !== "historia" || x.fin) continue;
+        const ped = (r.pedidos || []).find(q => String(q.id) === String(pid));
+        if (!ped || !ped.equipo || ped.equipo === r.yo) continue;
+        x.fin = true; x.relevada = true; cambio = true;
+        if (s.estudioRelevada) await s.estudioRelevada(x.historia).catch(() => {});
+        toast("🔁 La historia " + String(x.historia).slice(0, 2) + " la siguió otro equipo mientras este estaba apagado");
+      }
+      if (cambio) guardarMios(m);
+      revisadoRelevo = true;
+    } catch (e) {}
+  };
 
-  const vuelta = async () => {
+  const vueltaUna = async () => {
     if (!navigator.onLine || ocupadoCogiendo) return;
     let aj, t, l;
     try { [aj, t, l] = await Promise.all([s.estudioAjustes(), s.historiasTareaEstado(), s.historiasLista()]); } catch (e) { return; }
     const m = mios(), w = esperas();
     // 0) lo que esperaba al límite de Claude: a su hora, sigue (de uno en uno, y solo si estoy disponible y libre)
     const vencida = Object.keys(w).find(k => w[k] <= Date.now());
-    if (vencida && _disponible && !(t && t.activa)) {
+    if (vencida && _disponible && revisadoRelevo && !(t && t.activa)) {
       delete w[vencida]; guardarEsperas(w);
       const id = vencida.slice(2);
       try {
@@ -286,12 +346,16 @@ export function iniciarTrabajador(t) {
       const h = (l.historias || []).find(y => y.id === x.historia);
       if (!h) continue;
       const et = h.etapas || [];
-      if (h.entregada || (et.length && et.every(e => e.estado === "hecho"))) { x.fin = true; avisarPedido(Number(pid), "hecho", { historia_id: h.id, detalle: "Short entregado" }); }
+      if (h.entregada || (et.length && et.every(e => e.estado === "hecho"))) {
+        x.fin = true; avisarPedido(Number(pid), "hecho", { historia_id: h.id, detalle: "Short entregado" });
+        // v3.41: la copia de relevo ya no hace falta (ni aquí ni en Drive)
+        if (s.estudioRelevoBorrar) driveTokenTrabajo().then(tk => s.estudioRelevoBorrar(h.id, tk, x.relevo || null)).catch(() => {});
+      }
       else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisarPedido(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[(et.find(e => e.estado === "revisar") || {}).id] || "una etapa") }); }
       else if (t && t.activa && t.id === h.id) { x.parada = false; x.quieta = 0; delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
       // v3.38.2: se quedó a medias (equipo apagado o «Parar todo»): al volver a estar disponible y libre, sigue sola
       // (solo si lleva quieta dos vueltas seguidas, para no pisar el paso de una etapa a la siguiente, y nunca si falló)
-      else if (_disponible && !(t && t.activa) && !x.reanudada && !x.parada && !w["h:" + h.id] && et.some(e => e.estado === "pendiente") && (x.quieta = (x.quieta || 0) + 1) >= 3) {
+      else if (_disponible && revisadoRelevo && !(t && t.activa) && !x.reanudada && !x.parada && !w["h:" + h.id] && et.some(e => e.estado === "pendiente") && (x.quieta = (x.quieta || 0) + 1) >= 3) {
         x.reanudada = Date.now(); x.quieta = 0;
         try { await s.estudioAvanzar(h.id); if (toast) toast("▶ Sigo con la historia " + h.id.slice(0, 2) + " donde se quedó"); } catch (e) {}
         break;
@@ -304,9 +368,23 @@ export function iniciarTrabajador(t) {
     const tipos = aj.blender ? ["historia", "ideas"] : ["ideas"];
     ocupadoCogiendo = true;
     try {
-      const r = await pedidosApi("POST", { accion: "reclamar", tipos });
+      // v3.41: solo se ofrece a seguir relevos si puede bajar la copia de Drive
+      const r = await pedidosApi("POST", { accion: "reclamar", tipos, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) });
       const p = r.pedido;
       if (!p) return;
+      if (p.relevo && p.historia_id) {
+        // relevo de un equipo desconectado: se baja su copia de Drive y la historia sigue aquí
+        const rv = (p.args || {}).relevo || {};
+        let ok = false, err = "";
+        try { const x = await s.estudioRelevoRecibir(p.historia_id, await driveTokenTrabajo(), rv.archivo, rv.md5); ok = !!(x && x.ok); err = (x && x.error) || ""; }
+        catch (e) { err = e.message || String(e); }
+        if (!ok) { await pedidosApi("POST", { accion: "devolver", id: p.id }).catch(() => {}); toast("❌ No pude seguir el relevo de «" + (p.titulo || p.historia_id) + "»: " + err); return; }
+        m[p.id] = { tipo: "historia", historia: p.historia_id }; guardarMios(m);
+        await pedidosApi("POST", { accion: "estado", id: p.id, estado: "trabajando", historia_id: p.historia_id, detalle: "🔁 relevo: sigue aquí desde «" + (rv.etapa || "su última etapa") + "»" });
+        toast("🔁 Sigo aquí la historia " + p.historia_id.slice(0, 2) + " «" + (p.titulo || "") + "»: su equipo se desconectó");
+        await s.estudioAvanzar(p.historia_id);
+        return;
+      }
       if (p.tipo === "historia") {
         const idea = (p.args && p.args.idea) || { titulo: p.titulo };
         const c = await s.estudioCrear("p" + p.id, { nn: p.numero, idea });
@@ -327,6 +405,9 @@ export function iniciarTrabajador(t) {
       }
     } catch (e) {} finally { ocupadoCogiendo = false; }
   };
+  // una sola vuelta a la vez (ahora también las lanza el timbre)
+  let enVuelta = false;
+  const vuelta = async () => { if (enVuelta) return; enVuelta = true; try { await vueltaUna(); } finally { enVuelta = false; } };
   // v3.38.1: numeración seguida: si se borró una historia, las de este equipo que van detrás se renumeran (cada 30 s,
   // nunca la que está trabajando)
   let ultimaNumeracion = 0;
@@ -352,6 +433,9 @@ export function iniciarTrabajador(t) {
     const max = Math.max(0, ...((l && l.historias) || []).filter(h => h.legado).map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)));
     if (max) pedidosApi("POST", { accion: "contador", minimo: max }).catch(() => {});
   }).catch(() => {});
-  vuelta();
-  setInterval(vuelta, 6000);
+  comprobarRelevos().then(vuelta);
+  setInterval(comprobarRelevos, 60000);
+  // v3.41: con el timbre, los pedidos nuevos se cogen al instante; la vuelta de siempre queda de respaldo, más espaciada
+  alTimbre((d) => { if (d.que === "pedidos") vuelta(); });
+  setInterval(vuelta, 15000);
 }

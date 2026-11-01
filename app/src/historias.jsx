@@ -6,6 +6,7 @@ import { BotonDisponible, BotonPararTodo, ColaTrabajo, NuevaPeticion } from "./c
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 import { esAdmin, useRolEquipo } from "./admin";
 import { UsoClaude, usoDeEquipos } from "./uso_claude";
+import { alTimbre } from "./timbre";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
  * Todo el proceso de RandomHistorias dentro del Studio, con una «carpeta» por historia:
@@ -656,9 +657,12 @@ export function HistoriasRemoto({ toast, incrustado }) {
   }, []);
   useEffect(() => {
     cargar();
-    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 4000);
+    // v3.41: con el timbre, lo que cambia en cualquier equipo se ve al instante; la vuelta de 15 s queda de respaldo
+    let pronto = null;
+    const off = alTimbre(() => { clearTimeout(pronto); pronto = setTimeout(cargar, 300); });
+    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 15000);
     const a = setInterval(() => setAhora(Date.now()), 1000);
-    return () => { clearInterval(t); clearInterval(a); };
+    return () => { off(); clearTimeout(pronto); clearInterval(t); clearInterval(a); };
   }, [cargar]);
 
   const equipos = (r && r.equipos || []).filter(e => e.datos && e.datos.historias);
@@ -849,8 +853,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
       {pestana === "equipos" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           {equipos.map(e => {
-            const t = e.datos.tarea, cap = e.datos.capacidad || {};
-            const falta = !cap.proyecto ? "le falta el proyecto de historias" : cap.claude === false ? (cap.claudeError || "le falta Claude Code") : cap.eleven === false ? "le falta la clave de ElevenLabs (no podrá hacer voces)" : "";
+            const t = e.datos.tarea;
             return (
               <div key={e.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -859,13 +862,41 @@ export function HistoriasRemoto({ toast, incrustado }) {
                   {e.datos.version && <span style={{ fontSize: 11, color: "var(--text-3)" }}>v{e.datos.version}</span>}
                   <span style={{ fontSize: 12, color: e.datos.disponible === false ? "var(--text-3)" : "var(--green)" }}>{e.datos.disponible === false ? "· no disponible" : "· disponible"}</span>
                 </div>
-                {falta && <div style={{ fontSize: 12, color: "#F59E0B", fontWeight: 600 }}>⚠️ {falta}</div>}
+                <SaludEquipo e={e} ultima={equipos.map(x => x.datos.version).filter(Boolean).sort((a, b) => numV(b) - numV(a))[0]}
+                  onGit={() => { if (confirm("¿Instalar Git para Windows en " + corto(e.nombre) + "?\n\nSe instala solo para ese usuario (winget, sin pedir permisos de administrador). Con Git Bash, Claude trabaja allí tan rápido como en el portátil.")) ordenA(e, "instalar_git", {}, "Instalando Git en " + corto(e.nombre) + "… (tarda un par de minutos)"); }} />
                 {t ? <TareaEnMarcha tarea={{ ...t, lineas: [] }} ahora={ahora} titulo={t.titulo}
                   onCancelar={() => { if (confirm("¿Parar la tarea en " + e.nombre + "?")) ordenA(e, "cancelar", {}, "Parando en " + e.nombre + "…"); }} />
                   : <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>{e.datos.generandoIdeas ? "Pensando ideas…" : "Sin tarea ahora mismo."}</div>}
               </div>);
           })}
         </div>)}
+    </div>);
+}
+
+/* v3.41: la salud de un equipo: qué le falta para trabajar bien y cómo se arregla. Solo enseña los problemas; si no hay,
+ * una línea en verde. (Los equipos con una versión anterior no mandan todos los datos: lo que no llega no se juzga.) */
+const numV = (v) => String(v || "0").split(".").map(Number).reduce((a, n) => a * 1000 + (n || 0), 0);
+function SaludEquipo({ e, ultima, onGit }) {
+  const cap = e.datos.capacidad || {};
+  const p = [];
+  if (!cap.proyecto) p.push(["Le falta el proyecto de historias", "Ábrelo en ese equipo: RandomHistorias → Ajustes."]);
+  if (cap.claude === false) p.push([cap.claudeError || "Claude no funciona", "Pega el permiso de larga duración en RandomHistorias → Ajustes de ese equipo."]);
+  if (cap.eleven === false) p.push(["Sin clave de ElevenLabs", "No podrá hacer voces: ponla en RandomHistorias → Ajustes de ese equipo."]);
+  if (cap.blender === false) p.push(["Sin Blender", "No podrá hacer la escena ni el render: instala Blender 4.5."]);
+  if (cap.bash === false) p.push(["Sin Git Bash: Claude trabaja con PowerShell (mucho más lento)", null, "git"]);
+  if (cap.drive === false) p.push(["Sin Drive conectado", "No sube los Shorts ni puede hacer relevos: conéctalo en RandomHistorias → Ajustes."]);
+  if (typeof cap.disco === "number" && cap.disco < 25) p.push(["Queda poco disco: " + cap.disco + " GB libres", "Las historias necesitan unos 0,5 GB cada una."]);
+  if (ultima && e.datos.version && numV(e.datos.version) < numV(ultima)) p.push(["Versión antigua (v" + e.datos.version + ")", "Pulsa «Actualizar ahora» en ese equipo."]);
+  if (cap.esperandoLimite > 0) p.push(["Espera al límite de Claude", cap.esperandoLimite + " tarea(s) seguirán solas cuando se restablezca."]);
+  if (!p.length) return <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>✓ Todo en orden{cap.bash ? " · Bash" : ""}{cap.drive ? " · Drive" : ""}{typeof cap.disco === "number" ? " · " + cap.disco + " GB libres" : ""}</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {p.map(([q, como, boton], i) => (
+        <div key={i} style={{ fontSize: 12, lineHeight: 1.45, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ color: "#F59E0B", fontWeight: 700 }}>⚠️ {q}</span>
+          {como && <span style={{ color: "var(--text-3)" }}>{como}</span>}
+          {boton === "git" && e.en_linea && <button onClick={onGit} style={{ ...botonSec, padding: "4px 10px", fontSize: 11.5 }}>Instalar Git</button>}
+        </div>))}
     </div>);
 }
 

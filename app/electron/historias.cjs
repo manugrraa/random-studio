@@ -128,8 +128,7 @@ function lanzar(sender, id, args, etapa, alTerminar) {
     const t = tarea;
     emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa });
     tarea = null;
-    if (t && t.alTerminar) setTimeout(() => t.alTerminar(code === 0, t.sender), 200);
-    setTimeout(() => sacarDeCola(t && t.sender), 1500);
+    trasEtapa(t, id, code === 0, t && t.etapa);
   });
   return { ok: true };
 }
@@ -173,6 +172,7 @@ ipcMain.handle("historias-detalle", async (e, id) => {
 ipcMain.handle("historias-tarea", async (e, id, args) => lanzar(e.sender, id, argsSeguros(args)));
 
 ipcMain.handle("historias-tarea-estado", async (e) => {
+  if (!tarea && empaquetando) return { activa: true, id: empaquetando, tipo: "relevo", etapa: "copia de relevo", inicio: Date.now(), accion: "Guardando la copia de relevo", acciones: [], lineas: [] };
   if (!tarea) return { activa: false };
   tarea.sender = e.sender;        // la ventana que pregunta recibe el progreso a partir de ahora
   return { activa: true, id: tarea.id, args: tarea.args, tipo: tarea.tipo, etapa: tarea.etapa, inicio: tarea.inicio, paso: tarea.paso,
@@ -301,7 +301,7 @@ function describir(nombre, input) {
   if (nombre === "Read") return "Leyendo " + f("file_path");
   if (nombre === "Glob" || nombre === "Grep") return "Buscando en el proyecto";
   if (nombre === "TodoWrite") return "Organizando el trabajo";
-  if (nombre === "Bash") {
+  if (nombre === "Bash" || nombre === "PowerShell") {
     const cmd = String((input || {}).command || "");
     if (/rodar\.py.*fotos/.test(cmd)) return "Blender: haciendo las fotos de los planos (Animatic)";
     if (/rodar\.py.*revisar/.test(cmd)) return "Blender: revisando la escena 3D";
@@ -322,7 +322,10 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   const exe = claude.exeClaude();
   if (!exe) throw new Error("No encuentro Claude Code en este equipo");
   const args = ["-p", "--model", claude.MODELO, "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits",
-    "--allowedTools", "Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "TodoWrite"];
+    "--allowedTools", "Bash", "PowerShell", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "TodoWrite"];
+  // v3.41: en un equipo sin Git Bash, Claude solo tiene PowerShell; sin estas pautas fallaban muchos comandos (&&, rutas
+  // sin comillas...) y los repetía, y por eso el ordenador tardaba tanto
+  if (!claude.rutaBash()) args.push("--append-system-prompt", claude.GUIA_POWERSHELL);
   const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), BLENDER: blenderExe() || "" });
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
   tarea = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0 };
@@ -358,8 +361,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
     const limite = ok ? 0 : claude.limiteDe(final + "\n" + err);
     emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), ...(limite ? { limite } : {}) });
     tarea = null;
-    if (t && t.alTerminar) setTimeout(() => t.alTerminar(ok, t.sender), 200);
-    setTimeout(() => sacarDeCola(t && t.sender), 1500);
+    trasEtapa(t, id, ok, etapa);
   });
   proc.stdin.end(prompt);
   return { ok: true };
@@ -411,6 +413,90 @@ function avanzar(sender, id, auto) {
   if (auto && !ajustes().avanzarSolo) return { ok: true };
   correrEtapa(sender, id, s.etapa.id, null, true);
   return { ok: true, etapa: s.etapa.id };
+}
+
+// ------------------------------------------------------------------ relevo (v3.41)
+/* Al terminar bien una etapa (guion, voces, escena o animatic), copia de la historia en estudio/_relevo/<id>.tgz, sin lo
+ * que se puede volver a generar (render final, cachés); la app la sube a Drive y, si este equipo se apaga, otro equipo
+ * la baja y sigue desde ahí. Mientras se prepara, la tarea cuenta como activa (nadie coge otro trabajo a medias). */
+const RELEVABLES = ["guion", "voces", "escena", "animatic"];
+const relevoDir = () => path.join(estudioDir(), "_relevo");
+const tarExe = () => path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+let empaquetando = null;
+function tar(args) {
+  return new Promise((ok) => {
+    const p = spawn(tarExe(), args, { windowsHide: true });
+    let err = "";
+    p.stderr.on("data", d => err += d);
+    p.on("error", (e) => ok({ ok: false, error: e.message }));
+    p.on("close", (code) => ok(code === 0 ? { ok: true } : { ok: false, error: err.trim().slice(0, 300) || "tar terminó con " + code }));
+  });
+}
+async function instantanea(sender, id, etapa) {
+  try {
+    if (!existe(path.join(histDir(), id))) return;
+    fs.mkdirSync(relevoDir(), { recursive: true });
+    const out = path.join(relevoDir(), id + ".tgz");
+    let guion = null; try { guion = fs.readdirSync(path.join(raiz(), "guiones")).find(n => n.startsWith("historia-" + id.slice(0, 2) + "-")); } catch (x) {}
+    const fuera = ["__pycache__", "planos_final", "planos_revisar", "_animatic", "historia*_final*.mp4"].flatMap(x => ["--exclude", "*/" + x]);
+    empaquetando = id;
+    const r = await tar(["-czf", out + ".tmp", ...fuera, "-C", raiz(), "historias/" + id, ...(guion ? ["guiones/" + guion] : [])]);
+    if (!r.ok) { try { fs.unlinkSync(out + ".tmp"); } catch (x) {} return; }
+    fs.renameSync(out + ".tmp", out);
+    try { if (sender && !sender.isDestroyed()) sender.send("historias-progreso", { id, tipo: "relevo", etapa }); } catch (x) {}
+  } catch (e) {} finally { empaquetando = null; }
+}
+/** Tras una etapa: la copia de relevo (si toca) y luego lo de siempre (la siguiente etapa y la cola). */
+function trasEtapa(t, id, ok, etapa) {
+  const seguir = () => {
+    if (t && t.alTerminar) setTimeout(() => t.alTerminar(ok, t.sender), 200);
+    setTimeout(() => sacarDeCola(t && t.sender), 1500);
+  };
+  if (ok && RELEVABLES.includes(etapa)) instantanea(t && t.sender, id, etapa).finally(seguir);
+  else seguir();
+}
+/** Aparta la copia local de una historia que siguió otro equipo (no se borra: historias/_relevadas). */
+function apartar(id) {
+  const c = path.join(histDir(), id);
+  if (!existe(c)) return { ok: true };
+  const dest = path.join(histDir(), "_relevadas", id + "-" + Date.now());
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.renameSync(c, dest);
+  return { ok: true, a: dest };
+}
+ipcMain.handle("estudio-relevo-subir", async (e, id, token) => {
+  const f = path.join(relevoDir(), String(id) + ".tgz");
+  if (!/^\d{2}_[\w-]+$/.test(String(id)) || !existe(f)) return { ok: false, error: "No hay copia de relevo" };
+  try { const r = await drive.subir(token, f, ["RandomStudio", "RandomHistorias", "_Relevo"]); return { ok: true, archivo: r.id, md5: r.md5, tam: r.tam }; }
+  catch (x) { return { ok: false, error: x.message }; }
+});
+ipcMain.handle("estudio-relevo-recibir", async (e, id, token, archivo, md5) => {
+  if (!/^\d{2}_[\w-]+$/.test(String(id)) || !archivo) return { ok: false, error: "Relevo no válido" };
+  if (tarea || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
+  const f = path.join(relevoDir(), "recibido-" + id + ".tgz");
+  try {
+    fs.mkdirSync(relevoDir(), { recursive: true });
+    await drive.bajar(token, archivo, f, md5 || null);
+    apartar(id);
+    const r = await tar(["-xzf", f, "-C", raiz()]);
+    try { fs.unlinkSync(f); } catch (x) {}
+    if (!r.ok) return { ok: false, error: "No se pudo abrir la copia: " + r.error };
+    return { ok: true };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
+ipcMain.handle("estudio-relevo-borrar", async (e, id, token, archivo) => {
+  try { fs.unlinkSync(path.join(relevoDir(), String(id).replace(/[^\w-]/g, "") + ".tgz")); } catch (x) {}
+  if (!archivo) return { ok: true };
+  try { await drive.borrar(token, String(archivo)); return { ok: true }; } catch (x) { return { ok: false, error: x.message }; }
+});
+ipcMain.handle("estudio-relevada", async (e, id) => {
+  if (!/^\d{2}_[\w-]+$/.test(String(id))) return { ok: false, error: "historia no válida" };
+  if (tarea && tarea.id === id) return { ok: false, error: "Está en marcha aquí" };
+  const i = cola.indexOf(id); if (i >= 0) cola.splice(i, 1);
+  try { return apartar(id); } catch (x) { return { ok: false, error: x.message }; }
+});
+function discoLibre() {
+  try { const st = fs.statfsSync(raiz()); return Math.round(st.bavail * st.bsize / 1e9 * 10) / 10; } catch (e) { return null; }
 }
 
 // ------------------------------------------------------------------ ideas
@@ -536,7 +622,9 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
   }
   const cl = claude.estadoClaude();
   return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
-    claudeOk: cl.ok, claudeError: cl.error, blender: !!blenderExe(), proyecto: existe(histDir()) };
+    claudeOk: cl.ok, claudeError: cl.error, blender: !!blenderExe(), proyecto: existe(histDir()),
+    // v3.41: la salud del equipo (Git Bash, espacio libre en el disco del proyecto y fecha del kit)
+    bash: !!claude.rutaBash(), disco: discoLibre(), kit: (leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {}).fecha || null };
 });
 
 ipcMain.handle("estudio-clave-eleven", async (e, clave) => {

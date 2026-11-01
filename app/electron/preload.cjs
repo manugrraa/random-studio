@@ -96,6 +96,12 @@ contextBridge.exposeInMainWorld("studioFS", {
   estudioBorrar: (id) => ipcRenderer.invoke("estudio-borrar", id),
   historiasPararTodo: () => ipcRenderer.invoke("historias-parar-todo"),
   estudioRenumerar: (de, a) => ipcRenderer.invoke("estudio-renumerar", de, a),
+  // v3.41: el relevo entre equipos (copia de la historia por Drive) y Git Bash para que Claude no use PowerShell
+  estudioRelevoSubir: (id, token) => ipcRenderer.invoke("estudio-relevo-subir", id, token),
+  estudioRelevoRecibir: (id, token, archivo, md5) => ipcRenderer.invoke("estudio-relevo-recibir", id, token, archivo, md5),
+  estudioRelevada: (id) => ipcRenderer.invoke("estudio-relevada", id),
+  estudioRelevoBorrar: (id, token, archivo) => ipcRenderer.invoke("estudio-relevo-borrar", id, token, archivo),
+  instalarGit: () => ipcRenderer.invoke("instalar-git"),
   estudioIdeaBorrar: (id) => ipcRenderer.invoke("estudio-idea-borrar", id),
   onEstudioIdeas: (cb) => { const f = (e, d) => cb(d); ipcRenderer.on("estudio-ideas-listas", f); return () => ipcRenderer.removeListener("estudio-ideas-listas", f); },
   estudioCrear: (ideaId, opts) => ipcRenderer.invoke("estudio-crear", ideaId, opts),

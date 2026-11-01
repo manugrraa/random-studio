@@ -48,11 +48,34 @@ const tokenArchivo = () => path.join(app.getPath("userData"), "claude.token");
 function tokenClaude() {
   try { const b = fs.readFileSync(tokenArchivo()); return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(b).replace(/\s+/g, "") : ""; } catch (e) { return ""; }
 }
+/* v3.41: Git Bash. Con él, Claude trabaja en Bash (rápido, como en el portátil); sin él, solo tiene PowerShell, que va
+ * más lento y con el que fallaban muchos comandos. Se busca donde lo deja el instalador de Git (para todos o solo para
+ * este usuario) y se le pasa a Claude; la pestaña «Equipos» avisa si falta y lo instala con un botón (winget). */
+function rutaBash() {
+  const c = [path.join(process.env.ProgramFiles || "C:\\Program Files", "Git", "bin", "bash.exe"),
+    path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Git", "bin", "bash.exe"),
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Git", "bin", "bash.exe")];
+  return c.find(f => { try { return fs.existsSync(f); } catch (e) { return false; } }) || "";
+}
+const GUIA_POWERSHELL = "ESTE EQUIPO NO TIENE BASH: tus comandos se ejecutan en Windows PowerShell 5.1. Encadena con «;» (nunca «&&» ni «||»), "
+  + "pon todas las rutas entre comillas (tienen espacios), usa «python» (no «python3») y, para leer o buscar, las herramientas Read, Grep y Glob, "
+  + "que son mucho más rápidas que Get-Content o Select-String. Si tienes que hacer varios pasos seguidos, escríbelos en un .py y ejecútalo de una vez "
+  + "en lugar de muchos comandos sueltos. No uses sed, grep, cat, head, tail, ls -la ni rm -rf: aquí no existen.";
+ipcMain.handle("instalar-git", async () => new Promise((ok) => {
+  const p = spawn("winget", ["install", "--id", "Git.Git", "-e", "--scope", "user", "--silent", "--accept-package-agreements", "--accept-source-agreements"], { windowsHide: true });
+  let out = "";
+  p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
+  p.on("error", (e) => ok({ ok: false, error: "No encuentro winget en este equipo: " + e.message }));
+  p.on("close", (code) => ok(rutaBash() ? { ok: true, bash: rutaBash() } : { ok: false, error: (out.trim().split(/\r?\n/).slice(-2).join(" ") || "winget terminó con " + code).slice(0, 300) }));
+}));
+
 /** El entorno para lanzar Claude: sin las variables de otra sesión de Claude, y con el permiso guardado si lo hay. */
 function entornoClaude(extra) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_AGENT_SDK|ANTHROPIC_BASE_URL)/.test(k)));
   const t = tokenClaude();
   if (t) env.CLAUDE_CODE_OAUTH_TOKEN = t;
+  const bash = rutaBash();
+  if (bash) env.CLAUDE_CODE_GIT_BASH_PATH = bash;
   return Object.assign(env, extra || {});
 }
 
@@ -177,4 +200,4 @@ async function leerUso(forzar) {
 }
 ipcMain.handle("claude-uso", async (e, forzar) => leerUso(!!forzar));
 
-module.exports = { exeClaude, generar, MODELO, entornoClaude, comprobar, estadoClaude: () => estado, limiteDe, leerUso };
+module.exports = { exeClaude, generar, MODELO, entornoClaude, comprobar, estadoClaude: () => estado, limiteDe, leerUso, rutaBash, GUIA_POWERSHELL };

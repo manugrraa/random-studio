@@ -110,4 +110,7 @@ ipcMain.handle("drive-espacio", async (e, token) => {
   try { return { ok: true, ...(await espacio(token)) }; } catch (x) { return { ok: false, error: x.message }; }
 });
 
-module.exports = { subir, bajar, espacio, rutaCarpetas, md5 };
+/** v3.41: borra un archivo que subió la app (la copia de relevo de una historia ya terminada). */
+async function borrar(token, id) { await g(token, API + "/files/" + encodeURIComponent(id), { method: "DELETE" }); }
+
+module.exports = { subir, bajar, espacio, rutaCarpetas, md5, borrar };
