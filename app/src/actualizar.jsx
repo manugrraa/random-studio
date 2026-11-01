@@ -50,7 +50,7 @@ export function AvisoActualizacion() {
     setEstado("Bajando la versión " + nueva.version + "…");
     try {
       if (nueva.local) await SF().actLocalAplicar();
-      else { const v = await actualizacionApi("GET"); await SF().actInstalar(v.url, v.sha256); }   // enlace recién firmado
+      else { const v = await actualizacionApi("GET"); await SF().actInstalar(v.url, v.sha256, v.version); }   // enlace recién firmado
       setEstado("Listo: RandomStudio se reinicia…");
     } catch (e) { setEstado("No se pudo: " + e.message); }
   };

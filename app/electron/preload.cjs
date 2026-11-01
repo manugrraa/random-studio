@@ -105,7 +105,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   driveEspacio: (token) => ipcRenderer.invoke("drive-espacio", token),
   actInfo: () => ipcRenderer.invoke("act-info"),
   actSubir: (url) => ipcRenderer.invoke("act-subir", url),
-  actInstalar: (url, sha) => ipcRenderer.invoke("act-instalar", url, sha),
+  actInstalar: (url, sha, version) => ipcRenderer.invoke("act-instalar", url, sha, version),
   actLocal: () => ipcRenderer.invoke("act-local"),
   actLocalAplicar: () => ipcRenderer.invoke("act-local-aplicar"),
   carpetasLeer: (id) => ipcRenderer.invoke("carpetas-leer", id),

@@ -48,7 +48,7 @@ export function ColaTrabajo({ toast }) {
 
   if (!r) return <div style={{ fontSize: 13, color: error ? "var(--red)" : "var(--text-3)" }}>{error || "Cargando la cola…"}</div>;
   const equipos = r.equipos.filter(e => e.en_linea);
-  const trabajan = equipos.filter(e => e.disponible && e.capacidad && e.capacidad.proyecto);
+  const trabajan = equipos.filter(e => e.disponible && e.capacidad && e.capacidad.proyecto && e.capacidad.claude);
   const modo = trabajan.length >= 2 ? "dual" : trabajan.length === 1 ? "individual" : "parado";
   const esperando = r.pedidos.filter(p => p.estado === "en_cola");
   const enCurso = r.pedidos.filter(p => ["asignado", "trabajando", "revision"].includes(p.estado));

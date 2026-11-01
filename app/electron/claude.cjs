@@ -10,11 +10,29 @@ const path = require("path");
 
 const MODELO = "claude-opus-5-5";
 
-/** El claude.exe real (el .cmd de npm no acepta bien argumentos largos), como RandomClon/clon/agente.py. */
+/** El claude.exe real (el .cmd de npm no acepta bien argumentos largos), como RandomClon/clon/agente.py.
+ * v3.33.1: también el del instalador nativo (~/.local/bin) y el que trae la app de escritorio de Claude
+ * (%LOCALAPPDATA%/Claude-Data/<cuenta>/claude-code/<versión>/<id>/claude.exe, el más nuevo). */
 function exeClaude() {
   const npm = path.join(process.env.APPDATA || "", "npm");
   const exe = path.join(npm, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
   if (fs.existsSync(exe)) return exe;
+  const nativo = path.join(process.env.USERPROFILE || "", ".local", "bin", "claude.exe");
+  if (fs.existsSync(nativo)) return nativo;
+  try {
+    const base = path.join(process.env.LOCALAPPDATA || "", "Claude-Data");
+    const encontrados = [];
+    for (const cuenta of fs.readdirSync(base)) {
+      const cc = path.join(base, cuenta, "claude-code");
+      if (!fs.existsSync(cc)) continue;
+      for (const ver of fs.readdirSync(cc)) for (const id of fs.readdirSync(path.join(cc, ver))) {
+        const f = path.join(cc, ver, id, "claude.exe");
+        if (fs.existsSync(f)) encontrados.push({ f, ver: ver.split(".").map(Number) });
+      }
+    }
+    encontrados.sort((a, b) => { for (let i = 0; i < 3; i++) if ((a.ver[i] || 0) !== (b.ver[i] || 0)) return (b.ver[i] || 0) - (a.ver[i] || 0); return 0; });
+    if (encontrados[0]) return encontrados[0].f;
+  } catch (e) {}
   try {
     const cmd = execFileSync("where", ["claude"], { encoding: "utf8", windowsHide: true }).split(/\r?\n/).find(Boolean);
     if (cmd) return cmd.trim();
