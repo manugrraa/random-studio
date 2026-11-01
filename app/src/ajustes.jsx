@@ -9,6 +9,8 @@ import { SeguridadPanel } from "./acceso";
 import { PERFILES, cambiarPerfil, perfilActual } from "./perfiles";
 import { CarpetasPanel } from "./carpetas";
 import { ModulosPanel } from "./modulos";
+import { AlmacenPanel } from "./almacen";
+import { activarAvisos, avisosPosibles, desactivarAvisos, enPantallaInicio, esIphone, estadoAvisos, probarAviso } from "./avisos";
 
 const GUIA_ATAJOS = [
   ["En todo RandomStudio", [["Ctrl+1 … Ctrl+9", "Ir a cada apartado (en el orden de la barra)"], ["Ctrl+K", "Buscar vídeos y apartados"],
@@ -27,6 +29,7 @@ const SECCIONES = [
   { id: "apariencia", icono: "🎨", titulo: "Apariencia", ayuda: "Tema y cómo se ven las tarjetas" },
   { id: "objetivos", icono: "🎯", titulo: "Objetivos e ingresos", ayuda: "Meta mensual, Shorts al día y RPM" },
   { id: "carpetas", icono: "📁", titulo: "Carpetas", ayuda: "De dónde se coge y a dónde va todo", escritorio: true },
+  { id: "almacen", icono: "💽", titulo: "Almacenamiento", ayuda: "Qué ocupa cada cosa, archivar en Drive y borrar", escritorio: true },
   { id: "seguridad", icono: "🔒", titulo: "Seguridad", ayuda: "Este equipo y sus permisos" },
   { id: "datos", icono: "💾", titulo: "Datos y copias", ayuda: "Exportar, importar y restablecer" },
   { id: "atajos", icono: "⌨️", titulo: "Atajos de teclado", ayuda: "Todas las teclas rápidas" },
@@ -77,6 +80,8 @@ export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExp
   const conectado = ytIsConnected();
   const perfil = PERFILES.find(p=>p.id===perfilActual()) || PERFILES[0] || {};
   const actual = secciones.find(x=>x.id===sec) || secciones[0];
+  const [avisos, setAvisos] = useState(null);
+  useEffect(()=>{ if(!esEscritorio) estadoAvisos().then(setAvisos).catch(()=>setAvisos({ posible:false })); },[]);
   const ls = (k, v) => { try { localStorage.setItem(k, v); } catch(e){} };
 
   const guardarObjetivo = () => {
@@ -129,6 +134,16 @@ export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExp
                 <button onClick={onConnect} className="grad-gold" style={btnOro}>{conectado ? "Reconectar" : "Conectar"}</button>
                 {conectado && <button onClick={() => { ytClearTokens(); setTick(t=>t+1); toast("Sesión de Google cerrada en este dispositivo"); }} style={{ ...btnSec, color: "var(--red)" }}>Desconectar</button>}
               </Fila>
+              {!esEscritorio && <Fila titulo="Avisos en este móvil" ayuda={
+                  !avisos ? "Comprobando…"
+                  : avisos.activos ? "Activados: te avisa cuando una historia espera tu revisión, cuando un Short está listo o si algo falla."
+                  : esIphone() && !enPantallaInicio() ? "En iPhone: pulsa Compartir → «Añadir a pantalla de inicio», abre RandomStudio desde ese icono y vuelve aquí."
+                  : !avisos.posible ? "Este navegador no admite avisos." : "Te avisa aunque tengas RandomStudio cerrado."}>
+                {avisos && avisos.activos
+                  ? <><button onClick={async () => { try { const r = await probarAviso(); toast(r.enviados ? "Aviso de prueba enviado" : "No llegó ningún aviso"); } catch (e) { toast(e.message); } }} style={btnSec}>Probar</button>
+                      <button onClick={async () => { await desactivarAvisos(); setAvisos(await estadoAvisos()); toast("Avisos desactivados"); }} style={{ ...btnSec, color: "var(--red)" }}>Desactivar</button></>
+                  : avisosPosibles() && <button onClick={async () => { try { await activarAvisos(); setAvisos(await estadoAvisos()); toast("🔔 Avisos activados"); } catch (e) { toast(e.message); } }} className="grad-gold" style={btnOro}>Activar avisos</button>}
+              </Fila>}
               <Fila titulo="Google Drive" ayuda={esEscritorio ? "Donde se guardan los Shorts terminados (copia idéntica). Desde el móvil se descargan aunque el portátil esté apagado." : "Se conecta desde RandomStudio de escritorio, que es quien sube."} ultima>
                 {esEscritorio && (driveConectado()
                   ? <><span style={{ fontSize: 12, fontWeight: 700, color: "var(--green)" }}>● Conectado</span>
@@ -166,6 +181,8 @@ export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExp
               </Fila>
             </Tarjeta>
           </>)}
+
+          {actual.id === "almacen" && esEscritorio && <AlmacenPanel toast={toast} />}
 
           {actual.id === "seguridad" && <SeguridadPanel caja={cajaPanel} tituloZona={tituloPanel} toast={toast}/>}
 

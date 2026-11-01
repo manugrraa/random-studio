@@ -93,6 +93,8 @@ export const NOTIF_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/20
 // Registrar un Service Worker mínimo (permite notificaciones con la pestaña en segundo plano)
 export function registerNotifSW(){
   if(!("serviceWorker" in navigator)) return;
+  // v3.34: en la web, el service worker de verdad (sw.js, junto a index.html): también recibe los avisos push
+  if(location.protocol === "https:"){ navigator.serviceWorker.register("sw.js").catch(()=>{}); return; }
   try {
     const swCode = `
       self.addEventListener("install", e=>self.skipWaiting());

@@ -7,7 +7,8 @@
 const { app, ipcMain, nativeImage, shell, safeStorage } = require("electron");
 const claude = require("./claude.cjs");   // v3.30: la IA del Studio (Claude Code)
 const drive = require("./drive.cjs");     // v3.30: Google Drive como almacén (sin perder calidad)
-require("./actualizar.cjs");               // v3.32: actualizar los demás equipos desde el portátil
+require("./actualizar.cjs");
+require("./almacen.cjs");                 // v3.34: almacenamiento: medir, archivar en Drive, recuperar y borrar               // v3.32: actualizar los demás equipos desde el portátil
 const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");

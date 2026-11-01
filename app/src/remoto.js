@@ -9,6 +9,7 @@
 import { YT_BACKEND, cloudToken, driveConectado, driveToken } from "./datos";
 import { cabecerasEquipo } from "./seguridad";
 import { PERFILES, perfilActual } from "./perfiles";
+import { avisar } from "./avisos";
 
 const SF = () => window.studioFS;
 
@@ -71,6 +72,22 @@ export function iniciarRemotoEscritorio(toast) {
           .catch(() => {}).finally(() => { subiendo = false; });
       }
     }
+    // avisos al móvil: lo que acaba de cambiar desde la última vuelta (se recuerda para no repetir tras reiniciar)
+    const K_AV = "rs_perfil_avisados";
+    let previos = {}; try { previos = JSON.parse(localStorage.getItem(K_AV) || "{}"); } catch (e) {}
+    const ahora = {};
+    for (const h of l.historias) {
+      if (h.legado) continue;
+      const rev = (h.etapas || []).find(e => e.estado === "revisar");
+      const clave = h.entregada ? "listo" : rev ? "revisar:" + rev.id : "";
+      ahora[h.id] = clave;
+      if (clave && previos[h.id] !== clave && previos.__iniciado) {
+        if (clave === "listo") avisar("🎉 Short listo", "«" + (h.titulo || h.id) + "» ya está terminado" + (h.drive ? " y en tu Drive" : ""), "h" + h.id);
+        else avisar("📋 Te toca revisar", "Historia " + h.id.slice(0, 2) + " · " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[rev.id] || rev.id), "h" + h.id);
+      }
+    }
+    ahora.__iniciado = 1;
+    try { localStorage.setItem(K_AV, JSON.stringify(ahora)); } catch (e) {}
     const historias = [];
     for (const h of l.historias.slice(0, 12)) {
       const x = { id: h.id, titulo: h.titulo, etapas: h.etapas, entregada: h.entregada, legado: h.legado, drive: h.drive, driveRevision: h.driveRevision };
@@ -159,7 +176,7 @@ export function iniciarTrabajador(toast) {
   if (_trabajador || !s || !s.estudioCrear) return;
   _trabajador = true;
   let ocupadoCogiendo = false, ultimoAviso = {};
-  const avisar = (id, estado, extra) => {
+  const avisarPedido = (id, estado, extra) => {
     const k = id + estado;
     if (ultimoAviso[k]) return Promise.resolve();
     ultimoAviso[k] = 1;
@@ -170,11 +187,11 @@ export function iniciarTrabajador(toast) {
   s.onHistoriasProgreso && s.onHistoriasProgreso((d) => {
     if (d.tipo !== "fin" || d.ok) return;
     const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id);
-    if (p) avisar(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") });
+    if (p) { avisarPedido(Number(p), "fallido", { detalle: "se paró en " + (d.etapa || "una etapa") }); avisar("⚠️ Una historia se paró", "Historia " + d.id.slice(0, 2) + " · " + (d.etapa || "una etapa"), "f" + d.id); }
   });
   s.onEstudioIdeas && s.onEstudioIdeas((d) => {
     const m = mios(), p = Object.keys(m).find(k => m[k].tipo === "ideas" && !m[k].fin);
-    if (p) { m[p].fin = true; guardarMios(m); avisar(Number(p), d.ok ? "hecho" : "fallido", { detalle: d.ok ? d.n + " ideas nuevas" : d.error }); }
+    if (p) { m[p].fin = true; guardarMios(m); avisarPedido(Number(p), d.ok ? "hecho" : "fallido", { detalle: d.ok ? d.n + " ideas nuevas" : d.error }); }
   });
 
   const vuelta = async () => {
@@ -188,9 +205,9 @@ export function iniciarTrabajador(toast) {
       const h = (l.historias || []).find(y => y.id === x.historia);
       if (!h) continue;
       const et = h.etapas || [];
-      if (h.entregada || (et.length && et.every(e => e.estado === "hecho"))) { x.fin = true; avisar(Number(pid), "hecho", { historia_id: h.id, detalle: "Short entregado" }); }
-      else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisar(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + (et.find(e => e.estado === "revisar") || {}).nombre }); }
-      else if (t && t.activa && t.id === h.id) { delete ultimoAviso[pid + "revision"]; avisar(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
+      if (h.entregada || (et.length && et.every(e => e.estado === "hecho"))) { x.fin = true; avisarPedido(Number(pid), "hecho", { historia_id: h.id, detalle: "Short entregado" }); }
+      else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisarPedido(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + (et.find(e => e.estado === "revisar") || {}).nombre }); }
+      else if (t && t.activa && t.id === h.id) { delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
     }
     guardarMios(m);
     // 2) coger trabajo nuevo: solo si estoy disponible, libre y preparado

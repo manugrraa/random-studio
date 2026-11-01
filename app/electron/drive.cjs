@@ -36,10 +36,29 @@ async function carpeta(token, nombre, padre) {
     body: JSON.stringify({ name: nombre, mimeType: CARPETA, parents: [padre || "root"] }) })).json();
   return c.id;
 }
+const cacheCarpetas = new Map();          // «a/b/c» -> id (al archivar miles de archivos no se pregunta cada vez)
 async function rutaCarpetas(token, partes) {
-  let id = null;
-  for (const p of partes) id = await carpeta(token, String(p).slice(0, 120), id);
+  let id = null, clave = "";
+  for (const p of partes) {
+    clave += "/" + String(p).slice(0, 120);
+    if (cacheCarpetas.has(clave)) { id = cacheCarpetas.get(clave); continue; }
+    id = await carpeta(token, String(p).slice(0, 120), id);
+    cacheCarpetas.set(clave, id);
+  }
   return id;
+}
+
+/** Baja un archivo de Drive (de los que subió la app) a una ruta local y comprueba que es idéntico. */
+async function bajar(token, id, destino, md5Esperado) {
+  const r = await g(token, API + "/files/" + encodeURIComponent(id) + "?alt=media");
+  fs.mkdirSync(path.dirname(destino), { recursive: true });
+  const tmp = destino + ".bajando";
+  const out = fs.createWriteStream(tmp);
+  const reader = r.body.getReader();
+  for (;;) { const { done, value } = await reader.read(); if (done) break; if (!out.write(Buffer.from(value))) await new Promise(ok => out.once("drain", ok)); }
+  await new Promise(ok => out.end(ok));
+  if (md5Esperado && (await md5(tmp)) !== md5Esperado) { fs.unlinkSync(tmp); throw new Error("La copia bajada no es idéntica: " + path.basename(destino)); }
+  fs.renameSync(tmp, destino);
 }
 
 function md5(ruta) {
@@ -91,4 +110,4 @@ ipcMain.handle("drive-espacio", async (e, token) => {
   try { return { ok: true, ...(await espacio(token)) }; } catch (x) { return { ok: false, error: x.message }; }
 });
 
-module.exports = { subir, espacio, rutaCarpetas };
+module.exports = { subir, bajar, espacio, rutaCarpetas, md5 };
