@@ -148,7 +148,10 @@ export function ColaTrabajo({ toast }) {
                   <span style={{ flex: 1 }} /><span style={{ fontSize: 11.5, fontWeight: 700, color: est[1] }}>{est[0]}</span>
                 </div>
                 {e.tarea && <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 4 }}>Historia {String(e.tarea.id || "").slice(0, 2)} · {ETAPA[e.tarea.etapa] || e.tarea.etapa || "en marcha"}{e.tarea.render ? " · plano " + e.tarea.render.plano : ""}</div>}
-                {e.en_linea && !listo && <div style={{ fontSize: 11.5, color: "#F59E0B", marginTop: 4 }}>Le falta {!e.capacidad.proyecto ? "el proyecto de historias" : "Claude Code"}</div>}
+                {e.en_linea && !listo && <div style={{ fontSize: 11.5, color: "#F59E0B", marginTop: 4, lineHeight: 1.45 }}>
+                  {!e.capacidad.proyecto ? "Le falta el proyecto de historias"
+                    : e.capacidad.claudeInstalado === false ? "Le falta instalar Claude Code"
+                    : "Claude Code está instalado pero sin permiso para trabajar: en ese equipo, RandomHistorias → Ajustes → pega el permiso de «claude setup-token»"}</div>}
               </div>);
           })}
           {!r.equipos.length && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Ningún equipo de escritorio ha dado señales todavía.</div>}

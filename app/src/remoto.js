@@ -98,7 +98,7 @@ export function iniciarRemotoEscritorio(toast) {
     }
     const datos = {
       tipo: "escritorio", ts: Date.now(), historias, disponible: _disponible,
-      capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, blender: !!aj.blender, eleven: !!aj.eleven },
+      capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
       tarea: t && t.activa ? { id: t.id, tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
       ajustes: aj.ajustes,
