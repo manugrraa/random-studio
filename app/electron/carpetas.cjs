@@ -24,7 +24,8 @@ const PERFILES = {
 const DEFS = [
   { grupo: "Directos, Clips y Ranking", clave: "vods", nombre: "Directos (VODs)", ayuda: "Los directos de los que se sacan clips", def: path.join(BASE, "RandomClon", "VODs"), otro: "VODs" },
   { grupo: "Directos, Clips y Ranking", clave: "clips", nombre: "Clips recortados", ayuda: "Los clips cortados (dentro van _Descartados y _Terminados)", def: path.join(BASE, "RandomClon", "Clips Recortados"), otro: "Clips Recortados" },
-  { grupo: "Directos, Clips y Ranking", clave: "listos", nombre: "Shorts listos", ayuda: "Los Shorts montados y exportados (los que ve el Ranking)", def: path.join(BASE, "RandomClon", "Shorts Listos"), otro: "Shorts Listos" },
+  // v3.40.5 (pedido del 1-11): «todas las salidas de Shorts listos a su carpeta de Vídeos RDR\Editados» (la de cada perfil)
+  { grupo: "Directos, Clips y Ranking", clave: "listos", nombre: "Shorts listos", ayuda: "Los Shorts montados y exportados (los que ve el Ranking)", def: path.join(BASE, "Vídeos RDR", "Editados", "RDeRandom"), otro: (id) => path.join(BASE, "Vídeos RDR", "Editados", nombreSeguro((PERFILES[id] || {}).nombre || id)) },
   { grupo: "Directos, Clips y Ranking", clave: "resultados", nombre: "Resultados del clon", ayuda: "Transcripciones, guiones y timelines del montaje", def: path.join(BASE, "RandomClon", "Resultados"), otro: "Resultados" },
   { grupo: "Directos, Clips y Ranking", clave: "bruto", nombre: "Vídeos en bruto", ayuda: "Grabaciones sin editar", def: path.join(BASE, "RandomClon", "Vídeos en bruto"), otro: "Vídeos en bruto" },
   { grupo: "Directos, Clips y Ranking", clave: "biblioteca", nombre: "Biblioteca", ayuda: "Música, SFX y VFX del montaje (por defecto, la misma en todos los perfiles)", def: path.join(BASE, "RandomClon", "Biblioteca"), otro: null },
@@ -34,7 +35,7 @@ const DEFS = [
   { grupo: "Historias", clave: "historias", nombre: "Proyecto de historias", ayuda: "La carpeta de RandomHistorias (guiones, planos, render)", def: path.join(BASE, "RandomHistorias"), otro: null },
   // v3.40 (Carental): TODO lo que se edita va a Vídeos RDR\Editados\<perfil> (él: "para que se guarden absolutamente todos los Shorts y vídeos ahí")
   { grupo: "Vídeos editados", clave: "editados", nombre: "Vídeos editados", ayuda: "Donde se guarda lo que se monta desde Brutos (una carpeta por mes) y se sube a Drive", def: path.join(BASE, "Vídeos RDR", "Editados", "RDeRandom"), otro: (id) => path.join(BASE, "Vídeos RDR", "Editados", nombreSeguro((PERFILES[id] || {}).nombre || id)) },
-  { grupo: "Historias", clave: "entregas", nombre: "Shorts entregados", ayuda: "Donde se deja cada Short terminado con su miniatura", def: path.join(BASE, "RandomHistorias", ".historiaslistas"), otro: null },
+  { grupo: "Historias", clave: "entregas", nombre: "Shorts entregados", ayuda: "Donde se deja cada Short terminado con su miniatura", def: path.join(BASE, "Vídeos RDR", "Editados", "RandomHistorias"), otro: null },
 ];
 
 const userData = () => app.getPath("userData");
@@ -152,5 +153,27 @@ ipcMain.handle("carpetas-abrir", async (e, ruta) => {
   const err = await shell.openPath(ruta);
   return { ok: !err, error: err || null };
 });
+
+/* v3.40.5: lo que ya estaba hecho se muda a las salidas nuevas (al arrancar; si ya está mudado no hace nada): lo de
+ * RandomClon\Shorts Listos y RandomHistorias\.historiaslistas pasa a Vídeos RDR\Editados\<perfil>, y en el sitio viejo
+ * queda un enlace a la carpeta nueva (las rutas guardadas en el Ranking y los scripts antiguos siguen funcionando).
+ * Solo si esa salida no se cambió a mano; lo que esté en uso o ya exista en el destino se queda donde estaba. */
+function mudarSalidas() {
+  const pares = [["listos", path.join(BASE, "RandomClon", "Shorts Listos")], ["entregas", path.join(BASE, "RandomHistorias", ".historiaslistas")]];
+  for (const [clave, viejo] of pares) {
+    try {
+      if (["rderandom", "randomhistorias"].some(id => elegidasDe(id)[clave])) continue;
+      if (!fs.existsSync(viejo) || fs.lstatSync(viejo).isSymbolicLink()) continue;
+      const nuevo = DEFS.find(d => d.clave === clave).def;
+      fs.mkdirSync(nuevo, { recursive: true });
+      for (const n of fs.readdirSync(viejo)) {
+        const a = path.join(viejo, n), b = path.join(nuevo, n);
+        if (!fs.existsSync(b)) try { fs.renameSync(a, b); } catch (x) {}
+      }
+      if (!fs.readdirSync(viejo).length) { fs.rmdirSync(viejo); fs.symlinkSync(nuevo, viejo, "junction"); }
+    } catch (e) {}
+  }
+}
+mudarSalidas();
 
 module.exports = { PERFILES, perfilActivo, canalDe, dirDatos, carpetasDe, carpetasHistorias, archivoCarpetas, registrarLocal, elegir };
