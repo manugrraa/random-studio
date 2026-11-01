@@ -29,6 +29,9 @@ export const FILTROS = {
   bn:        { nombre:"Blanco y negro", color:{ saturacion:-100, contraste:20 } },
   bn_suave:  { nombre:"B/N suave",    color:{ saturacion:-100, contraste:-10, negros:15 } },
   pastel:    { nombre:"Pastel",       color:{ saturacion:-30, brillo:15, negros:20, contraste:-15 } },
+  // 1/11 (Carental): el «Intenso» de CapCut MEDIDO en sus vídeos; intensidad como en CapCut (Carental usa el 50 %).
+  // Al exportar va su LUT 3D medida (clon/color.py, CUBOS); esto es la aproximación de la previsualización
+  intenso_capcut: { nombre:"Intenso CapCut", color:{ exposicion:0.1, brillo:25.5, contraste:-8.4, luces:-50.1, sombras:-126.7, blancos:-1.8, negros:-25.1, saturacion:31.6, temperatura:-38.2, tinte:-36 } },
 };
 
 // el color final de un clip: sus ajustes + su filtro (con su intensidad)

@@ -3,6 +3,8 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { AgentView } from "./agente";
 import { RankingView } from "./ranking";
 import { DirectosView, ClipsView } from "./clon";
+import { BrutosView } from "./brutos";
+import { esLocal, perfilActual as perfilDeAhora } from "./perfiles";
 import { ConvertidorView } from "./convertidor";
 import { HistoriasView } from "./historias";
 import { ordenarTabs, useModulosOff, useOrdenModulos } from "./modulos";
@@ -787,6 +789,8 @@ export function App() {
     {id:"stats", label:"Estadísticas", icon:Icons.chart, grupo:"canal"},
     {id:"directos", label:"Directos", icon:Icons.live, primary:true, grupo:"produccion", pc:true},
     {id:"clips", label:"Clips", icon:Icons.scissors, primary:true, grupo:"produccion", pc:true},
+    // v3.40 (Carental): los brutos del perfil, para cribarlos, juntarlos en carpetas y que el clon los monte (perfiles locales)
+    ...(esLocal(perfilDeAhora()) ? [{id:"brutos", label:"Brutos", icon:Icons.camera, primary:true, grupo:"produccion", pc:true}] : []),
     {id:"editor", label:"RandomEditor", icon:Icons.edit, grupo:"produccion", pc:true},
     {id:"ranking", label:"Ranking de Shorts", icon:Icons.chart, primary:true, grupo:"produccion", pc:true},
     {id:"historias", label:"RandomHistorias", icon:Icons.camera, primary:true, grupo:"produccion", pc:true},
@@ -1248,6 +1252,7 @@ export function App() {
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="directos" && <DirectosView toast={toast}/>}
         {view==="clips" && <ClipsView toast={toast}/>}
+        {view==="brutos" && <BrutosView toast={toast}/>}
         {view==="ranking" && <RankingView toast={toast}/>}
         {view==="historias" && <HistoriasView toast={toast}/>}
         {view==="admin" && esAdmin(rolEquipo) && <AdminView toast={toast}/>}

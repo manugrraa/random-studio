@@ -10,7 +10,7 @@ import { accesoApi, olvidarEquipo } from "./seguridad";
  * No hay perfiles predeterminados: el servidor dice qué cuentas puede abrir ESTE equipo (/api/acceso).
  *  - Aprobada: se entra.
  *  - Pendiente: sale con candado hasta que el portátil (o un administrador) da permiso; se comprueba sola cada 4 s.
- *  - «Añadir cuenta»: inicia sesión con Google y pide permiso para esa cuenta en este equipo.
+ *  - «+»: inicia sesión con Google y pide permiso para esa cuenta en este equipo (v3.40: o crea un perfil local)
  *  - Si la conexión está bloqueada, solo se ve la pantalla de acceso bloqueado.
  * «Entrar siempre con este perfil» la salta en los siguientes arranques, pero solo si el servidor sigue dando permiso.
  */
@@ -20,9 +20,20 @@ const LEMAS = { rderandom: "Canal principal", randomhistorias: "Historias animad
 
 /** Las cuentas que conoce este equipo (se rellena desde el servidor; los demás módulos la leen tal cual). */
 export const PERFILES = [];
+/* v3.40 (Carental), él: "me debes dejar crear perfiles locales, que no dependan de una cuenta de Google; se administrarán
+ * dentro del equipo en el que se hayan creado". Viven en este equipo (electron/brutos.cjs) y van detrás de las cuentas.
+ * El candado se respeta: solo se ven y se abren si este equipo tiene permiso (alguna cuenta aprobada). */
+let LOCALES = [];
+export const esLocal = (id) => /^local-/.test(String(id || ""));
+async function cargarLocales() {
+  try { if (window.studioFS && window.studioFS.localesLeer) LOCALES = ((await window.studioFS.localesLeer()) || {}).perfiles || []; } catch (e) {}
+}
 function ponerPerfiles(lista) {
-  PERFILES.splice(0, PERFILES.length, ...lista.map(p => ({ ...p, lema: LEMAS[p.id] || "Canal de YouTube",
-    avatar: RESPALDO[p.id] || inicial(p.nombre), activo: p.permiso === "aprobado" })));
+  const cuentas = lista.map(p => ({ ...p, lema: LEMAS[p.id] || "Canal de YouTube",
+    avatar: RESPALDO[p.id] || inicial(p.nombre), activo: p.permiso === "aprobado" }));
+  const conPermiso = cuentas.some(p => p.activo);
+  PERFILES.splice(0, PERFILES.length, ...cuentas, ...(conPermiso ? LOCALES.map(p => ({ ...p, local: true, lema: "Perfil local · este equipo",
+    avatar: inicial(p.nombre), activo: true })) : []));
   guardar(K_CUENTAS, JSON.stringify(lista));
 }
 
@@ -56,7 +67,7 @@ export async function entrarEnPerfil(id) {
   fijarPerfilEnUso(id);
   separarAlmacen(id);
   const p = PERFILES.find(x => x.id === id);
-  try { if (window.studioFS && window.studioFS.perfilPoner) await window.studioFS.perfilPoner(id, p ? { nombre: p.nombre, canal: p.canal_id } : null); } catch (e) {}
+  try { if (window.studioFS && window.studioFS.perfilPoner) await window.studioFS.perfilPoner(id, p ? (p.local ? { nombre: p.nombre, local: true } : { nombre: p.nombre, canal: p.canal_id }) : null); } catch (e) {}
 }
 
 // ------------------------------------------------------------------ fotos de perfil
@@ -91,6 +102,7 @@ function recortar(file) {
  */
 export async function comprobarAcceso() {
   let j;
+  await cargarLocales();
   try { j = await accesoApi(YT_BACKEND, "estado"); }
   catch (e) {
     // sin conexión: las que ya estaban aprobadas en este equipo (los datos de la nube siguen protegidos en el servidor)
@@ -199,12 +211,14 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
   const [error, setError] = useState(ini && ini.sinConexion ? "Sin conexión con el servidor: solo puedes entrar en las cuentas ya aprobadas." : "");
   const [, refrescar] = useState(0);
   const [menu, setMenu] = useState(null);
+  const [creando, setCreando] = useState(null);        // v3.40: el perfil local que se está creando { nombre, brutos }
   const subir = useRef(null);
   const antes = useRef(new Set(PERFILES.filter(p => p.activo).map(p => p.id)));
   const size = Math.min(160, Math.max(108, Math.round(window.innerWidth / 7.5)));
 
   const actualizar = async () => {
     try {
+      await cargarLocales();
       const j = await accesoApi(YT_BACKEND, "estado");
       if (j.baneado) { setBloqueo(j.ip || ""); return; }
       ponerPerfiles(j.perfiles || []);
@@ -274,6 +288,33 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
     return () => window.removeEventListener("keydown", f);
   });
 
+  const puedeLocal = !!(window.studioFS && window.studioFS.localesCrear) && lista.some(p => p.activo && !p.local);
+  const crearLocal = async () => {
+    const nombre = (creando && creando.nombre || "").trim();
+    if (!nombre) { setError("Ponle un nombre al perfil"); return; }
+    const r = await window.studioFS.localesCrear(nombre, (creando.brutos || "").trim() || null);
+    if (!r || r.error) { setError((r && r.error) || "No se pudo crear el perfil"); return; }
+    // de entrada, solo los apartados que tienen sentido sin canal de YouTube (se pueden encender en Configuración)
+    try { localStorage.setItem("perfil:" + r.perfil.id + ":rds_modulos_off", JSON.stringify(["scheduled", "stats", "directos", "clips", "ranking", "historias", "randomchat"])); } catch (e) {}
+    setCreando(null); setError("");
+    await actualizar();
+  };
+  const renombrarLocal = async (p) => {
+    setMenu(null);
+    const n = window.prompt("Nuevo nombre del perfil:", p.nombre);
+    if (!n || !n.trim()) return;
+    const r = await window.studioFS.localesRenombrar(p.id, n.trim());
+    if (r && r.error) setError(r.error); else await actualizar();
+  };
+  const quitarLocal = async (p) => {
+    setMenu(null);
+    if (!window.confirm(`¿Quitar el perfil «${p.nombre}» de este equipo?
+
+No se borra nada: sus vídeos, sus brutos y sus carpetas se quedan donde están.`)) return;
+    await window.studioFS.localesQuitar(p.id);
+    await actualizar();
+  };
+
   const elegirFoto = async (e) => {
     const f = e.target.files && e.target.files[0];
     e.target.value = "";
@@ -293,7 +334,7 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
         <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: "clamp(26px,4vw,40px)", letterSpacing: "-.03em" }}>
           {lista.length ? "¿Con qué cuenta entras?" : "Bienvenido a RandomStudio"}</div>
         <div style={{ fontSize: 14, color: "#A3A3A3", marginTop: 8, maxWidth: 520, lineHeight: 1.5 }}>
-          {lista.length ? "Cada perfil es una cuenta de Google con su canal de YouTube"
+          {lista.length ? (lista.some(p => p.local) ? "Cada perfil es una cuenta de Google o un perfil local de este equipo" : "Cada perfil es una cuenta de Google con su canal de YouTube")
             : "Inicia sesión con tu cuenta de Google. El portátil tendrá que darte permiso antes de entrar."}</div>
       </div>
 
@@ -330,7 +371,9 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
                     display: "flex", flexDirection: "column", gap: 2, animation: "rsp-entra .18s ease both" }}>
                     <button onClick={() => subir.current && subir.current.click()} className="rsp-op">Subir una foto…</button>
                     <button disabled={!leer(kFoto(p.id))} onClick={() => { guardar(kFoto(p.id), null); refrescar(n => n + 1); setMenu(null); }}
-                      className="rsp-op" style={{ opacity: leer(kFoto(p.id)) ? 1 : 0.4 }}>Usar la del canal de YouTube</button>
+                      className="rsp-op" style={{ opacity: leer(kFoto(p.id)) ? 1 : 0.4 }}>{p.local ? "Quitar la foto" : "Usar la del canal de YouTube"}</button>
+                    {p.local && <button onClick={() => renombrarLocal(p)} className="rsp-op">Cambiar el nombre…</button>}
+                    {p.local && <button onClick={() => quitarLocal(p)} className="rsp-op" style={{ color: "#F87171" }}>Quitar de este equipo…</button>}
                   </div>)}
                 {(bloq || abriendo === p.id) && (
                   <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -350,9 +393,11 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
             </div>);
         })}
 
-        {/* añadir otra cuenta de Google */}
-        <div role="button" tabIndex={0} onClick={nuevaCuenta} className="rsp-carta rsp-nueva" title="Iniciar sesión con otra cuenta de Google"
-          style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, cursor: ocupado ? "wait" : "pointer", width: size + 30,
+        {/* añadir un perfil: con una cuenta de Google o (v3.40, solo si este equipo ya tiene permiso) uno LOCAL sin Google.
+            Él: "haz que el + para crear otro perfil te dé la opción de crear un perfil con una cuenta de Google o local" */}
+        <div role="button" tabIndex={0} onClick={(e) => { if (ocupado) return; if (!puedeLocal) { nuevaCuenta(); return; } e.stopPropagation(); setMenu(m => m === "+" ? null : "+"); }}
+          className="rsp-carta rsp-nueva" title={puedeLocal ? "Añadir un perfil: con una cuenta de Google o local" : "Iniciar sesión con otra cuenta de Google"}
+          style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, cursor: ocupado ? "wait" : "pointer", width: size + 30, position: "relative",
             animation: `rsp-entra .6s ease ${0.12 + lista.length * 0.1}s both`, outline: "none" }}>
           <div className="rsp-avatar" style={{ width: size, height: size, borderRadius: size * 0.2, border: "2px dashed #3a3a3a", color: "#8a8a8a",
             display: "flex", alignItems: "center", justifyContent: "center", transition: "all .22s" }}>
@@ -361,12 +406,40 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
               : <svg width={size * 0.3} height={size * 0.3} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>}
           </div>
           <div style={{ textAlign: "center" }}>
-            <div className="rsp-nombre" style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 17, transition: "color .2s" }}>{lista.length ? "Añadir cuenta" : "Iniciar sesión"}</div>
-            <div style={{ fontSize: 12, color: "#A3A3A3", marginTop: 3, fontWeight: 600 }}>{ocupado || "con Google"}</div>
+            <div className="rsp-nombre" style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 17, transition: "color .2s" }}>{!lista.length ? "Iniciar sesión" : puedeLocal ? "Añadir perfil" : "Añadir cuenta"}</div>
+            <div style={{ fontSize: 12, color: "#A3A3A3", marginTop: 3, fontWeight: 600 }}>{ocupado || (puedeLocal ? "Google o local" : "con Google")}</div>
           </div>
+          {menu === "+" && (
+            <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", top: size + 12, left: "50%", marginLeft: -140, zIndex: 5,   // (sin transform: la animación de entrada lo pisa)
+              width: 280, boxSizing: "border-box", background: "#141414", border: "1px solid #3a3119", borderRadius: 12, padding: 6, boxShadow: "0 18px 50px rgba(0,0,0,.7)",
+              display: "flex", flexDirection: "column", gap: 2, animation: "rsp-entra .18s ease both", textAlign: "left" }}>
+              <button className="rsp-op" onClick={() => { setMenu(null); nuevaCuenta(); }}>
+                Cuenta de Google<div style={{ fontSize: 11.5, color: "#8a8a8a", fontWeight: 500, marginTop: 2 }}>Con su canal de YouTube</div></button>
+              <button className="rsp-op" onClick={() => { setMenu(null); setCreando(c => c || { nombre: "", brutos: "" }); }}>
+                Perfil local<div style={{ fontSize: 11.5, color: "#8a8a8a", fontWeight: 500, marginTop: 2 }}>Sin Google · solo en este equipo</div></button>
+            </div>)}
         </div>
       </div>
       <input ref={subir} type="file" accept="image/*" style={{ display: "none" }} onChange={elegirFoto} />
+
+      {creando && (
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", marginTop: 30, width: "min(460px, 100%)", background: "#141414", border: "1px solid #3a3119",
+          borderRadius: 14, padding: 18, display: "flex", flexDirection: "column", gap: 12, animation: "rsp-entra .25s ease both", textAlign: "left" }}>
+          <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16 }}>Nuevo perfil local</div>
+          <div style={{ fontSize: 12.5, color: "#A3A3A3", lineHeight: 1.5 }}>Solo existe en este equipo y no necesita cuenta de Google. {"Sus vídeos se guardan en «Vídeos RDR\\Editados\\<nombre>» y, si conectas Drive dentro del perfil, se suben allí."}</div>
+          <input autoFocus value={creando.nombre} onChange={(e) => setCreando({ ...creando, nombre: e.target.value })} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") crearLocal(); }}
+            placeholder="Nombre (p. ej. Carental)" style={{ background: "#0b0b0b", border: "1px solid #2a2a2a", borderRadius: 9, padding: "10px 12px", color: "#F5F5F5", fontSize: 14 }} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input value={creando.brutos} onChange={(e) => setCreando({ ...creando, brutos: e.target.value })} onKeyDown={(e) => e.stopPropagation()}
+              placeholder="Carpeta de los brutos (opcional)" style={{ flex: 1, minWidth: 0, background: "#0b0b0b", border: "1px solid #2a2a2a", borderRadius: 9, padding: "10px 12px", color: "#F5F5F5", fontSize: 12.5 }} />
+            <button className="rsp-op" style={{ border: "1px solid #3a3119", color: "#FFD700" }}
+              onClick={async () => { const r = await window.studioFS.carpetasElegir(creando.brutos || null); if (r) setCreando(c => ({ ...c, brutos: r })); }}>Elegir…</button>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="rsp-op" onClick={() => { setCreando(null); setError(""); }}>Cancelar</button>
+            <button className="rsp-op" onClick={crearLocal} style={{ background: "linear-gradient(135deg,#FFD700,#D4AF37)", color: "#000" }}>Crear perfil</button>
+          </div>
+        </div>)}
 
       {error && <div style={{ position: "relative", marginTop: 26, fontSize: 13, color: "#F87171", textAlign: "center", maxWidth: 480 }}>{error}</div>}
 

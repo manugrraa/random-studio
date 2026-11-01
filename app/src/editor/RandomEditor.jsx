@@ -103,6 +103,9 @@ export function RandomEditor({ toast }) {
   const [subsInfo, setSubsInfo] = useState(null);
   const [subsPid, setSubsPid] = useAjuste("red_subs_plantilla", "shorts");
   const [subsMax, setSubsMax] = useAjuste("red_subs_palabras", 3);
+  // v3.40: Claude corrige lo que Whisper oye mal (acentos, nombres, marcas), con lo que le cuentes del vídeo
+  const [subsIa, setSubsIa] = useAjuste("red_subs_ia", true);
+  const [subsCtx, setSubsCtx] = useAjuste("red_subs_contexto", "");
   const colaProxy = useRef({ pedidos:new Set(), cola:[], activos:0 });
   const pedidos = useRef(new Set());
   const est = useRef({}); est.current = { sel, porta, zoom, iman, herramienta };
@@ -112,7 +115,7 @@ export function RandomEditor({ toast }) {
     if(!["exportar","guardarclip","redsubs"].includes(ev.tarea)) return;
     if(ev.tarea === "redsubs"){
       const f = (tareaClonRef.current && tareaClonRef.current.eventos || []).find(e=>e.evento==="fin");
-      if(!ev.codigo && f && f.clips){ cambiar(q=>M.ponerSubtitulos(q, f.clips, f.plantilla)); /* (al rehacerlos se queda su estilo) */ toast(`${f.clips.length} tarjetas de subtítulos (${f.palabras} palabras)`); }
+      if(!ev.codigo && f && f.clips){ cambiar(q=>M.ponerSubtitulos(q, f.clips, f.plantilla)); /* (al rehacerlos se queda su estilo) */ toast(`${f.clips.length} tarjetas de subtítulos (${f.palabras} palabras)${f.corregidas != null ? ` · la IA corrigió ${f.corregidas} tramo(s)` : ""}`); }
       else if(ev.codigo) toast("No se pudieron generar los subtítulos");
       return;
     }
@@ -142,7 +145,7 @@ export function RandomEditor({ toast }) {
     consultar(["redsubsplant"]).then(ev=>setSubsInfo(ev.find(e=>e.evento==="hecho") || null)).catch(()=>{});
     consultar(["redfuentes"]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); if(h){ setFuentes(h.fuentes); setPresets({titulo:h.titulo, normal:h.normal}); } }).catch(()=>{});
     window.studioFS.redLista().then(r=>setProyectos(r.lista||[]));
-    const quitar = window.studioFS.onEditorPeticion && window.studioFS.onEditorPeticion(req=>{ if(req && req.recopilacion) abrirRecopilacion(req.recopilacion); else if(req && req.carpeta) abrirClip(req.carpeta, req.archivo); });
+    const quitar = window.studioFS.onEditorPeticion && window.studioFS.onEditorPeticion(req=>{ if(req && req.recopilacion) abrirRecopilacion(req.recopilacion); else if(req && req.carpeta) abrirClip(req.carpeta, req.archivo); else if(req && req.proyecto) abrir(req.proyecto); });
     window.studioFS.editorListo && window.studioFS.editorListo();
     return ()=>{ quitar && quitar(); };
   },[]);
@@ -280,7 +283,7 @@ export function RandomEditor({ toast }) {
     if(!v1 || !v1.clips.length){ toast("La pista principal está vacía: no hay nada que escuchar"); return; }
     if(pistaSubs && !window.confirm("Ya hay subtítulos. ¿Volver a generarlos? (los cambios a mano en sus tarjetas se pierden; Ctrl+Z los recupera)")) return;
     const r = await window.studioFS.redGuardarTmp({...pRef.current, nombre: pRef.current.nombre || "Sin título"}); if(r.error){ toast(r.error); return; }
-    try { await lanzar(["redsubs", r.ruta, (pistaSubs && pistaSubs.plantilla) || subsPid, String(subsMax)]); } catch(e){ toast(e.message); }
+    try { await lanzar(["redsubs", r.ruta, (pistaSubs && pistaSubs.plantilla) || subsPid, String(subsMax), ...(subsIa ? ["--ia", ...(subsCtx.trim() ? ["--contexto", subsCtx.trim()] : [])] : [])]); } catch(e){ toast(e.message); }
   };
   const cambiarPistaSubs = (patch, gesto) => {
     const f = q => ({...q, pistas: q.pistas.map(x=>x.tipo!=="subtitulos" ? x : {...x, ...patch(x)})});
@@ -475,7 +478,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(ctrl && K==="a"){ ok(); setSel(new Set(todos.map(c=>c.id))); }
       else if(ctrl && K==="s"){ ok(); pRef.current.clip ? guardarCambios() : guardar(); }
       else if(ctrl && e.shiftKey && K==="e"){ ok(); exportar("ruta"); }
-      else if(ctrl && K==="e"){ ok(); exportar("listos"); }
+      else if(ctrl && K==="e"){ ok(); exportar(pRef.current.destino ? "destino" : "listos"); }
       else if(ctrl && K==="i"){ ok(); meterArchivos(); }
       else if(ctrl && K==="t"){ ok(); meterTexto("normal"); }
       else if(ctrl && (k==="+"||k==="=")){ ok(); setZoom(z=>Math.min(2000, z*1.4)); }
@@ -557,12 +560,13 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         </div>
         {p.clip && <button onClick={volverAlOriginal} disabled={ocupado} className="rd-btn">Volver al original</button>}
         <div style={{position:"relative",display:"flex"}}>
-          <button onClick={()=>exportar("listos")} disabled={ocupado} className={"rd-btn"+(p.clip ? "" : " primario")} style={{borderTopRightRadius:0,borderBottomRightRadius:0}}
-            title="Ctrl+E · como vídeo, a Shorts Listos/RandomEditor">{I.exportar} Exportar vídeo</button>
+          <button onClick={()=>exportar(p.destino ? "destino" : "listos")} disabled={ocupado} className={"rd-btn"+(p.clip ? "" : " primario")} style={{borderTopRightRadius:0,borderBottomRightRadius:0}}
+            title={p.destino ? "Ctrl+E · rehace su vídeo en su sitio: " + p.destino : "Ctrl+E · como vídeo, a Shorts Listos/RandomEditor"}>{I.exportar} Exportar vídeo</button>
           <button onClick={()=>setMenuExp(x=>!x)} disabled={ocupado} className={"rd-btn"+(p.clip ? "" : " primario")} style={{borderTopLeftRadius:0,borderBottomLeftRadius:0,borderLeft:"1px solid rgba(0,0,0,0.25)",padding:"6px 7px"}} title="Más formas de exportar">▾</button>
           {menuExp && createPortal(<div onMouseDown={()=>setMenuExp(false)} style={{position:"fixed",inset:0,zIndex:2000}}>
             <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{right:p.clip ? 150 : 12,top:44}}>
-              <button onClick={()=>exportar("listos")}><span>Exportar vídeo a Shorts Listos</span><kbd>Ctrl+E</kbd></button>
+              {p.destino && <button onClick={()=>exportar("destino")}><span>Rehacer su vídeo (Editados)</span><kbd>Ctrl+E</kbd></button>}
+              <button onClick={()=>exportar("listos")}><span>Exportar vídeo a Shorts Listos</span><kbd>{p.destino ? "" : "Ctrl+E"}</kbd></button>
               <button onClick={()=>exportar("ruta")}><span>Exportar vídeo en…</span><kbd>Ctrl+Shift+E</kbd></button>
               <button onClick={()=>exportar("clip")}><span>Exportar como clip recortado nuevo</span><kbd></kbd></button>
             </div></div>, document.body)}
@@ -577,6 +581,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           panelVoces={<PanelVoces info={voces} generar={generarVoz} onMeter={meterVoz}/>}
           panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
             onGenerar={generarSubs} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
+            ia={subsIa} setIa={setSubsIa} contexto={subsCtx} setContexto={setSubsCtx}
             onPlantilla={pid=>cambiarPistaSubs(()=>({plantilla:pid, estilo:{}}))} onEstilo={(patch, g)=>cambiarPistaSubs(x=>({estilo:{...(x.estilo||{}), ...patch}}), g)}
             onQuitar={()=>{ cambiar(q=>({...q, pistas: q.pistas.filter(x=>x.tipo!=="subtitulos")})); toast("Subtítulos quitados (Ctrl+Z para recuperarlos)"); }}
             onGuardarPlantilla={async nombre=>{ try { const h = await deHecho(["redsubsguardar", nombre, pistaSubs.plantilla, JSON.stringify(pistaSubs.estilo || {}), String(subsMax)]);
@@ -610,7 +615,9 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <div className="rd-panel rd-insp" style={{padding:12,display:"flex",flexDirection:"column",gap:10,fontSize:12.5,overflowY:"auto"}}>
           <b style={{fontSize:13}}>{elegidos.length ? (uno ? uno.nombre : `${elegidos.length} elegidos`) : "Propiedades"}</b>
           {!elegidos.length && <div style={{color:"#888",lineHeight:1.6}}>Elige un clip para ver y cambiar sus propiedades.<br/>Todos los atajos, en Configuración del Studio.</div>}
-          {uno && uno.tipo === "sub" && <InspectorSub c={uno} alGesto={alGesto} cambiar={cambiarTarjeta}/>}
+          {uno && uno.tipo === "sub" && <InspectorSub c={uno} alGesto={alGesto} cambiar={cambiarTarjeta}
+            onColor={(k, col)=>cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.tipo!=="subtitulos" ? pi : {...pi, clips: pi.clips.map(x=>x.id!==uno.id ? x : {...x,
+              palabras: x.palabras.map((pp, j)=>j!==k ? pp : (col ? [pp[0], pp[1], pp[2], col] : [pp[0], pp[1], pp[2]]))})})}))}/>}
           {uno && uno.tipo === "texto" && <InspectorTexto c={uno} fuentes={fuentes} presets={presets} alGesto={alGesto} cambiarEstilo={cambiarEstilo} cambiarTexto={cambiarTexto} W={p.ancho} H={p.alto}/>}
           {/* 31/10 (v3.18): propiedades por pestañas, como CapCut: Básico · Transformar · Velocidad */}
           {uno && uno.ruta && <div style={{display:"flex",gap:3}}>

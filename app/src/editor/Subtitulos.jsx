@@ -28,12 +28,13 @@ export const plantillaDe = (info, pista) => {
 export function itemsDe(c, modo) {
   const dur = largo(c);
   if(modo !== "palabra") return [{ w: c.texto, a: c.en, b: c.en + dur }];
-  let ws = (c.palabras || []).filter(p=>String(p[2]).trim()).map(p=>[Math.max(0, p[0]), String(p[2]).trim().replace(/[,.;:…]+$/, "")]).filter(x=>x[1] && x[0] < dur);
+  // (v3.40: [a, b, w, color] = la palabra en otro color, como su «vendido» en verde)
+  let ws = (c.palabras || []).filter(p=>String(p[2]).trim()).map(p=>[Math.max(0, p[0]), String(p[2]).trim().replace(/[,.;:…]+$/, ""), p[3] || null]).filter(x=>x[1] && x[0] < dur);
   const out = [];
   for(let k = 0; k < ws.length; k++){
-    const [a, w] = ws[k], b = k + 1 < ws.length ? ws[k + 1][0] : dur;
-    if(b - a < 1 / 30 && k + 1 < ws.length){ ws[k + 1] = [a, w + " " + ws[k + 1][1]]; continue; }
-    out.push({ w, a: c.en + a, b: c.en + b });
+    const [a, w, col] = ws[k], b = k + 1 < ws.length ? ws[k + 1][0] : dur;
+    if(b - a < 1 / 30 && k + 1 < ws.length){ ws[k + 1] = [a, w + " " + ws[k + 1][1], col || ws[k + 1][2]]; continue; }
+    out.push({ w, a: c.en + a, b: c.en + b, col });
   }
   return out;
 }
@@ -66,6 +67,7 @@ export function CapaSubtitulos({ proyecto, reloj, info }) {
     const it = items.find(x=>t >= x.a && t < x.b);
     if(!it){ e.style.visibility = "hidden"; return; }
     if(e.textContent !== it.w) e.textContent = it.w;
+    e.style.color = it.col || pl.estilo.color;
     const s = pl.anim === "muelle" ? muelle((t - it.a) / Math.max(0.01, it.b - it.a)) : pl.anim === "pop" ? pop(t - it.a) : pl.anim === "suave" ? suave(t - it.a) : 1;
     e.style.transform = `translate(-50%,-50%) scale(${s})${sesgo(pl.estilo)}`;
     e.style.visibility = "visible";
@@ -96,7 +98,7 @@ function Muestra({ pl, info }) {
 }
 
 export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setMaxPal, onGenerar, ocupado, generando, onPlantilla, onEstilo, alGesto, onQuitar, fuentes,
-                                  favs = [], onFav, soloFavs, vacioFavs, onGuardarPlantilla, onBorrarPlantilla }) {
+                                  favs = [], onFav, soloFavs, vacioFavs, onGuardarPlantilla, onBorrarPlantilla, ia, setIa, contexto, setContexto }) {
   if(!info) return <div style={{fontSize:12.5,color:"#888",padding:8}}>Cargando las plantillas…</div>;
   const actual = plantillaDe(info, pista || { plantilla: elegida });
   const e = actual ? actual.estilo : {};
@@ -128,9 +130,13 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
       })}
       <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12}}><span style={fila}>Palabras por tarjeta<span style={{color:"#999"}}>{maxPal}</span></span>
         <input type="range" min={1} max={6} step={1} value={maxPal} onChange={ev=>setMaxPal(Number(ev.target.value))}/></label>
+      {setIa && <label style={{...fila,cursor:"pointer",fontSize:12}} title="Whisper escucha y después Claude repasa el texto entero y corrige lo que se oyó mal (acentos, nombres, marcas), sin mover el tiempo de cada palabra">
+        <span>Corregir con IA lo que se oye mal</span><input type="checkbox" checked={!!ia} onChange={ev=>setIa(ev.target.checked)}/></label>}
+      {setIa && ia && <input value={contexto || ""} onChange={ev=>setContexto(ev.target.value)} className="rd-input" placeholder="De qué va (nombres, marcas, sitio…) para que acierte más"
+        title="Por ejemplo: «concesionario Carental en La Carlota; salen Dani y Agustín; Audi Q8, TDI»"/>}
       <button onClick={onGenerar} disabled={ocupado} className="rd-btn primario" style={{justifyContent:"center",padding:"8px 0"}}
         title="Escucha lo que suena en la pista principal (Whisper large-v3) y lo pone en tarjetas. Cada archivo se escucha una vez: rehacerlos tras cortar es inmediato">
-        {generando ? "Escuchando…" : pista ? "Volver a generar los subtítulos" : "Generar subtítulos"}</button>
+        {generando ? (ia ? "Escuchando y corrigiendo…" : "Escuchando…") : pista ? "Volver a generar los subtítulos" : "Generar subtítulos"}</button>
       {pista && <>
         <div style={{fontSize:10.5,fontWeight:700,color:"#888",letterSpacing:0.4,padding:"6px 2px 0"}}>ESTILO · {pista.clips.length} TARJETAS</div>
         <div style={fila}><span style={{fontSize:12}}>Color</span><input type="color" value={e.color || "#ffffff"} onChange={ev=>onEstilo({color:ev.target.value})}/></div>
@@ -156,14 +162,17 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
 }
 
 // ---- el inspector de una tarjeta
-export function InspectorSub({ c, alGesto, cambiar }) {
+const COLORES_PALABRA = [[null, "Normal"], ["#00ff1d", "Verde"], ["#ff0000", "Rojo"], ["#ffdd00", "Amarillo"]];
+export function InspectorSub({ c, alGesto, cambiar, onColor }) {
   return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <textarea value={c.texto} rows={2} className="rd-input" style={{resize:"vertical",fontFamily:"inherit",lineHeight:1.4}}
         onFocus={()=>alGesto("inicio")} onBlur={()=>alGesto("fin")} onChange={ev=>cambiar(ev.target.value)}/>
       <div style={{fontSize:11.5,color:"#888",lineHeight:1.5}}>Corrige lo que se oyó mal. Con las mismas palabras, cada una conserva su momento; si cambias cuántas son, se reparten por igual. El estilo de todas, en la pestaña Subtítulos.</div>
       <div style={{fontFamily:"ui-monospace, Consolas, monospace",fontSize:11,color:"#999",lineHeight:1.6}}>
-        {(c.palabras||[]).map((p, k)=><div key={k}>{(c.en + p[0]).toFixed(2)} s · {p[2]}</div>)}
+        {(c.palabras||[]).map((p, k)=><div key={k} style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,color:p[3] || undefined}}>{(c.en + p[0]).toFixed(2)} s · {p[2]}</span>
+          {onColor && COLORES_PALABRA.map(([col, n])=><button key={n} onClick={()=>onColor(k, col)} title={"Esta palabra: " + n.toLowerCase()}
+            style={{width:14,height:14,borderRadius:4,border:"1px solid " + ((p[3] || null) === col ? "#fff" : "#444"),background:col || "#bbb",padding:0,cursor:"pointer"}}/>)}</div>)}
       </div>
     </div>);
 }

@@ -102,7 +102,7 @@ export function ponerSubtitulos(p, clips, plantilla, estilo) {
 // el texto de una tarjeta cambiado a mano: si tiene las mismas palabras, conservan su tiempo; si no, se reparten
 export function retextoTarjeta(c, texto) {
   const ws = texto.split(/\s+/).filter(Boolean), viejas = c.palabras || [], dur = largo(c);
-  const palabras = ws.length === viejas.length ? viejas.map((p, k)=>[p[0], p[1], ws[k]])
+  const palabras = ws.length === viejas.length ? viejas.map((p, k)=>p.length > 3 ? [p[0], p[1], ws[k], p[3]] : [p[0], p[1], ws[k]])   // (v3.40: con su color)
     : ws.map((w, k)=>[+(dur * k / ws.length).toFixed(3), +(dur * (k + 1) / ws.length).toFixed(3), w]);
   return {...c, texto, nombre: texto, palabras};
 }

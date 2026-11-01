@@ -127,6 +127,15 @@ contextBridge.exposeInMainWorld("studioFS", {
   carpetasGuardar: (id, clave, ruta) => ipcRenderer.invoke("carpetas-guardar", id, clave, ruta),
   carpetasElegir: (actual) => ipcRenderer.invoke("carpetas-elegir", actual),
   carpetasAbrir: (ruta) => ipcRenderer.invoke("carpetas-abrir", ruta),
+  // v3.40 (Carental): perfiles LOCALES (sin Google) y los BRUTOS de un perfil (brutos.cjs)
+  localesLeer: () => ipcRenderer.invoke("locales-leer"),
+  localesCrear: (nombre, brutos) => ipcRenderer.invoke("locales-crear", nombre, brutos),
+  localesRenombrar: (id, nombre) => ipcRenderer.invoke("locales-renombrar", id, nombre),
+  localesQuitar: (id) => ipcRenderer.invoke("locales-quitar", id),
+  brutosEstado: () => ipcRenderer.invoke("brutos-estado"),
+  brutosCambiar: (cambio) => ipcRenderer.invoke("brutos-cambiar", cambio),
+  brutosDriveSubir: (id, token, perfil) => ipcRenderer.invoke("brutos-drive-subir", id, token, perfil),
+  onBrutosProgreso: (cb) => { const h = (e, d) => cb(d); ipcRenderer.on("brutos-progreso", h); return () => ipcRenderer.removeListener("brutos-progreso", h); },
   // RandomHistorias dentro de Studio (v3.21): estado, cadena con progreso y miniatura
   historiasLista: () => ipcRenderer.invoke("historias-lista"),
   historiasDetalle: (id) => ipcRenderer.invoke("historias-detalle", id),

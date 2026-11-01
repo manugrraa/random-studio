@@ -32,10 +32,13 @@ const DEFS = [
   { grupo: "Convertidor", clave: "descargas", nombre: "Descargas", ayuda: "Destino por defecto de lo que descargas", def: path.join(BASE, "Convertidor YT", "Descargas"), otro: "Descargas" },
   { grupo: "RandomChat", clave: "chat", nombre: "Datos del chat", ayuda: "Configuración, registro y apodos del chat de este canal", def: path.join(BASE, "RandomChat"), otro: (id) => path.join(BASE, "RandomChat", "perfiles", id) },
   { grupo: "Historias", clave: "historias", nombre: "Proyecto de historias", ayuda: "La carpeta de RandomHistorias (guiones, planos, render)", def: path.join(BASE, "RandomHistorias"), otro: null },
+  // v3.40 (Carental): TODO lo que se edita va a Vídeos RDR\Editados\<perfil> (él: "para que se guarden absolutamente todos los Shorts y vídeos ahí")
+  { grupo: "Vídeos editados", clave: "editados", nombre: "Vídeos editados", ayuda: "Donde se guarda lo que se monta desde Brutos (una carpeta por mes) y se sube a Drive", def: path.join(BASE, "Vídeos RDR", "Editados", "RDeRandom"), otro: (id) => path.join(BASE, "Vídeos RDR", "Editados", nombreSeguro((PERFILES[id] || {}).nombre || id)) },
   { grupo: "Historias", clave: "entregas", nombre: "Shorts entregados", ayuda: "Donde se deja cada Short terminado con su miniatura", def: path.join(BASE, "RandomHistorias", ".historiaslistas"), otro: null },
 ];
 
 const userData = () => app.getPath("userData");
+const nombreSeguro = (n) => String(n || "").replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim().slice(0, 60) || "Perfil";
 // v3.30: las cuentas las decide el servidor; aquí se apuntan las que se van abriendo (nombre y canal)
 try { Object.assign(PERFILES, JSON.parse(fs.readFileSync(path.join(userData(), "perfiles.json"), "utf8"))); } catch (e) {}
 const valido = (id) => /^[a-z0-9][a-z0-9-]{1,39}$/.test(String(id));
@@ -81,7 +84,8 @@ function carpetasDe(id = activo) { return resolver(id, elegidasDe(id)); }
 // ------------------------------------------------------------------ llamadas
 ipcMain.handle("perfil-poner", async (e, id, info) => {
   if (!valido(id)) throw new Error("perfil no válido");
-  if (info && info.canal && (!PERFILES[id] || PERFILES[id].canal !== info.canal)) {
+  if (info && info.local) registrarLocal(id, info.nombre);       // v3.40: perfil local (sin Google)
+  else if (info && info.canal && (!PERFILES[id] || PERFILES[id].canal !== info.canal)) {
     PERFILES[id] = { nombre: String(info.nombre || id).slice(0, 80), canal: String(info.canal).slice(0, 40) };
     try { fs.writeFileSync(path.join(userData(), "perfiles.json"), JSON.stringify(PERFILES, null, 1)); } catch (x) {}
   }
@@ -90,6 +94,20 @@ ipcMain.handle("perfil-poner", async (e, id, info) => {
   archivoCarpetas(id);
   return { ok: true, perfil: id, canal: canalDe(id) };
 });
+
+/** v3.40: un perfil LOCAL (sin Google) se apunta con su nombre (de él salen sus carpetas por defecto). */
+function registrarLocal(id, nombre) {
+  if (!valido(id)) return;
+  PERFILES[id] = { nombre: String(nombre || id).slice(0, 80), local: true };
+  try { fs.writeFileSync(path.join(userData(), "perfiles.json"), JSON.stringify(PERFILES, null, 1)); } catch (x) {}
+  archivoCarpetas(id);
+}
+/** v3.40: elegir una carpeta desde el propio Studio (al crear un perfil local con su carpeta de brutos). */
+function elegir(id, clave, ruta) {
+  const elegidas = elegidasDe(id);
+  elegidas[clave] = ruta;
+  escribir(id, elegidas);
+}
 
 ipcMain.handle("carpetas-leer", async (e, id) => {
   id = valido(id) ? id : activo;
@@ -125,4 +143,4 @@ ipcMain.handle("carpetas-abrir", async (e, ruta) => {
   return { ok: !err, error: err || null };
 });
 
-module.exports = { PERFILES, perfilActivo, canalDe, dirDatos, carpetasDe, archivoCarpetas };
+module.exports = { PERFILES, perfilActivo, canalDe, dirDatos, carpetasDe, archivoCarpetas, registrarLocal, elegir };

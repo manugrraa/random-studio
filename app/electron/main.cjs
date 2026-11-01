@@ -360,8 +360,8 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "redefectos", "redefecto", "pesoclips", "borrarclips", "borrardescartados", "borrarshorts", "oficializar", "mover", "redvoces", "redtts", "redvozproc", "redsubsguardar", "redsubsborrar", "retencion", "aprender"]);
-const TAREAS = new Set(["preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip", "redsubs"]);
+const CONSULTAS = new Set(["estado", "brutos", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "redefectos", "redefecto", "pesoclips", "borrarclips", "borrardescartados", "borrarshorts", "oficializar", "mover", "redvoces", "redtts", "redvozproc", "redsubsguardar", "redsubsborrar", "retencion", "aprender"]);
+const TAREAS = new Set(["brutosmontar", "preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip", "redsubs"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
 function leerEventos(texto) {
@@ -531,7 +531,7 @@ ipcMain.handle("clon-elegir-carpeta", async () => {
 let editorWin = null, editorListo = false, editorPendiente = null, editorSucio = false;
 const ventanaEditorFile = () => path.join(dataDir(), "ventana_editor.json");
 function abrirEditor(req) {
-  const conClip = req && (req.carpeta || req.recopilacion) ? req : null;    // un clip, o una recopilación entera
+  const conClip = req && (req.carpeta || req.recopilacion || req.proyecto) ? req : null;    // un clip, una recopilación entera o (v3.40) un proyecto guardado
   if (editorWin && !editorWin.isDestroyed()) {
     if (editorWin.isMinimized()) editorWin.restore();
     if (process.env.STUDIO_CAPTURA) editorWin.showInactive(); else { editorWin.show(); editorWin.focus(); }
@@ -839,3 +839,5 @@ require("./historias.cjs");
 require("./carpetas.cjs");
 // el contador de suscriptores de YouTube Studio para OBS (v3.23)
 require("./contador.cjs");
+// v3.40 (Carental): perfiles locales (sin Google) y brutos para montar con el clon
+require("./brutos.cjs");

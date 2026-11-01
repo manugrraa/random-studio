@@ -31,6 +31,30 @@ function trozos(linea) {
   for(const ch of linea){ const e = esEmoji(ch); if(out.length && out[out.length-1][1] === e) out[out.length-1][0] += ch; else out.push([ch, e]); }
   return out;
 }
+// v3.40 (Carental): lo que va entre *asteriscos*, en el color de acento («148.000 *Km*»)
+const tramosAcento = (l, con) => !con || !l.includes("*") ? [[l, false]] : l.split("*").map((t, k)=>[t, k % 2 === 1]).filter(x=>x[0]);
+// las sombras difuminadas de CapCut (las mismas fórmulas que clon/textos.py: distancia ×0,975, núcleo de 2·feather·tam+1)
+export const sombrasTexto = (e, esc) => !(e.sombras && e.sombras.length) ? undefined : e.sombras.map(s=>{
+  const d = (s.distance || 0) * 0.975 * esc, a = (s.angle ?? -45) * Math.PI / 180, r = (s.feather || 0) * (e.tam || 72);
+  const sig = r > 0.5 ? (0.3 * (r - 1) + 0.8) * esc : 0, h = (s.color || "#000000").replace("#", "");
+  return `${(d * Math.cos(a)).toFixed(2)}px ${(-d * Math.sin(a)).toFixed(2)}px ${(2 * sig).toFixed(2)}px rgba(${[0,2,4].map(i=>parseInt(h.slice(i,i+2),16)||0).join(",")},${s.alpha ?? 1})`; }).join(", ");
+// la ENTRADA y la SALIDA (las de CapCut: llega desde 2,66 veces su ancho/alto con quadOut, opaco en 0,1 s)
+export const ANIMS_TEXTO = [["", "Sin animación"], ["izquierda", "Desde la izquierda"], ["derecha", "Desde la derecha"], ["arriba", "Desde arriba"], ["abajo", "Desde abajo"], ["fundido", "Fundido"]];
+function animEn(c, t, w, h) {
+  const e = c.estilo || {}, ai = c.anim_in || e.anim_in || {}, ao = c.anim_out || e.anim_out || {};
+  let dx = 0, dy = 0, op = 1;
+  const r = t - c.en;
+  if(ai.tipo){
+    const d = Math.max(0.05, ai.dur ?? 0.3), u = Math.min(1, Math.max(0, r / d)), q = 1 - (1 - u) * (1 - u);
+    const ua = Math.min(1, Math.max(0, r / Math.min(0.1, d)));
+    op = 1 - (1 - ua) * (1 - ua);
+    const off = 1 - q;
+    if(ai.tipo === "izquierda") dx = -2.66 * w * off; else if(ai.tipo === "derecha") dx = 2.66 * w * off;
+    else if(ai.tipo === "arriba") dy = -2.66 * h * off; else if(ai.tipo === "abajo") dy = 2.66 * h * off;
+  }
+  if(ao.tipo === "fundido"){ const d = Math.max(0.05, ao.dur ?? 0.3); op *= Math.min(1, Math.max(0, (fin(c) - t) / d)); }
+  return { dx, dy, op };
+}
 const lineasDe = (c) => { const e = c.estilo || {}; const ls = String(c.texto || "").split("\n").map(l=>l.split(/\s+/).filter(Boolean).join(" ")); return e.una_linea ? [ls.join(" ").trim()] : ls; };
 
 // ---- la capa encima del vídeo: cada texto en su sitio, visible solo en su tramo, y se arrastra
@@ -42,7 +66,12 @@ export function CapaTextos({ proyecto, reloj, sel, onElegir, onGesto }) {
   // de arriba abajo en la línea de tiempo = de encima a debajo: se pintan al revés
   const textos = useMemo(()=>[...proyecto.pistas].reverse().filter(p=>p.tipo==="texto" && !p.muda).flatMap(p=>p.clips),[proyecto]);
   const tRef = useRef(textos); tRef.current = textos;
-  const mostrar = t => tRef.current.forEach(c=>{ const el = els.current[c.id]; if(el) el.style.visibility = t >= c.en && t < fin(c) ? "visible" : "hidden"; });
+  const mostrar = t => tRef.current.forEach(c=>{ const el = els.current[c.id]; if(!el) return; const vis = t >= c.en && t < fin(c);
+    el.style.visibility = vis ? "visible" : "hidden";
+    const e = c.estilo || {};
+    if(vis && (c.anim_in || c.anim_out || e.anim_in || e.anim_out)){ const a = animEn(c, t, el.offsetWidth, el.offsetHeight);
+      el.style.transform = `translate(-50%,-50%) translate(${a.dx}px,${a.dy}px)`; el.style.opacity = a.op; }
+    else if(el.style.opacity !== "" ){ el.style.transform = "translate(-50%,-50%)"; el.style.opacity = ""; } });
   useEffect(()=>reloj.oir(mostrar),[reloj]);
   useLayoutEffect(()=>{
     // encoger para caber (como clon/textos.py): si una línea pasa de su ancho, la letra baja
@@ -97,10 +126,10 @@ export function CapaTextos({ proyecto, reloj, sel, onElegir, onGesto }) {
             style={{position:"absolute",left:e.x * esc,top:e.y * esc,transform:"translate(-50%,-50%)",pointerEvents:"auto",cursor:"move",
               fontFamily:familiaCss(e.fuente),color:e.color || "#fff",whiteSpace:"pre",textAlign:"center",lineHeight:1.08,
               WebkitTextStroke: borde ? `${borde * 2}px ${e.color_borde || "#000"}` : undefined, paintOrder:"stroke fill",
-              filter: e.sombra ? `drop-shadow(${4 * k * esc}px ${6 * k * esc}px 0 rgba(0,0,0,0.59))` : undefined,
+              filter: e.sombra ? `drop-shadow(${4 * k * esc}px ${6 * k * esc}px 0 rgba(0,0,0,0.59))` : undefined, textShadow: sombrasTexto(e, esc),
               outline: sel.has(c.id) ? "1.5px dashed rgba(212,175,55,0.95)" : "none", outlineOffset: 4, visibility:"hidden"}}>
-            {lineasDe(c).map((l, i)=><div key={i}>{trozos(l).map(([t, emo], j)=>emo
-              ? <span key={j} style={{fontFamily:"'Segoe UI Emoji'",WebkitTextStroke:0,fontSize:"1.05em",letterSpacing:"0.06em"}}>{t}</span> : <span key={j}>{t}</span>)}</div>)}
+            {lineasDe(c).map((l, i)=><div key={i}>{tramosAcento(l, !!e.acento).map(([tr, ac], m)=>trozos(tr).map(([t, emo], j)=>emo
+              ? <span key={m + "-" + j} style={{fontFamily:"'Segoe UI Emoji'",WebkitTextStroke:0,fontSize:"1.05em",letterSpacing:"0.06em"}}>{t}</span> : <span key={m + "-" + j} style={ac ? {color:e.acento} : undefined}>{t}</span>))}</div>)}
           </div>);
       })}
     </div>);
@@ -151,6 +180,21 @@ export function InspectorTexto({ c, fuentes, presets, alGesto, cambiarEstilo, ca
       {deslizador("Contorno", "borde", 0, 40, 1, v=>Math.round(v)+" px")}
       <div style={fila}><span>Color del contorno</span><input type="color" value={e.color_borde || "#000000"} onChange={ev=>cambiarEstilo({color_borde:ev.target.value})}/></div>
       <label style={{...fila,cursor:"pointer"}}><span>Sombra (la de los títulos)</span><input type="checkbox" checked={!!e.sombra} onChange={ev=>cambiarEstilo({sombra:ev.target.checked})}/></label>
+      <label style={{...fila,cursor:"pointer"}} title="Lo que escribas entre *asteriscos* sale en este color (como «148.000 *Km*»)"><span>Color de acento (entre *asteriscos*)</span>
+        <span style={{display:"flex",alignItems:"center",gap:6}}><input type="checkbox" checked={!!e.acento} onChange={ev=>cambiarEstilo({acento: ev.target.checked ? "#ff0000" : null})}/>
+        {e.acento && <input type="color" value={e.acento} onChange={ev=>cambiarEstilo({acento:ev.target.value})}/>}</span></label>
+      <label style={{...fila,cursor:"pointer"}} title="El halo suave de los textos de CapCut (el de las fichas de Carental)"><span>Sombra suave (halo)</span>
+        <input type="checkbox" checked={!!(e.sombras && e.sombras.length)} onChange={ev=>cambiarEstilo({sombras: ev.target.checked ? [{alpha:0.4,angle:0,distance:0,feather:0.0333,color:"#000000"}] : null})}/></label>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 64px",gap:6,alignItems:"end"}}>
+        <label style={{display:"flex",flexDirection:"column",gap:3,fontSize:11.5,color:"#aaa"}}>Entrada
+          <select className="rd-input" value={(e.anim_in || {}).tipo || ""} onChange={ev=>cambiarEstilo({anim_in: ev.target.value ? {tipo:ev.target.value, dur:(e.anim_in || {}).dur || (ev.target.value==="izquierda"||ev.target.value==="derecha" ? 0.3 : 0.2)} : null})}>
+            {ANIMS_TEXTO.map(([v, n])=><option key={v} value={v}>{n}</option>)}</select></label>
+        <label style={{display:"flex",flexDirection:"column",gap:3,fontSize:11.5,color:"#aaa"}}>s<input type="number" step={0.05} min={0.05} max={3} disabled={!(e.anim_in||{}).tipo} value={(e.anim_in || {}).dur ?? 0.3} className="rd-input" onChange={ev=>cambiarEstilo({anim_in:{...(e.anim_in||{}), dur:Number(ev.target.value)}})}/></label>
+        <label style={{display:"flex",flexDirection:"column",gap:3,fontSize:11.5,color:"#aaa"}}>Salida
+          <select className="rd-input" value={(e.anim_out || {}).tipo || ""} onChange={ev=>cambiarEstilo({anim_out: ev.target.value ? {tipo:"fundido", dur:(e.anim_out || {}).dur || 0.3} : null})}>
+            <option value="">Sin animación</option><option value="fundido">Fundido</option></select></label>
+        <label style={{display:"flex",flexDirection:"column",gap:3,fontSize:11.5,color:"#aaa"}}>s<input type="number" step={0.05} min={0.05} max={3} disabled={!(e.anim_out||{}).tipo} value={(e.anim_out || {}).dur ?? 0.3} className="rd-input" onChange={ev=>cambiarEstilo({anim_out:{...(e.anim_out||{}), dur:Number(ev.target.value)}})}/></label>
+      </div>
       <label style={{...fila,cursor:"pointer"}}><span>Siempre en una línea (encoge si no cabe)</span><input type="checkbox" checked={!!e.una_linea} onChange={ev=>cambiarEstilo({una_linea:ev.target.checked})}/></label>
       {deslizador("Ancho máximo", "max_ancho", 100, 1080, 10, v=>Math.round(v)+" px")}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
