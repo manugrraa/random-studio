@@ -251,8 +251,33 @@ function blenderExe() {
 // ------------------------------------------------------------------ clave de ElevenLabs (cifrada en este equipo)
 const claveArchivo = () => path.join(app.getPath("userData"), "elevenlabs.key");
 function claveEleven() {
-  try { const b = fs.readFileSync(claveArchivo()); return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(b) : ""; } catch (e) { return ""; }
+  // (sin espacios ni saltos: al pegarla se colaban y ElevenLabs la rechazaba, como pasó con el permiso de Claude)
+  try { const b = fs.readFileSync(claveArchivo()); return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(b).replace(/\s+/g, "") : ""; } catch (e) { return ""; }
 }
+/* v3.41.5: ¿la clave de ElevenLabs funciona DE VERDAD? Se prueba exactamente lo que hace la etapa de voces (la voz de
+ * Random, el modelo flash) con un texto de 2 letras (~1 crédito), al arrancar y al guardar la clave. Si falla, se ve el
+ * motivo en «Equipos» y la etapa de voces no empieza (antes Claude se ponía a buscar la clave por el disco). */
+let elevenPrueba = { ok: null, error: "", cuando: 0 };
+async function probarEleven(forzar) {
+  if (!forzar && elevenPrueba.cuando && Date.now() - elevenPrueba.cuando < 6 * 3600000) return elevenPrueba;
+  const k = claveEleven();
+  if (!k) return (elevenPrueba = { ok: false, error: "Falta la clave de ElevenLabs", cuando: Date.now() });
+  let voz = "kIyh6OkdYnM02DNUILKo";
+  try { const m = leer(path.join(raiz(), "historias", "_plantilla", "planos.py"), "").match(/"random"\s*:\s*"([A-Za-z0-9]+)"/); if (m) voz = m[1]; } catch (e) {}
+  try {
+    const r = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voz + "?output_format=mp3_22050_32", { method: "POST",
+      headers: { "xi-api-key": k, "Content-Type": "application/json", Accept: "audio/mpeg" },
+      body: JSON.stringify({ text: "ok", model_id: "eleven_flash_v2_5", language_code: "es" }) });
+    if (r.ok) { await r.arrayBuffer(); return (elevenPrueba = { ok: true, error: "", cuando: Date.now() }); }
+    let det = ""; try { const j = await r.json(); det = (j.detail && (j.detail.message || j.detail.status)) || JSON.stringify(j).slice(0, 200); } catch (x) {}
+    const error = r.status === 401 ? "ElevenLabs rechaza la clave (" + det + "): vuelve a pegarla en Ajustes, y que tenga permiso de «Text to Speech»"
+      : r.status === 404 ? "Esta cuenta de ElevenLabs no tiene la voz de Random (" + det + "): añádela a «My Voices» o usa la clave de la cuenta del portátil"
+      : /quota|credit/i.test(det) ? "Sin créditos en ElevenLabs (" + det + ")"
+      : "ElevenLabs " + r.status + ": " + det;
+    return (elevenPrueba = { ok: false, error, cuando: Date.now() });
+  } catch (e) { return (elevenPrueba = { ok: false, error: "No se pudo conectar con ElevenLabs: " + e.message, cuando: Date.now() }); }
+}
+app.whenReady().then(() => setTimeout(() => probarEleven(false), 12000));
 
 // ------------------------------------------------------------------ etapas
 const todasFotos = (c) => { const ps = planos(c); return ps.length > 0 && ps.every(p => existe(path.join(c, "planos_fotos", p.id + ".png"))); };
@@ -390,6 +415,11 @@ function correrEtapa(sender, id, etapaId, nota, encadenar) {
   if (etapaId === "animatic" && nota) {
     // cambios del animatic: Claude corrige la escena y rehace las fotos; después se vuelve a montar el animatic
     return lanzarAgente(sender, id, "escena", promptEtapa(id, "animatic", nota), (ok, snd) => { if (ok) lanzar(snd, id, e.args, "animatic", seguir); });
+  }
+  if (etapaId === "voces" && claveEleven() && elevenPrueba.ok === false) {
+    try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, etapa: "voces", informe: elevenPrueba.error + ". Arréglalo y pulsa «Seguir»." }); } catch (x) {}
+    probarEleven(true);       // por si ya está arreglada: la próxima vez que se intente, valdrá
+    return { ok: false, error: elevenPrueba.error };
   }
   if (etapaId === "voces" && !claveEleven()) {
     try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, etapa: "voces", informe: "Falta la clave de ElevenLabs para hacer las voces: ponla en RandomHistorias → Ajustes y pulsa «Seguir»." }); } catch (x) {}
@@ -686,16 +716,18 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
   const cl = claude.estadoClaude();
   return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
     claudeOk: cl.ok, claudeError: cl.error, blender: !!blenderExe(), proyecto: existe(histDir()),
+    elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "",
     // v3.41: la salud del equipo (Git Bash, espacio libre en el disco del proyecto y fecha del kit)
     bash: !!claude.rutaBash(), disco: discoLibre(), kit: (leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {}).fecha || null };
 });
 
 ipcMain.handle("estudio-clave-eleven", async (e, clave) => {
-  const k = String(clave || "").trim();
+  const k = String(clave || "").replace(/\s+/g, "");
   if (!k) { try { fs.unlinkSync(claveArchivo()); } catch (x) {} return { ok: true, eleven: false }; }
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows no deja cifrar la clave en este equipo");
   fs.writeFileSync(claveArchivo(), safeStorage.encryptString(k));
-  return { ok: true, eleven: true };
+  const p = await probarEleven(true);
+  return { ok: true, eleven: true, probada: p.ok, error: p.error };
 });
 
 /** Lo que se revisa/ve de cada etapa: el texto del guion, el audio, el animatic y el Short final. */

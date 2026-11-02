@@ -891,6 +891,7 @@ function SaludEquipo({ e, ultima, onGit }) {
   if (!cap.proyecto) p.push(["Le falta el proyecto de historias", "Ábrelo en ese equipo: RandomHistorias → Ajustes."]);
   if (cap.claude === false) p.push([cap.claudeError || "Claude no funciona", "Pega el permiso de larga duración en RandomHistorias → Ajustes de ese equipo."]);
   if (cap.eleven === false) p.push(["Sin clave de ElevenLabs", "No podrá hacer voces: ponla en RandomHistorias → Ajustes de ese equipo."]);
+  else if (cap.elevenError) p.push(["La voz no funciona: " + cap.elevenError, null]);
   if (cap.blender === false) p.push(["Sin Blender", "No podrá hacer la escena ni el render: instala Blender 4.5."]);
   if (cap.bash === false) p.push(["Sin Git Bash: Claude trabaja con PowerShell (mucho más lento)", null, "git"]);
   if (cap.drive === false) p.push(["Sin Drive conectado", "No sube los Shorts ni puede hacer relevos: conéctalo en RandomHistorias → Ajustes."]);

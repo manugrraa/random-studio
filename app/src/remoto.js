@@ -123,7 +123,7 @@ export function iniciarRemotoEscritorio(t) {
       tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible,
       capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven,
         // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
-        bash: aj.bash !== false, disco: aj.disco || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, esperandoLimite: Object.keys(esperas()).length },
+        bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", drive: driveConectadoTrabajo(), kit: aj.kit || null, esperandoLimite: Object.keys(esperas()).length },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
       tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
       ajustes: aj.ajustes,
