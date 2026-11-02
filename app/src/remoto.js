@@ -81,9 +81,13 @@ export function iniciarRemotoEscritorio(t) {
     if (!subiendo && driveConectadoTrabajo()) {
       const lista = aj.ajustes.driveAuto && l.historias.find(h => !h.legado && h.entregada && !h.drive);
       const pend = lista ? { h: lista, que: "short" } : null;
+      // (v3.43.3) también si la de Drive es más vieja que la del disco (tras pedir cambios), y el animatic de TODAS las
+      // historias aunque no esté en revisión: así se ve dentro de la app desde cualquier equipo y desde el móvil
+      const vieja = (h, q) => { const d = (h.driveRevision || {})[q]; return !d || !!(h.revMs && h.revMs[q] && Date.parse(d.fecha) < h.revMs[q]); };
       const rev = !pend && l.historias.map(h => ({ h, e: (h.etapas || []).find(x => x.estado === "revisar" && (x.id === "voces" || x.id === "animatic")) }))
-        .find(x => x.e && !(x.h.driveRevision || {})[x.e.id]);
-      const tarea = pend || (rev && { h: rev.h, que: rev.e.id });
+        .find(x => x.e && vieja(x.h, x.e.id));
+      const anim = !pend && !rev && l.historias.find(h => h.revMs && h.revMs.animatic && vieja(h, "animatic"));
+      const tarea = pend || (rev && { h: rev.h, que: rev.e.id }) || (anim && { h: anim, que: "animatic" });
       if (tarea) {
         subiendo = true;
         driveTokenTrabajo().then(dt => s.estudioDriveSubir(tarea.h.id, dt, perfilDrive(), tarea.que))
@@ -141,6 +145,27 @@ export function iniciarRemotoEscritorio(t) {
     };
     const r = await remotoApi("POST", { accion: "publicar", datos }).catch(() => null);
     if (r) { vigilarOtros(r.otros || []); igualarBase(r.otros || [], t).catch(() => {}); }
+    if (aj.origen) bajarEntregas().catch(() => {});
+  };
+  // v3.43.3: el portátil guarda TODAS las historias terminadas en Vídeos RDR\Editados\RandomHistorias\<TÍTULO>\: las que
+  // termina otro equipo (y sube a Drive) las baja de allí. Se mira cada 2 min, de una en una.
+  let bajando = false, bajadaMirada = 0;
+  const fallosBajada = {};                 // (el aviso de un fallo, una vez por Short)
+  const bajarEntregas = async () => {
+    if (bajando || !s.estudioEntregaBajar || !driveConectadoTrabajo() || Date.now() - bajadaMirada < 120000) return;
+    bajadaMirada = Date.now(); bajando = true;
+    try {
+      const r = await remotoApi("GET");
+      for (const eq of r.equipos || []) {
+        if (eq.id === r.yo) continue;
+        for (const h of (eq.datos && eq.datos.historias) || []) {
+          if (!h.entregada || !h.drive || !(h.drive.archivos || []).length) continue;
+          const x = await s.estudioEntregaBajar(await driveTokenTrabajo(), h.drive);
+          if (x && x.bajado) toast("⬇ «" + (h.titulo || h.id) + "» (de " + eq.nombre + ") ya está en Editados\\RandomHistorias");
+          else if (x && !x.ok && !fallosBajada[h.drive.carpeta]) { fallosBajada[h.drive.carpeta] = 1; toast("❌ No pude bajar «" + (h.titulo || h.id) + "» de Drive: " + (x.error || "")); }
+        }
+      }
+    } finally { bajando = false; }
   };
   // v3.41.3: los recursos del proyecto, iguales en todos los equipos (el portátil los sube a Drive si cambian; los demás
   // los bajan cuando su huella no coincide y están libres). Con la base nueva, las historias paradas se vuelven a intentar.

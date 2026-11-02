@@ -121,6 +121,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   estudioClaveEleven: (clave) => ipcRenderer.invoke("estudio-clave-eleven", clave),
   estudioMaterial: (id) => ipcRenderer.invoke("estudio-material", id),
   estudioDriveSubir: (id, token, perfil, que) => ipcRenderer.invoke("estudio-drive-subir", id, token, perfil, que),
+  estudioEntregaBajar: (token, drive) => ipcRenderer.invoke("estudio-entrega-bajar", token, drive),
   driveEspacio: (token) => ipcRenderer.invoke("drive-espacio", token),
   actInfo: () => ipcRenderer.invoke("act-info"),
   actSubir: (url, cual) => ipcRenderer.invoke("act-subir", url, cual),

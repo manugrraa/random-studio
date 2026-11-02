@@ -8,6 +8,7 @@ import { esAdmin, useRolEquipo } from "./admin";
 import { UsoClaude, usoDeEquipos } from "./uso_claude";
 import { alTimbre } from "./timbre";
 import { AccionesDeVista } from "./base";
+import { VideoDrive } from "./drive_video";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
  * Todo el proceso de RandomHistorias dentro del Studio, con una «carpeta» por historia:
@@ -143,6 +144,7 @@ function Revision({ etapa, mat, onAprobar, onCambios, ocupado, cambiosOcupado })
       {etapa === "voces" && (mat.audio ? <audio controls src={mat.audio} style={{ width: "100%" }} /> : <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Aún no hay mezcla.</div>)}
       {etapa === "animatic" && (mat.animatic
         ? <video controls src={mat.animatic} style={{ width: "100%", maxWidth: 340, borderRadius: 12, border: "1px solid var(--border)", display: "block", background: "#000" }} />
+        : (mat.driveRevision || {}).animatic ? <VideoDrive link={mat.driveRevision.animatic} />
         : <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Aún no hay animatic.</div>)}
       {inf && inf.texto && <details style={{ marginTop: 10 }}><summary style={{ fontSize: 12, color: "var(--text-3)", cursor: "pointer" }}>Lo que dice Claude de su trabajo</summary>
         <div style={{ fontSize: 12.5, color: "var(--text-2)", whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{inf.texto}</div></details>}
@@ -152,6 +154,18 @@ function Revision({ etapa, mat, onAprobar, onCambios, ocupado, cambiosOcupado })
         <button disabled={ocupado || !!nota.trim()} onClick={onAprobar} className="grad-gold" style={{ ...botonOro, opacity: (ocupado || nota.trim()) ? 0.5 : 1 }}>✓ Está bien, seguir</button>
         <button disabled={ocupado || cambiosOcupado || !nota.trim()} title={cambiosOcupado ? "Espera a que termine lo que está en marcha" : ""} onClick={() => onCambios(nota.trim())} style={{ ...botonSec, color: "#F59E0B", borderColor: "rgba(245,158,11,.45)", opacity: (ocupado || cambiosOcupado || !nota.trim()) ? 0.5 : 1 }}>Pedir estos cambios</button>
       </div>
+    </div>);
+}
+
+// v3.43.3: el animatic de la historia, siempre a mano (del disco si está aquí; si no, de Drive)
+function VerAnimatic({ mat, abierto }) {
+  const [ver, setVer] = useState(!!abierto);
+  return (
+    <div style={{ ...tarjeta, padding: 12 }}>
+      <button onClick={() => setVer(v => !v)} style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{ver ? "Ocultar el animatic" : "Ver el animatic"}</button>
+      {ver && <div style={{ marginTop: 10 }}>{mat.animatic
+        ? <video controls src={mat.animatic} style={{ width: "100%", maxWidth: 340, borderRadius: 12, border: "1px solid var(--border)", display: "block", background: "#000" }} />
+        : <VideoDrive link={mat.driveRevision.animatic} />}</div>}
     </div>);
 }
 
@@ -601,6 +615,7 @@ export function HistoriasView({ toast }) {
                 onAprobar={() => accion(() => SF().estudioRevisar(det.id, espera.id, true, ""), "✓ Aprobado: seguimos")}
                 onCambios={(nota) => accion(() => SF().estudioRevisar(det.id, espera.id, false, nota), "Claude está aplicando tus cambios")} />}
 
+              {!(espera && espera.id === "animatic") && (mat.animatic || (mat.driveRevision || {}).animatic) && <VerAnimatic key={"a" + det.id} mat={mat} />}
               {(terminada || (mat.legado && det.final)) && <Terminado key={det.id} det={det} mat={mat} toast={toast} onGuardada={() => cargarDet(det.id)} />}
               {etapas.find(e => e.id === "escena" && e.estado === "hecho") && <ElegirMiniatura key={"m" + det.id} det={det} toast={toast} onHecha={() => { cargar(); cargarDet(det.id); }} />}
             </div>)}
@@ -771,6 +786,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
                 style={{ ...botonOro, alignSelf: "flex-start", opacity: (!e.en_linea || e.datos.tarea) ? .5 : 1 }}>
                 ▶ Seguir: {ETAPA_NOMBRE[siguiente.id]}{e.datos.tarea ? " (cuando " + e.nombre + " acabe lo que hace)" : !e.en_linea ? " (" + e.nombre + " apagado)" : ""}</button>)}
             {it.rev && <RevisionRemota h={h} etapa={it.rev.id} onOrden={(q, a, ok) => ordenA(e, q, a, ok)} />}
+            {!(it.rev && it.rev.id === "animatic") && (h.driveRevision || {}).animatic && <AnimaticRemoto link={h.driveRevision.animatic} />}
             {h.drive && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <span style={{ fontSize: 12.5, color: "var(--green)", fontWeight: 700 }}>☁️ En tu Drive{h.drive.archivos && h.drive.archivos.every(a => a.verificado) ? " · copia idéntica" : ""}</span>
@@ -925,7 +941,7 @@ function RevisionRemota({ h, etapa, onOrden }) {
     <div style={{ border: "1px solid rgba(245,158,11,.5)", borderRadius: 12, padding: 12, background: "rgba(245,158,11,.06)", display: "flex", flexDirection: "column", gap: 8 }}>
       <b>Te toca revisar: {ETAPA_NOMBRE[etapa]}</b>
       {etapa === "guion" && <div style={{ fontSize: 13.5, lineHeight: 1.7, whiteSpace: "pre-wrap", maxHeight: 340, overflow: "auto", background: "var(--bg-2)", borderRadius: 10, padding: 12 }}>{h.narracion || "(cargando el texto…)"}</div>}
-      {etapa !== "guion" && (link ? <a href={link.ver} target="_blank" rel="noopener" className="grad-gold" style={{ ...botonOro, textDecoration: "none", alignSelf: "flex-start" }}>{etapa === "voces" ? "🎧 Escuchar en Drive" : "🎞️ Ver el animatic en Drive"}</a>
+      {etapa !== "guion" && (link ? <VideoDrive link={link} audio={etapa === "voces"} />
         : <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Subiéndolo a Drive para que lo veas…</div>)}
       <textarea value={nota} onChange={e => setNota(e.target.value)} rows={3} placeholder="Cambios (vacío si está bien)"
         style={{ width: "100%", fontSize: 13, padding: 10, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)" }} />
@@ -933,6 +949,15 @@ function RevisionRemota({ h, etapa, onOrden }) {
         <button disabled={!!nota.trim()} onClick={() => onOrden("revisar", { id: h.id, etapa, ok: true }, "✓ Aprobado")} className="grad-gold" style={{ ...botonOro, opacity: nota.trim() ? .5 : 1 }}>✓ Está bien, seguir</button>
         <button disabled={!nota.trim()} onClick={() => onOrden("revisar", { id: h.id, etapa, ok: false, nota: nota.trim() }, "Cambios enviados")} style={{ ...botonSec, color: "#F59E0B", opacity: nota.trim() ? 1 : .5 }}>Pedir estos cambios</button>
       </div>
+    </div>);
+}
+
+function AnimaticRemoto({ link }) {
+  const [ver, setVer] = useState(false);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <button onClick={() => setVer(v => !v)} style={{ ...botonSec, alignSelf: "flex-start" }}>{ver ? "Ocultar el animatic" : "Ver el animatic"}</button>
+      {ver && <VideoDrive link={link} />}
     </div>);
 }
 

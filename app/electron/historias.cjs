@@ -150,6 +150,11 @@ function argsSeguros(a) {
 }
 
 // ------------------------------------------------------------------ llamadas
+// v3.43.3: cuándo cambió lo que se ve desde fuera (voz y animatic): si es más nuevo que la copia de Drive, se vuelve a subir
+const revMs = (c) => {
+  const ms = (f) => { try { return Math.round(fs.statSync(f).mtimeMs); } catch (e) { return 0; } };
+  return { voces: ms(path.join(c, "audio", "mezcla.wav")), animatic: ms(path.join(c, "animatic.mp4")) };
+};
 ipcMain.handle("historias-lista", async () => {
   if (!existe(histDir())) return { ok: false, error: "No encuentro " + histDir() + " (Ajustes → Carpetas)" };
   const ids = fs.readdirSync(histDir()).filter(n => /^\d{2}_[\w-]+$/.test(n)).sort().reverse();
@@ -157,7 +162,7 @@ ipcMain.handle("historias-lista", async () => {
     try {
       const est = estudioDe(carpetaDe(id));
       return { ...resumen(id), etapas: etapasDe(id).map(x => ({ id: x.id, estado: x.estado })), legado: !est.creado,
-        drive: est.drive || null, driveRevision: est.driveRevision || {} };
+        drive: est.drive || null, driveRevision: est.driveRevision || {}, revMs: revMs(carpetaDe(id)) };
     } catch (e) { return { id, error: e.message }; }
   }) };
 });
@@ -893,8 +898,9 @@ ipcMain.handle("estudio-drive-subir", async (e, id, token, perfilNombre, que) =>
       hechos.push(r);
     }
     const est = estudioDe(c), carpetaUrl = "https://drive.google.com/drive/folders/" + hechos[0].carpeta;
-    if (que === "short") est.drive = { fecha: new Date().toISOString(), carpeta: carpetaUrl, archivos: hechos.map(h => ({ nombre: h.nombre, tam: h.tam, ver: h.ver, bajar: h.bajar, verificado: h.verificado })) };
-    else est.driveRevision = { ...(est.driveRevision || {}), [que]: { fecha: new Date().toISOString(), ver: hechos[0].ver, bajar: hechos[0].bajar } };
+    // (v3.43.3) con el id y el md5 de cada archivo: la app reproduce el animatic desde Drive y el portátil baja los Shorts
+    if (que === "short") est.drive = { fecha: new Date().toISOString(), carpeta: carpetaUrl, nombreCarpeta: tituloArchivo(t), archivos: hechos.map(h => ({ id: h.id, md5: h.md5, nombre: h.nombre, tam: h.tam, ver: h.ver, bajar: h.bajar, verificado: h.verificado })) };
+    else est.driveRevision = { ...(est.driveRevision || {}), [que]: { fecha: new Date().toISOString(), id: hechos[0].id, tam: hechos[0].tam, ver: hechos[0].ver, bajar: hechos[0].bajar } };
     guardarEstudio(c, est);
     // equipo de paso (el ordenador): con el Short ya en Drive y comprobado, se borra lo pesado de este equipo
     if (que === "short" && ajustes().equipoDePaso && !esOrigen() && hechos.every(h => h.verificado)) {
@@ -907,6 +913,29 @@ ipcMain.handle("estudio-drive-subir", async (e, id, token, perfilNombre, que) =>
   } catch (x) {
     return { ok: false, error: x.message };
   } finally { subiendo.delete(clave); }
+});
+
+/* v3.43.3 (pedido del 2-11): TODAS las historias terminadas se guardan también en el portátil, en Vídeos RDR\Editados\
+ * RandomHistorias\<TÍTULO>\ (vídeo + miniatura), aunque las termine el ordenador (que, como equipo de paso, las sube a Drive y las borra). El portátil las baja de Drive; se apunta lo bajado para no volver a bajar lo que borres a mano. */
+const idDeDrive = (ver) => (String(ver || "").match(/\/d\/([\w-]+)/) || [])[1] || null;
+let bajandoEntrega = false;
+ipcMain.handle("estudio-entrega-bajar", async (e, token, d) => {
+  const archivos = ((d && d.archivos) || []).map(a => ({ ...a, id: a.id || idDeDrive(a.ver) })).filter(a => a.id && a.nombre);
+  const mp4 = archivos.find(a => /\.mp4$/i.test(a.nombre));
+  if (!mp4) return { ok: false, error: "Sin vídeo en Drive" };
+  const nombre = path.basename(String(d.nombreCarpeta || mp4.nombre.replace(/\.mp4$/i, "")));
+  const dir = path.join(listasDir(), nombre), reg = path.join(estudioDir(), "entregas_bajadas.json"), hechas = leerJson(reg, {});
+  if (hechas[mp4.id]) return { ok: true, bajado: false };
+  const apuntar = () => { hechas[mp4.id] = { carpeta: nombre, fecha: new Date().toISOString() }; escribirJson(reg, hechas); };
+  if (existe(path.join(dir, path.basename(mp4.nombre)))) { apuntar(); return { ok: true, bajado: false }; }
+  if (bajandoEntrega) return { ok: false, error: "Ya se está bajando otra" };
+  bajandoEntrega = true;
+  try {
+    for (const a of archivos) { const f = path.join(dir, path.basename(a.nombre)); if (!existe(f)) await drive.bajar(token, a.id, f, a.md5 || null); }
+    apuntar();
+    return { ok: true, bajado: true, carpeta: dir };
+  } catch (x) { return { ok: false, error: x.message }; }
+  finally { bajandoEntrega = false; }
 });
 
 /* v3.39: el KIT viaja con RandomStudio. Cada versión lleva dentro el código del proyecto de historias del portátil
