@@ -358,6 +358,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   tarea = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0 };
   let resto = "", final = "", fallo = false;
   const linea = (l) => {
+    if (tarea) tarea.actividad = Date.now();          // (v3.41.8) para el vigilante: Claude sigue dando señales
     let j; try { j = JSON.parse(l); } catch (e) { return; }
     if (j.type === "assistant" && j.message && Array.isArray(j.message.content)) {
       for (const c of j.message.content) {
@@ -386,6 +387,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
     } catch (e) {}
     // v3.40.4: si se paró por el límite de Claude, se dice a qué hora reintentar (la app la retoma sola entonces)
     const limite = ok ? 0 : claude.limiteDe(final + "\n" + err);
+    if (t && t.atascada) final = "Se quedó atascada " + t.atascada + " min sin avanzar (" + (t.accion || "") + "): se cortó y se reintenta sola. " + final;
     emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), cancelada: !!(t && t.cancelada), ...(limite ? { limite } : {}) });
     tarea = null;
     trasEtapa(t, id, ok, etapa);
@@ -482,6 +484,17 @@ async function instantanea(sender, id, etapa) {
   } catch (e) {} finally { empaquetando = null; }
 }
 /** Tras una etapa: la copia de relevo (si toca) y luego lo de siempre (la siguiente etapa y la cola). */
+/* v3.41.8 VIGILANTE: una etapa de Claude que pasa mucho rato sin dar ninguna señal (p. ej. esperando en un bucle a un
+ * archivo que no llega) se corta y se reintenta sola a los 2 min, como cualquier fallo. Lo de Blender puede tardar
+ * de verdad (fotos de 60 planos), así que con Blender se le dan 45 min; con lo demás, 15. */
+setInterval(() => {
+  if (!tarea || tarea.tipo !== "agente" || !tarea.proc || tarea.atascada) return;
+  const quieto = Date.now() - (tarea.actividad || tarea.inicio);
+  if (quieto < (/^Blender/.test(tarea.accion || "") ? 45 : 15) * 60000) return;
+  tarea.atascada = Math.round(quieto / 60000);
+  try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (e) {}
+}, 60000);
+
 // v3.41.4: con una actualización esperando, al terminar la etapa en marcha no se encadena la siguiente (la app se
 // actualiza y, al volver, la historia sigue sola por donde iba)
 let sinEncadenar = false;
@@ -509,7 +522,8 @@ function apartar(id) {
 // v3.41.2: copia al momento (al pasar una historia preparada al portátil, con las revisiones ya aprobadas)
 ipcMain.handle("estudio-relevo-preparar", async (e, id) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id))) return { ok: false, error: "historia no válida" };
-  if (tarea || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
+  // v3.41.8: se puede con otra historia en marcha (la copia es solo leer y comprimir); con esta misma, no
+  if ((tarea && tarea.id === id) || empaquetando) return { ok: false, error: "Esa historia está en marcha" };
   await instantanea(null, id, "voces");
   return existe(path.join(relevoDir(), id + ".tgz")) ? { ok: true } : { ok: false, error: "No se pudo preparar la copia" };
 });

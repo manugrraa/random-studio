@@ -58,7 +58,7 @@ async function ejecutar(o) {
 let _iniciado = false;
 /* v3.40.1: arrancan al abrir la app (main.jsx), antes de elegir perfil, y siguen igual al cambiar de perfil. Los avisos en
  * pantalla (toast) llegan cuando la ventana principal se monta y se los pasa. */
-let _toast = null, _base = null, _ultimoFallo = null;
+let _toast = null, _base = null, _ultimoFallo = null, _basePendiente = null, _instalarBase = null;
 const toast = (m) => { if (_toast) _toast(m); };
 export function iniciarRemotoEscritorio(t) {
   if (t) _toast = t;
@@ -141,6 +141,16 @@ export function iniciarRemotoEscritorio(t) {
   // v3.41.3: los recursos del proyecto, iguales en todos los equipos (el portátil los sube a Drive si cambian; los demás
   // los bajan cuando su huella no coincide y están libres). Con la base nueva, las historias paradas se vuelven a intentar.
   let baseOcupada = false, baseMirada = 0;
+  _instalarBase = async () => {            // (lo llama el trabajador entre etapas)
+    const pb = _basePendiente; if (!pb || baseOcupada) return false;
+    _basePendiente = null; baseOcupada = true;
+    try {
+      toast("📦 Pongo al día el kit y los recursos (del " + pb.o.nombre + ") antes de seguir…");
+      const r = await s.baseInstalar(await driveTokenTrabajo(), pb.o.base);
+      if (r && r.ok) { const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m); }
+      return !!(r && r.ok);
+    } catch (e) { return false; } finally { baseOcupada = false; }
+  };
   const igualarBase = async (otros, t) => {
     if (baseOcupada || !s.baseEstado || !driveConectadoTrabajo() || Date.now() - baseMirada < 5 * 60000) return;
     baseMirada = Date.now(); baseOcupada = true;
@@ -153,7 +163,9 @@ export function iniciarRemotoEscritorio(t) {
         return;
       }
       const o = otros.find(x => x.base && x.base.archivo);
-      if (!o || (b.instalada && b.instalada.huella === o.base.huella) || (t && t.activa)) return;
+      if (!o || (b.instalada && b.instalada.huella === o.base.huella)) { _basePendiente = null; return; }
+      // v3.41.8: ocupado ahora: se apunta y se instala en el primer hueco entre etapas (lo hace la vuelta del trabajador)
+      if (t && t.activa) { _basePendiente = { o, b }; return; }
       toast("📦 Bajando los recursos del proyecto (efectos, música, texturas) de " + o.nombre + "…");
       const r = await s.baseInstalar(await driveTokenTrabajo(), o.base);
       if (!r || !r.ok) { toast("❌ No pude bajar los recursos: " + ((r && r.error) || "")); return; }
@@ -291,6 +303,12 @@ export function iniciarTrabajador(t) {
   if (_trabajador || !s || !s.estudioCrear) return;
   _trabajador = true;
   let ocupadoCogiendo = false, ultimoAviso = {};
+  const detalles = {};
+  const avisarDetalle = (pid, det) => {
+    if (detalles[pid] === det) return;
+    detalles[pid] = det;
+    pedidosApi("POST", { accion: "estado", id: Number(pid), estado: "trabajando", detalle: det }).catch(() => { delete detalles[pid]; });
+  };
   const avisarPedido = (id, estado, extra) => {
     const k = id + estado;
     if (ultimoAviso[k]) return Promise.resolve();
@@ -387,6 +405,8 @@ export function iniciarTrabajador(t) {
     if (!navigator.onLine || ocupadoCogiendo) return;
     let aj, t, l;
     try { [aj, t, l] = await Promise.all([s.estudioAjustes(), s.historiasTareaEstado(), s.historiasLista()]); } catch (e) { return; }
+    // v3.41.8: kit y recursos nuevos del portátil esperando: se instalan en este hueco, antes de empezar nada
+    if (_basePendiente && _instalarBase && !(t && t.activa)) { await _instalarBase(); return; }
     const m = mios(), w = esperas();
     // 0) lo que esperaba al límite de Claude: a su hora, sigue (de uno en uno, y solo si estoy disponible y libre)
     const vencida = Object.keys(w).find(k => w[k] <= Date.now());
@@ -440,11 +460,13 @@ export function iniciarTrabajador(t) {
       }
     }
     guardarMios(m);
+    // v3.41.8: el pedido dice el estado real de las que esperan aquí (antes se quedaba «voces» aunque estuviera parada)
+    for (const b of blender) avisarDetalle(b.pid, "preparada · espera para animarse");
     // 2) seguir la empezada antes de coger nada nuevo. Lo de Blender (escena, animatic, render, montaje) es del portátil:
     // el ordenador, al terminar de prepararla, se la pasa si el portátil puede animarla (y si no, la anima él)
     // v3.41.7: en el ordenador, cada historia preparada se ofrece al portátil (cada 5 min como mucho, de una en una)
-    if (_disponible && revisadoRelevo && !(t && t.activa)) {
-      const of = blender.find(b => Date.now() - (b.x.ofrecida || 0) > 5 * 60000);
+    if (_disponible && revisadoRelevo) {
+      const of = blender.find(b => Date.now() - (b.x.ofrecida || 0) > 5 * 60000 && !(t && t.activa && t.id === b.h.id));
       if (of) {
         of.x.ofrecida = Date.now(); guardarMios(m);
         const r = await pasarAlPortatil(of.pid, of.h.id).catch(() => null);
