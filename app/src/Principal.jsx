@@ -12,6 +12,7 @@ import { AdminView, esAdmin, useRolEquipo, useSolicitudesPendientes } from "./ad
 import { iniciarRemotoEscritorio, iniciarTrabajador } from "./remoto";
 import { AvisoActualizacion } from "./actualizar";
 import { UsoClaude } from "./uso_claude";
+import { EstadoHistoriasLateral } from "./cola";
 import { RandomChatView, useSesionChat } from "./randomchat";
 import { ConfigView, GlobalSearch } from "./ajustes";
 import { BarraLateral } from "./navegacion";
@@ -1088,6 +1089,7 @@ export function App() {
         {!plegada && <button onClick={syncNow} disabled={manualSyncing} className="rs-icon-btn" style={{width:26,height:24,flex:"0 0 auto",margin:0,padding:0}} title={syncMode==="manual"?"Sincronizar ahora (subir y bajar)":"Sincronizar ahora"}>
           <span className={manualSyncing?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span></button>}
       </div>
+      <EstadoHistoriasLateral plegada={plegada} toast={toast}/>
       {window.studioFS && <div className="fila"><UsoClaude compacto={plegada} lateral/></div>}
     </>);
   })();

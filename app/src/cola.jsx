@@ -1,6 +1,6 @@
 import React from "react";
 const { useState, useEffect, useCallback } = React;
-import { alCambiarDisponible, disponible, pararTodo, pedidosApi, ponerDisponible } from "./remoto";
+import { alCambiarDisponible, disponible, enTodosLosEquipos, guardarParado, pedidosApi, ponerDisponible } from "./remoto";
 import { alTimbre } from "./timbre";
 
 /* ============================ COLA DE TRABAJO (v3.33) ============================
@@ -22,34 +22,66 @@ export function useDisponible() {
   return d;
 }
 
-/** El botón «Disponible / No disponible» de ESTE equipo (solo escritorio). */
+/** El estado de ESTE equipo junto a «Parar / Reanudar todo» (solo escritorio).
+ * Disponible: botón verde; al pulsarlo deja de coger trabajo nuevo pero termina lo que tiene (parada suave).
+ * Parado: solo se informa (la acción es «Reanudar todo», al lado). */
 export function BotonDisponible() {
   const d = useDisponible();
   if (!window.studioFS) return null;
+  if (!d) return <span className="rs-chip" title="Este equipo no coge trabajo. Pulsa «Reanudar todo» para que siga."><span className="punto" style={{ background: "var(--text-3)" }} />Parado</span>;
   return (
-    <button onClick={() => ponerDisponible(!d)} title={d ? "Este equipo coge trabajo de la cola. Pulsa para dejar de cogerlo." : "Este equipo no coge trabajo nuevo. Pulsa para ponerlo disponible."}
-      className={"rs-btn" + (d ? " ok" : "")}>
-      <span style={{ width: 8, height: 8, borderRadius: 8, background: d ? "var(--green)" : "var(--text-3)" }} />
-      {d ? "Disponible" : "No disponible"}
+    <button onClick={() => { guardarParado(true); ponerDisponible(false); }} className="rs-btn ok"
+      title="Este equipo coge trabajo de la cola. Pulsa para que termine lo que está haciendo y no coja más.">
+      <span style={{ width: 8, height: 8, borderRadius: 8, background: "var(--green)" }} />Disponible
     </button>);
 }
 
-
-/** v3.38.2: parar todo en ESTE equipo (p. ej. antes de apagarlo): deja de coger trabajo y para lo que esté haciendo.
- * Lo hecho se queda; al volver a ponerlo disponible (o al abrir RandomStudio otro día) la historia sigue sola. */
+/** v3.38.2 / v3.43.1: PARAR TODO y REANUDAR TODO, en todos los equipos a la vez (este y los demás que estén encendidos).
+ * Parar: dejan de coger trabajo y paran lo que estén haciendo; lo hecho se queda. La parada se recuerda aunque se reinicien.
+ * Reanudar: vuelven a coger trabajo y siguen cada historia por donde iba. */
 export function BotonPararTodo({ toast }) {
-  const [parando, setParando] = useState(false);
+  const d = useDisponible();
+  const [haciendo, setHaciendo] = useState(false);
   if (!window.studioFS || !window.studioFS.historiasPararTodo) return null;
+  const hacer = async (que) => {
+    if (que === "parar_todo" && !confirm("¿Parar todo?\n\nTodos los equipos encendidos dejan de coger trabajo y paran lo que estén haciendo. Lo hecho se queda guardado.\n\nSeguirán parados (aunque se reinicien) hasta que pulses «Reanudar todo».")) return;
+    setHaciendo(true);
+    try {
+      const otros = await enTodosLosEquipos(que);
+      const y = otros ? " (y " + otros + " equipo" + (otros > 1 ? "s" : "") + " más)" : "";
+      if (toast) toast(que === "parar_todo" ? "⏹ Todo parado" + y + ". No se gastan tokens hasta que reanudes." : "▶ Reanudado" + y + ": las historias siguen por donde iban.");
+    } catch (e) { if (toast) toast("❌ " + e.message); }
+    setHaciendo(false);
+  };
+  return d
+    ? <button disabled={haciendo} onClick={() => hacer("parar_todo")} className="rs-btn danger"
+        title="Para todos los equipos y deja de gastar tokens (lo hecho se queda; sigue al reanudar)">{haciendo ? "Parando…" : "⏹ Parar todo"}</button>
+    : <button disabled={haciendo} onClick={() => hacer("reanudar_todo")} className="rs-btn primary"
+        title="Todos los equipos vuelven a coger trabajo y siguen las historias por donde iban">{haciendo ? "Reanudando…" : "▶ Reanudar todo"}</button>;
+}
+
+/** v3.43.1: en la barra lateral (cualquier apartado), el estado de las historias en este equipo y el atajo para parar o
+ * reanudar todo sin tener que ir a RandomHistorias (p. ej. antes de dormir). */
+export function EstadoHistoriasLateral({ plegada, toast }) {
+  const d = useDisponible();
+  const [haciendo, setHaciendo] = useState(false);
+  if (!window.studioFS || !window.studioFS.historiasPararTodo) return null;
+  const que = d ? "parar_todo" : "reanudar_todo";
+  const pulsar = async () => {
+    if (d && !confirm("¿Parar todo?\n\nTodos los equipos encendidos dejan de coger trabajo y paran lo que estén haciendo. Lo hecho se queda guardado.\n\nSeguirán parados hasta que pulses «Reanudar todo».")) return;
+    setHaciendo(true);
+    try { const otros = await enTodosLosEquipos(que); if (toast) toast((d ? "⏹ Todo parado" : "▶ Reanudado") + (otros ? " (y " + otros + " equipo" + (otros > 1 ? "s" : "") + " más)" : "")); }
+    catch (e) { if (toast) toast("❌ " + e.message); }
+    setHaciendo(false);
+  };
   return (
-    <button disabled={parando} onClick={async () => {
-      if (!confirm("¿Parar todo en este equipo?\n\nDeja de coger trabajo y para lo que esté haciendo. Lo hecho se queda guardado: cuando lo vuelvas a poner disponible (o abras RandomStudio otro día), sigue solo por donde iba.")) return;
-      setParando(true);
-      try { const r = await pararTodo(); if (toast) toast(r && r.parados ? "⏹ Parado. Ya puedes apagar el equipo." : "⏹ No había nada en marcha. Ya puedes apagar el equipo."); }
-      catch (e) { if (toast) toast("❌ " + e.message); }
-      setParando(false);
-    }} title="Para lo que esté haciendo este equipo y deja de coger trabajo (para apagarlo tranquilo)"
-      className="rs-btn danger">
-      {parando ? "Parando…" : "Parar todo"}</button>);
+    <div className="fila">
+      <button onClick={pulsar} disabled={haciendo} title={d ? "Historias en marcha · pulsa para PARAR todo (todos los equipos)" : "Historias paradas · pulsa para REANUDAR todo"}>
+        <span className="sync-dot" style={{ background: d ? "var(--green)" : "var(--text-3)" }} />
+        {!plegada && <span className="txt">{d ? "Historias en marcha" : "Historias paradas"}</span>}
+        {!plegada && <span style={{ fontSize: 11, fontWeight: 700, color: d ? "var(--red)" : "var(--gold)" }}>{haciendo ? "…" : d ? "Parar" : "Reanudar"}</span>}
+      </button>
+    </div>);
 }
 
 /** Pedir trabajo a la cola desde cualquier equipo (también el móvil): una historia con tu propia idea, o que piensen ideas.

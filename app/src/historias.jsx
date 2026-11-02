@@ -808,6 +808,10 @@ export function HistoriasRemoto({ toast, incrustado }) {
             if (!confirm("¿Parar todo en todos los equipos?\n\nDejan de coger trabajo y paran lo que estén haciendo. Lo hecho se queda: cuando vuelvan a estar disponibles, siguen solos.")) return;
             equipos.filter(e => e.en_linea).forEach(e => ordenA(e, "parar_todo", {}, "⏹ Parando " + corto(e.nombre) + "…"));
           }} style={{ ...botonSec, padding: "6px 10px", fontSize: 12, color: "var(--red)", borderColor: "rgba(248,113,113,.4)" }}>⏹ Parar todo</button>)}
+        {/* v3.43.1: y para volver a ponerlos a trabajar (p. ej. por la mañana) */}
+        {equipos.some(e => e.en_linea && !e.datos.tarea && e.datos.disponible === false) && (
+          <button onClick={() => equipos.filter(e => e.en_linea && e.datos.disponible === false).forEach(e => ordenA(e, "reanudar_todo", {}, "▶ Reanudando " + corto(e.nombre) + "…"))}
+            style={{ ...botonSec, padding: "6px 10px", fontSize: 12, color: "var(--green)", borderColor: "rgba(74,222,128,.45)" }}>▶ Reanudar todo</button>)}
         {equipos.length === 0 && <span style={{ fontSize: 12.5, color: "#F59E0B", fontWeight: 600 }}>Ningún equipo conectado: lo que pidas espera en la cola.</span>}
         {equipos.map(e => {
           const t = e.datos.tarea, cap = e.datos.capacidad || {};

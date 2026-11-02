@@ -126,9 +126,15 @@
   .rs-seg { display:inline-flex; gap:2px; padding:3px; border-radius:var(--r-m); background:var(--bg-2); border:1px solid var(--border); max-width:100%; overflow-x:auto; }
   .rs-seg > button { display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 12px; border-radius:7px; font-size:12.5px; font-weight:600; color:var(--text-2); white-space:nowrap; }
   .rs-seg > button:not(:disabled):hover { color:var(--text); filter:none; }
-  .rs-seg > button.on { background:var(--card-2); color:var(--text); box-shadow:var(--sombra-1); }
+  .rs-seg > button.on { background:var(--gold-soft); color:var(--gold); box-shadow:inset 0 0 0 1px var(--border-gold); }
   .rs-seg > button .n { font-size:10.5px; font-weight:700; color:var(--text-3); background:var(--card); border-radius:6px; padding:1px 6px; }
   .rs-seg > button.on .n { color:var(--gold); }
+  /* Filtros en pastilla (Todas, Te toca, En marcha…): tienen que parecer botones, no información.
+     Sin elegir: fondo y borde visibles; elegido: dorado lleno (v3.43.1, a petición de Manu). */
+  .rh-tab { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 13px; border-radius:999px; font-size:12.5px; font-weight:700;
+    color:var(--text-2); background:var(--card); border:1px solid var(--border-2); white-space:nowrap; flex-shrink:0; }
+  .rh-tab:not(:disabled):hover { color:var(--text); border-color:var(--text-3); background:var(--card-hover); filter:none; }
+  .rh-tab.on, .rh-tab.on:not(:disabled):hover { color:#141414; background:var(--gold); border-color:transparent; }
   /* Tarjeta: un nivel con borde; lo de dentro, sin borde y un tono más claro */
   .rs-card { background:var(--bg-2); border:1px solid var(--border); border-radius:var(--r-l); padding:18px; }
   .rs-card.flat { background:var(--card-2); border-color:transparent; }

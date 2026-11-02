@@ -21,6 +21,19 @@ function consejo(u) {
   return "Hay margen: puedes pedir historias con tranquilidad.";
 }
 
+/** En la barra lateral: una fila por ventana, con la barra estirada al ancho que haya (nunca se sale). */
+function FilaLateral({ nombre, v }) {
+  if (!v) return null;
+  return (
+    <span style={{ display: "grid", gridTemplateColumns: "44px 1fr 34px", alignItems: "center", gap: 6, width: "100%" }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-3)" }}>{nombre}</span>
+      <span style={{ height: 5, borderRadius: 4, background: "var(--border)", overflow: "hidden", display: "block" }}>
+        <span style={{ display: "block", height: "100%", width: v.pct + "%", background: color(v.pct), borderRadius: 4 }} />
+      </span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: color(v.pct), fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{v.pct}%</span>
+    </span>);
+}
+
 function Barra({ nombre, v }) {
   if (!v) return null;
   return (
@@ -56,13 +69,27 @@ export function UsoClaude({ uso, compacto, lateral }) {
       + "\n· Semana: " + (d.semana ? d.semana.pct + "% (se restablece " + cuando(d.semana.reinicio) + ")" : "—")
       + "\n\n" + consejo(d) + (propio ? "\n\nPulsa para actualizar." : "")
     : "Uso de Claude: " + (d.error || "no disponible");
+  if (lateral) {
+    // plegada: solo el porcentaje más alto, con su color; desplegada: «Claude» y una fila por ventana
+    const max = d.ok ? Math.max((d.cinco && d.cinco.pct) || 0, (d.semana && d.semana.pct) || 0) : null;
+    return (
+      <button onClick={() => propio && leer(true)} title={titulo} className="uso-claude"
+        style={{ display: "flex", flexDirection: compacto ? "row" : "column", alignItems: compacto ? "center" : "stretch", gap: 3, width: "100%",
+          opacity: leyendo ? 0.6 : 1, cursor: propio ? "pointer" : "default", padding: "3px 6px", margin: "0 -6px", borderRadius: 7 }}>
+        {compacto
+          ? <span style={{ fontSize: 10.5, fontWeight: 800, color: max == null ? "var(--text-3)" : color(max), margin: "0 auto", fontVariantNumeric: "tabular-nums" }}>{max == null ? "—" : max + "%"}</span>
+          : <>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", textAlign: "left" }}>Uso de Claude</span>
+              {d.ok ? <><FilaLateral nombre="5 h" v={d.cinco} /><FilaLateral nombre="Semana" v={d.semana} /></>
+                : <span style={{ fontSize: 11, color: "var(--text-3)", textAlign: "left" }}>sin datos</span>}
+            </>}
+      </button>);
+  }
   return (
     <button onClick={() => propio && leer(true)} title={titulo} className="uso-claude"
-      style={lateral
-        ? { display: "flex", alignItems: "center", gap: 8, opacity: leyendo ? 0.6 : 1, cursor: propio ? "pointer" : "default", whiteSpace: "nowrap", width: "100%" }
-        : { display: "flex", alignItems: "center", gap: 9, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 11,
+      style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 11,
             padding: "6px 10px", opacity: leyendo ? 0.6 : 1, cursor: propio ? "pointer" : "default", whiteSpace: "nowrap" }}>
-      {!compacto && <span style={{ fontSize: 12, fontWeight: 700, color: lateral ? "var(--text-2)" : "var(--gold)" }}>Claude</span>}
+      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>Claude</span>
       {d.ok ? <><Barra nombre="5h" v={d.cinco} />{!compacto && <Barra nombre="Semana" v={d.semana} />}</>
         : <span style={{ fontSize: 11, color: "var(--text-3)" }}>sin datos</span>}
     </button>);

@@ -47,6 +47,7 @@ async function ejecutar(o) {
     // (v3.38.1: ya no hay orden «crear»: toda historia nueva pasa por la cola, que es la que impide repetirlas)
     case "borrar": return borrarHistoria(a.id);
     case "parar_todo": return pararTodo();
+    case "reanudar_todo": return reanudarTodo();
     case "drive_subir": return s.estudioDriveSubir(a.id, await driveTokenTrabajo(), perfilDrive(), a.que || "short");
     case "ajustes": return s.estudioAjustes(a.nuevos || {});
     case "instalar_git": return s.instalarGit ? s.instalarGit() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
@@ -254,12 +255,38 @@ export async function pedidosApi(metodo, cuerpo) {
   return j;
 }
 
-/** Parar todo en ESTE equipo: deja de coger trabajo y para lo que esté haciendo (lo hecho se queda). */
+/** Parar todo en ESTE equipo: deja de coger trabajo y para lo que esté haciendo (lo hecho se queda).
+ * v3.43.1: la parada se RECUERDA (también si el equipo se reinicia o se actualiza) hasta pulsar «Reanudar todo»: antes, al
+ * reabrir RandomStudio volvía a estar disponible solo y seguía gastando tokens por la noche. */
 let _parando = 0;
+const K_PARADO = "rs_equipo_parado";
+const leerParado = () => { try { return localStorage.getItem(K_PARADO) === "1"; } catch (e) { return false; } };
+export function guardarParado(v) { try { if (v) localStorage.setItem(K_PARADO, "1"); else localStorage.removeItem(K_PARADO); } catch (e) {} }
 export async function pararTodo() {
+  guardarParado(true);
   ponerDisponible(false);
   _parando = Date.now();          // lo que se corte ahora no cuenta como fallo: mañana sigue sola
-  return SF().historiasPararTodo ? SF().historiasPararTodo() : { ok: true };
+  return SF() && SF().historiasPararTodo ? SF().historiasPararTodo() : { ok: true };
+}
+/** Reanudar todo en ESTE equipo: vuelve a coger trabajo y sigue las historias por donde se quedaron. */
+export async function reanudarTodo() {
+  guardarParado(false);
+  try { if (SF() && SF().historiasPausarEncadenado) await SF().historiasPausarEncadenado(false); } catch (e) {}
+  ponerDisponible(true);
+  return { ok: true };
+}
+/** Parar o reanudar TODOS los equipos: este directamente y los demás (en línea) con una orden. Devuelve cuántos otros. */
+export async function enTodosLosEquipos(que) {
+  if (window.studioFS) await (que === "parar_todo" ? pararTodo() : reanudarTodo());
+  let otros = 0;
+  try {
+    const r = await remotoApi("GET");
+    for (const e of (r.equipos || [])) {
+      if (!e.en_linea || e.id === r.yo || !(e.datos && e.datos.historias)) continue;
+      try { await remotoApi("POST", { accion: "orden", para: e.id, que, args: {} }); otros++; } catch (x) {}
+    }
+  } catch (x) {}
+  return otros;
 }
 
 /** Borra una historia de ESTE equipo (a su papelera) y la quita de la cola compartida para que se pueda volver a pedir. */
@@ -269,8 +296,8 @@ export async function borrarHistoria(id) {
   return r;
 }
 
-/* Disponible para trabajar: al abrir RandomStudio siempre empieza en «disponible»; el botón lo cambia hasta cerrar. */
-let _disponible = true;
+/* Disponible para trabajar: al abrir RandomStudio empieza en «disponible», salvo que se dejara PARADO (v3.43.1). */
+let _disponible = !leerParado();
 const _oyentes = new Set();
 export const disponible = () => _disponible;
 export function ponerDisponible(v) { _disponible = !!v; _oyentes.forEach(f => f(_disponible)); }
