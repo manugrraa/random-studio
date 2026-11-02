@@ -27,12 +27,15 @@ function importados(src) {
 }
 
 function scriptsDeHistorias(R) {
-  const h = path.join(R, "historias"), out = [];
-  let ns = []; try { ns = fs.readdirSync(h); } catch (e) { return out; }
-  for (const n of ns) {
-    if (!/^\d{2}_[\w-]+$/.test(n)) continue;
-    let fs2 = []; try { fs2 = fs.readdirSync(path.join(h, n)); } catch (e) { continue; }
-    for (const f of fs2) if (f.endsWith(".py")) out.push(path.join(h, n, f));
+  const out = [];
+  // (v3.45.4) también las que siguió otro equipo (historias/_relevadas): su módulo hay que poder mandárselo
+  for (const h of [path.join(R, "historias"), path.join(R, "historias", "_relevadas")]) {
+    let ns = []; try { ns = fs.readdirSync(h); } catch (e) { continue; }
+    for (const n of ns) {
+      if (!/^\d{2}_[\w-]+$/.test(n)) continue;
+      let fs2 = []; try { fs2 = fs.readdirSync(path.join(h, n)); } catch (e) { continue; }
+      for (const f of fs2) if (f.endsWith(".py")) out.push(path.join(h, n, f));
+    }
   }
   return out;
 }

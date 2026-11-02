@@ -59,7 +59,7 @@ async function ejecutar(o) {
 let _iniciado = false;
 /* v3.40.1: arrancan al abrir la app (main.jsx), antes de elegir perfil, y siguen igual al cambiar de perfil. Los avisos en
  * pantalla (toast) llegan cuando la ventana principal se monta y se los pasa. */
-let _toast = null, _base = null, _kitVivo = null, _basePendiente = null, _instalarBase = null;
+let _toast = null, _base = null, _kitVivo = null, _kitPropio = null, _basePendiente = null, _instalarBase = null;
 // (v3.42.1) el último fallo se guarda: antes vivía en memoria y se perdía al reiniciar la app
 const K_FALLO = "rs_perfil_ultimo_fallo";
 let _ultimoFallo = (() => { try { return JSON.parse(localStorage.getItem(K_FALLO) || "null"); } catch (e) { return null; } })();
@@ -152,6 +152,8 @@ export function iniciarRemotoEscritorio(t) {
       claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,
       // v3.41.3: la base que sube el portátil (los demás la bajan) y el último fallo de este equipo (se ve en «Equipos»)
       base: _base, kitVivo: _kitVivo, ultimoFallo: _ultimoFallo,
+      // v3.45.4: los módulos del kit creados en este equipo (los demás bajan los que les falten)
+      kitPropio: _kitPropio && _kitPropio.archivo ? _kitPropio : null,
     };
     const r = await remotoApi("POST", { accion: "publicar", datos }).catch(() => null);
     if (r) { vigilarOtros(r.otros || []); igualarBase(r.otros || [], t).catch(() => {}); }
@@ -197,12 +199,35 @@ export function iniciarRemotoEscritorio(t) {
     _basePendiente = null; baseOcupada = true;
     try { return await instalarPaquetes(pb); } catch (e) { return false; } finally { baseOcupada = false; }
   };
+  // v3.45.4 KIT PROPIO (ver kit-propio-* en historias.cjs): subir los módulos del kit creados aquí y bajar los de los demás
+  const cambiarKitPropio = async () => {
+    if (!s.kitPropioSubir) return;
+    const tk = await driveTokenTrabajo();
+    const up = await s.kitPropioSubir(tk, _kitPropio);
+    if (up && up.ok) _kitPropio = up.nada ? null : up;
+    const g = await remotoApi("GET").catch(() => null);
+    if (!g) return;
+    let vistos = {}; try { vistos = JSON.parse(localStorage.getItem("rs_kit_propio_visto") || "{}"); } catch (e) {}
+    const puestos = [];
+    for (const e of g.equipos || []) {
+      const kp = e.id !== g.yo && e.datos && e.datos.kitPropio;
+      if (!kp || !kp.archivo || vistos[e.id] === kp.huella) continue;
+      const r = await s.kitPropioRecibir(tk, kp).catch(() => null);
+      if (r && r.ok) { vistos[e.id] = kp.huella; puestos.push(...(r.puestos || [])); }
+    }
+    try { localStorage.setItem("rs_kit_propio_visto", JSON.stringify(vistos)); } catch (e) {}
+    if (puestos.length) {
+      const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m);
+      toast("🧰 Del otro equipo: " + puestos.join(", ") + ". Las historias paradas siguen solas");
+    }
+  };
   const igualarBase = async (otros, t) => {
     if (baseOcupada || !s.baseEstado || !driveConectadoTrabajo() || Date.now() - baseMirada < 3 * 60000) return;
     baseMirada = Date.now(); baseOcupada = true;
     try {
       const b = await s.baseEstado();
       if (!b || !b.ok) return;
+      await cambiarKitPropio().catch(() => {});
       if (b.origen) {
         _base = b.subida || null; _kitVivo = b.subidaKit || null;
         if (!b.subida || b.subida.huella !== b.huella) { const up = await s.baseSubir(await driveTokenTrabajo(), "base"); if (up && up.ok) _base = up; }

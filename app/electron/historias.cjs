@@ -1042,17 +1042,71 @@ function sincronizarKit() {
 }
 app.whenReady().then(() => setTimeout(() => { const r = sincronizarKit(); if (r.puestos) console.log("kit actualizado:", r); rescatarKit(); }, 8000));
 /* v3.45.3: recupera los módulos del kit que usan las historias de este equipo y faltan (ver rescatekit.cjs). El resultado
- * sale en «Equipos» (capacidad.rescateKit). Nunca en el portátil: allí el kit es el original. */
+ * sale en «Equipos» (capacidad.rescateKit). v3.45.4: también en el portátil (solo pone lo que falta). */
 let rescateKit = null;
 function rescatarKit() {
   try {
-    if (esOrigen() || !existe(path.join(raiz(), "kit"))) return null;
+    if (!existe(path.join(raiz(), "kit"))) return null;
     const r = require("./rescatekit.cjs").rescatar(raiz());
     if (r.restaurados.length || r.faltan.length) { rescateKit = r; escribirJson(path.join(estudioDir(), "_rescate_kit.json"), r); console.log("rescate del kit:", r); }
+    else if (rescateKit && (rescateKit.faltan || []).length) rescateKit = null;      // (ya no falta nada: que «Equipos» deje de avisar)
     return r;
   } catch (e) { rescateKit = { fecha: new Date().toISOString(), error: e.message, restaurados: [], faltan: [] }; return null; }
 }
 ipcMain.handle("kit-sincronizar", async () => sincronizarKit());
+
+/* v3.45.4 KIT PROPIO: los módulos del kit que Claude crea en un equipo para una escena (kit/pasos.py, kit/escuela.py…) se
+ * quedaban solo en ese equipo, y la historia no podía rodarse en el otro (la 11 en el portátil). Ahora cada equipo que no
+ * es el portátil sube a Drive los suyos (los que no vienen del kit del portátil) y los demás equipos bajan los que les
+ * faltan, sin pisar nunca uno que ya tengan. En el portátil pasan a ser parte del kit, y con el kit vivo llegan a todos. */
+function kitPropioNombres() {
+  if (esOrigen()) return [];
+  const man = leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {};
+  const delPortatil = new Set([...Object.keys(man.archivos || {}), ...(leerJson(path.join(baseDir(), "kit_lista.json"), []) || [])]);
+  let ns = []; try { ns = fs.readdirSync(path.join(raiz(), "kit")); } catch (e) { return []; }
+  return ns.filter(n => /^\w+\.py$/.test(n) && !n.startsWith("_") && !delPortatil.has("kit/" + n)).sort();
+}
+function kitPropioHuella(ns) {
+  const h = require("crypto").createHash("sha1");
+  for (const n of ns) { h.update(n + "|"); h.update(fs.readFileSync(path.join(raiz(), "kit", n))); }
+  return h.digest("hex").slice(0, 16);
+}
+ipcMain.handle("kit-propio-subir", async (e, token, anterior) => {
+  try {
+    const ns = kitPropioNombres();
+    if (!ns.length) return { ok: true, nada: true };
+    const huella = kitPropioHuella(ns);
+    if (anterior && anterior.huella === huella && anterior.archivo) return { ok: true, ...anterior };
+    fs.mkdirSync(baseDir(), { recursive: true });
+    const f = path.join(baseDir(), "kit_propio.tgz");
+    const r = await tar(["-czf", f, "-C", raiz(), ...ns.map(n => "kit/" + n)]);
+    if (!r.ok) return r;
+    const up = await drive.subir(token, f, ["RandomStudio", "RandomHistorias", "_Base"]);
+    try { fs.unlinkSync(f); } catch (x) {}
+    return { ok: true, archivo: up.id, md5: up.md5, tam: up.tam, huella, nombres: ns, fecha: new Date().toISOString() };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
+ipcMain.handle("kit-propio-recibir", async (e, token, info) => {
+  if (!info || !info.archivo || !Array.isArray(info.nombres)) return { ok: false, error: "Sin paquete" };
+  const faltan = info.nombres.filter(n => /^\w+\.py$/.test(n) && !existe(path.join(raiz(), "kit", n)));
+  if (!faltan.length) return { ok: true, puestos: [] };
+  const tmp = path.join(baseDir(), "kit_propio_recibido");
+  try {
+    fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(tmp, { recursive: true });
+    const f = path.join(tmp, "kit_propio.tgz");
+    await drive.bajar(token, String(info.archivo), f, info.md5 || null);
+    const r = await tar(["-xzf", f, "-C", tmp]);
+    if (!r.ok) return r;
+    const puestos = [];
+    for (const n of faltan) {
+      const de = path.join(tmp, "kit", n), a = path.join(raiz(), "kit", n);
+      if (existe(de) && !existe(a)) { fs.copyFileSync(de, a); puestos.push(n); }
+    }
+    if (puestos.length) rescatarKit();
+    return { ok: true, puestos };
+  } catch (x) { return { ok: false, error: x.message }; }
+  finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (x) {} }
+});
 
 /* v3.38.1: borrar una historia del estudio. Va a la PAPELERA de este equipo (se puede recuperar), nunca se borra del todo.
  * Solo las hechas con el estudio (las 01-08 hechas a mano no se pueden borrar desde aquí) y nunca la que está trabajando.

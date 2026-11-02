@@ -113,6 +113,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   baseEstado: () => ipcRenderer.invoke("base-estado"),
   historiasPausarEncadenado: (v) => ipcRenderer.invoke("historias-pausar-encadenado", v),
   baseSubir: (token, cual) => ipcRenderer.invoke("base-subir", token, cual),
+  kitPropioSubir: (token, anterior) => ipcRenderer.invoke("kit-propio-subir", token, anterior),
+  kitPropioRecibir: (token, info) => ipcRenderer.invoke("kit-propio-recibir", token, info),
   baseInstalar: (token, info, cual) => ipcRenderer.invoke("base-instalar", token, info, cual),
   estudioRelevoBorrar: (id, token, archivo) => ipcRenderer.invoke("estudio-relevo-borrar", id, token, archivo),
   instalarGit: () => ipcRenderer.invoke("instalar-git"),
