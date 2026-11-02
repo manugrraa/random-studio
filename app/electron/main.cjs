@@ -749,13 +749,19 @@ function chatPeticion(method, ruta, body, espera = 3000) {
   });
 }
 
+// 2/11: el chat va con el perfil de los directos (por defecto RDeRandom), no con el perfil abierto en Studio
+const { chatPerfil, ponerChatPerfil, perfilesConCanal } = require("./chatperfil.cjs");
+ipcMain.handle("chat-perfil", async (e, id) => {
+  if (id && !ponerChatPerfil(id)) return { error: "Ese perfil no tiene canal de YouTube" };
+  return { perfil: chatPerfil(), lista: perfilesConCanal() };
+});
 async function chatEstado() {
   const r = await chatPeticion("GET", "/studio/estado");
   if (r.apagado) return { encendido: false };
   if (r.status === 200 && r.data) {
-    const quiere = String(perfilC().carpetasDe().chat || CHAT_DIR).toLowerCase().replace(/[\\/]+$/, "");
+    const quiere = String(perfilC().carpetasDe(chatPerfil()).chat || CHAT_DIR).toLowerCase().replace(/[\\/]+$/, "");
     const tiene = String(r.data.datos || CHAT_DIR).toLowerCase().replace(/[\\/]+$/, "");
-    return { encendido: true, nuestro: true, ...r.data, otroPerfil: quiere !== tiene };
+    return { encendido: true, nuestro: true, ...r.data, otroPerfil: quiere !== tiene, perfilChat: chatPerfil() };
   }
   // Responde pero sin aceptar la clave: una versión antigua del chat (sin rutas /studio)
   return { encendido: true, nuestro: false, error: r.error };
@@ -779,7 +785,7 @@ ipcMain.handle("chat-encender", async () => {
     // ventana ni pestaña, y fuera del árbol de Studio, así que sigue vivo al cerrarlo)
     const ps = `Start-Process -FilePath 'cmd.exe' -ArgumentList '/d','/c','.\\arrancar.cmd' -WorkingDirectory '${CHAT_DIR.replace(/'/g, "''")}' -WindowStyle Hidden`;
     const p = spawn("powershell", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps], { windowsHide: true, stdio: "ignore",
-      env: { ...process.env, RANDOMCHAT_DATOS: perfilC().carpetasDe().chat || CHAT_DIR, RANDOMCHAT_CANAL: perfilC().canalDe(perfilC().perfilActivo()) } });
+      env: { ...process.env, RANDOMCHAT_DATOS: perfilC().carpetasDe(chatPerfil()).chat || CHAT_DIR, RANDOMCHAT_CANAL: perfilC().canalDe(chatPerfil()) } });
     let fallo = null;
     p.on("error", e => { fallo = e; });
     p.unref();
@@ -869,7 +875,7 @@ function abrirChat() {
   if (v.opacidad && v.opacidad < 1) chatWin.setOpacity(Math.max(0.3, v.opacidad));
   if (v.max && !process.env.STUDIO_CAPTURA) chatWin.maximize();
   chatWin.once("ready-to-show", () => { try { if (process.env.STUDIO_CAPTURA) { aPortatil(chatWin); chatWin.showInactive(); } else chatWin.show(); } catch (x) {} });
-  let perfil = "rderandom"; try { perfil = perfilC().perfilActivo() || perfil; } catch (x) {}
+  let perfil = "rderandom"; try { perfil = chatPerfil(); } catch (x) {}     // (su sesión de YouTube: la del perfil del chat)
   chatWin.loadFile(path.join(__dirname, "..", "dist", "index.html"), { hash: "randomchat", search: "perfil=" + encodeURIComponent(perfil) });
   chatWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: "deny" }; });
   chatWin.webContents.on("will-navigate", (e, u) => { if (!u.startsWith("file:")) e.preventDefault(); });

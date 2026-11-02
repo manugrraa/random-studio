@@ -18,8 +18,10 @@ const CANAL = "UCF-3SarqM5bvy3sBT_avssQ";
 const url = canal => process.env.STUDIO_CONTADOR_URL || `https://studio.youtube.com/channel/${canal}/analytics/tab-overview/period-default/explore?entity_type=CHANNEL&entity_id=${canal}&time_period=4_weeks&explore_type=SUBSCRIBERS`;
 // v3.27: por perfil (su canal, sus opciones y su sesión de Google); RDeRandom conserva lo de antes
 const perfilC = () => require("./carpetas.cjs");
-const perfil = () => perfilC().perfilActivo();
-const opcionesFile = () => path.join(perfilC().dirDatos(), "contador.json");
+// 2/11: el del CHAT (el canal de los directos, por defecto RDeRandom), no el perfil abierto en Studio: con RandomHistorias
+// abierto, el contador leía otro canal
+const perfil = () => require("./chatperfil.cjs").chatPerfil();
+const opcionesFile = () => path.join(perfilC().dirDatos(perfil()), "contador.json");
 // el número de la página: el valor NUEVO de cada posición (como su CSS: al subir, el [last]; al bajar, el primero)
 // (v3.29) de TODOS los contadores de la página, el de la caja del número grande; si no, el primero
 const LEER = `(() => { const cs = [...document.querySelectorAll(".counter.yta-smooth-counter")]; if (!cs.length) return null;
@@ -34,7 +36,7 @@ const LEER = `(() => { const cs = [...document.querySelectorAll(".counter.yta-sm
   recorrer(c);
   const d = s.replace(/[^0-9]/g, ""); return d ? Number(d) : null; })()`;
 const CHAT_DIR = process.env.RANDOMCHAT_DIR || "E:\\A RdeRandom\\RandomChat";
-let ultimo = null, enviado = 0, chatOk = null, leidoA = 0;
+let ultimo = null, enviado = 0, chatOk = null, leidoA = 0, numeroA = 0;
 // lo que hay en la página, para afinar la lectura si YouTube cambia (contador-diag.json en los datos del perfil)
 const DIAG = `(() => ({ t: Date.now(), url: location.href.slice(0, 90), vis: document.visibilityState,
   contadores: [...document.querySelectorAll(".counter.yta-smooth-counter")].map(c => ({ clase: c.className,
@@ -69,19 +71,54 @@ function abrirLector() {
   lector.loadURL(url(op.canal || CANAL)).catch(() => {});
   return lector;
 }
+/* 2/11, él: "que el contador funcione correctamente, no como la última vez". Antes el lector solo arrancaba al pulsar
+   «Abrir la ventana del contador» (y tras reiniciar o actualizar Studio se quedaba parado) y, si la sesión de Google no
+   estaba iniciada en Studio, se quedaba en la página de Google sin avisar. Ahora arranca SOLO mientras el chat está
+   encendido, se para a los 3 min de apagarse, y su estado se ve en el RandomChat (leyendo / falta iniciar sesión). */
+const enGoogle = wc => /accounts.google.com|ServiceLogin|signin/i.test(wc.getURL());
+function estadoLector() {
+  const wc = lector && !lector.isDestroyed() ? lector.webContents : null;
+  if (!wc) return "parado";
+  if (enGoogle(wc)) return "sin-sesion";
+  if (!enStudioWc(wc)) return "cargando";
+  return numeroA && Date.now() - numeroA < 30000 ? "leyendo" : "buscando";
+}
+let chatApagadoDesde = 0;
+function chatEncendido() {
+  return new Promise(r => {
+    let clave = ""; try { clave = fs.readFileSync(path.join(CHAT_DIR, "studio.key"), "utf8").trim(); } catch (e) {}
+    const q = require("http").request({ host: "127.0.0.1", port: Number(process.env.RANDOMCHAT_PORT) || 7470, path: "/studio/estado", method: "GET", timeout: 2000,
+      headers: { "x-studio-key": clave } }, res => { res.resume(); r(res.statusCode === 200); });
+    q.on("timeout", () => q.destroy()); q.on("error", () => r(false)); q.end();
+  });
+}
+app.whenReady().then(() => setInterval(async () => {
+  if (process.env.STUDIO_CAPTURA && !process.env.STUDIO_CONTADOR_SOLO) return;
+  const on = await chatEncendido();
+  if (on) { chatApagadoDesde = 0; cargarOp(); if (!lector || lector.isDestroyed() || lectorPerfil !== perfil()) abrirLector(); }
+  else if (lector && !lector.isDestroyed() && !(win && !win.isDestroyed())) {
+    if (!chatApagadoDesde) chatApagadoDesde = Date.now();
+    else if (Date.now() - chatApagadoDesde > 180000) { lector.destroy(); lector = null; chatApagadoDesde = 0; }
+  }
+}, 15000));
 setInterval(async () => {
   // se lee del lector (si no, de la ventana visible); cada 30 s se recarga si lleva 2 min sin leer nada
   const wc = lector && !lector.isDestroyed() && enStudioWc(lector.webContents) ? lector.webContents
     : win && !win.isDestroyed() && enStudio() ? win.webContents : null;
   if (lector && !lector.isDestroyed() && leidoA && Date.now() - leidoA > 120000 && enStudioWc(lector.webContents)) { leidoA = Date.now(); lector.webContents.reload(); }
-  if (!wc) return;
+  if (!wc) {
+    if (lector && !lector.isDestroyed() && Date.now() - diagA > 30000) { diagA = Date.now();
+      try { fs.writeFileSync(path.join(perfilC().dirDatos(perfil()), "contador-diag.json"), JSON.stringify({ t: Date.now(), url: lector.webContents.getURL().slice(0, 90), estado: estadoLector(), ultimo }, null, 1)); } catch (e) {} }
+    return;
+  }
   let n = null;
   try { n = await wc.executeJavaScript(LEER); } catch (e) {}
   if (Date.now() - diagA > 30000) {
     diagA = Date.now();
-    try { const d = await wc.executeJavaScript(DIAG); fs.writeFileSync(path.join(perfilC().dirDatos(), "contador-diag.json"), JSON.stringify({ ...d, leido: n, ultimo }, null, 1)); } catch (e) {}
+    try { const d = await wc.executeJavaScript(DIAG); fs.writeFileSync(path.join(perfilC().dirDatos(perfil()), "contador-diag.json"), JSON.stringify({ ...d, leido: n, ultimo, estado: estadoLector() }, null, 1)); } catch (e) {}
   }
   if (n == null) return;
+  numeroA = Date.now();
   if (n !== ultimo) leidoA = Date.now(); else if (!leidoA) leidoA = Date.now();
   if (n !== ultimo || Date.now() - enviado > 15000) { ultimo = n; enviado = Date.now(); mandarAlChat(n); }
 }, 1000);
@@ -219,6 +256,9 @@ ipcMain.handle("contador-meta", async (e, nuevas) => {
 ipcMain.handle("contador-estado", async () => { cargarOp();
   const mia = !!((win && !win.isDestroyed() && winPerfil === perfil()) || (lector && !lector.isDestroyed() && lectorPerfil === perfil()));
   const lee = !!(lector && !lector.isDestroyed() && enStudioWc(lector.webContents)) || !!enStudio();
-  return { abierta: mia, enStudio: mia && lee, n: mia ? ultimo : null, chat: chatOk, visible: !!(win && !win.isDestroyed() && win.isVisible()), op }; });
+  return { abierta: mia, enStudio: mia && lee, n: mia ? ultimo : null, chat: chatOk, visible: !!(win && !win.isDestroyed() && win.isVisible()), op,
+    estado: estadoLector(), hace: numeroA ? Date.now() - numeroA : null, perfil: perfil() }; });
+// «Iniciar sesión»: la ventana visible (Google pide entrar con la cuenta del canal; lo hace él)
+ipcMain.handle("contador-sesion", async () => { cargarOp(); const w = abrir(); w.show(); w.focus(); abrirLector(); return { ok: true }; });
 // esconder / mostrar la ventana (con la fuente de navegador /suscriptores no hace falta verla)
 ipcMain.handle("contador-ventana", async (e, ver) => { if (win && !win.isDestroyed()) { if (ver) { win.show(); win.focus(); } else win.hide(); } return { ok: true }; });

@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   chatVentanaAjustes: (op) => ipcRenderer.invoke("chatwin-ajustes", op || {}),
   chatModeracion: () => ipcRenderer.invoke("chat-moderacion"),
   chatModerar: (op) => ipcRenderer.invoke("chat-moderar", op || {}),
+  chatPerfil: (id) => ipcRenderer.invoke("chat-perfil", id || null),
+  contadorSesion: () => ipcRenderer.invoke("contador-sesion"),
   onUploadProgress: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("studio-upload-progress", h);

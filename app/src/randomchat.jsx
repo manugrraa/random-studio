@@ -1,7 +1,8 @@
 import React from "react";
 const { useState, useEffect, useRef } = React;
 import { boton } from "./clon";
-import { YT_BACKEND, ytGetTokens, ytIsConnected } from "./datos";
+import { YT_BACKEND, YT_TOKEN_KEY } from "./datos";
+import { almacenDe } from "./perfiles";
 
 /* ============================ RANDOMCHAT (v3.6) ============================
    Él: "implementar el RandomChat dentro de RandomStudio y poder gestionarlo todo desde mi ejecutable,
@@ -26,9 +27,13 @@ const tarjeta = {padding:"14px 16px",border:"1px solid var(--border)",borderRadi
 /* La sesión de YouTube de Studio pasa al chat (solo en su memoria) cuando el chat está encendido y no la tiene.
    Una vez por servidor (pid): si el chat la rechaza (caducada) no se insiste hasta que se reinicie. */
 let sesionEnviadaA = 0;
+// 2/11: la sesión de YouTube del perfil del CHAT (el de los directos, por defecto RDeRandom), abras el perfil que abras
+// (antes iba la del perfil abierto: con RandomHistorias abierto, el chat leía los suscriptores de RandomHistorias)
+function tokensChat(e) { try { return JSON.parse(almacenDe((e && e.perfilChat) || "rderandom").get(YT_TOKEN_KEY) || "null"); } catch(x){ return null; } }
+const chatConYoutube = e => { const t = tokensChat(e); return !!(t && (t.access_token || t.refresh_token)); };
 function pasarSesion(e, toast) {
   if(!e || !e.encendido || !e.nuestro || e.sesionYoutube || sesionEnviadaA===e.pid) return;
-  const t = ytGetTokens();
+  const t = tokensChat(e);
   if(!t || !t.refresh_token) return;
   sesionEnviadaA = e.pid;
   window.studioFS.chatSesion(t.refresh_token, YT_BACKEND).then(r=>{ if(r.error) toast && toast("RandomChat: "+r.error); });
@@ -51,7 +56,8 @@ function Contador({ toast }) {
   const [abierta, setAbierta] = useState(false);
   const [vivo, setVivo] = useState(null);       // { n, chat, enStudio, visible }: lo que lee la ventana ahora
   useEffect(()=>{ window.studioFS.contadorEstado().then(r=>{ setOp(r.op); setAbierta(r.abierta); setVivo(r); }).catch(()=>{}); },[]);
-  useEffect(()=>{ if(!abierta) return; const t = setInterval(()=>window.studioFS.contadorEstado().then(r=>{ setAbierta(r.abierta); setVivo(r); }).catch(()=>{}), 2000); return ()=>clearInterval(t); },[abierta]);
+  // 2/11: el lector arranca solo con el chat encendido: su estado se mira siempre, no solo con la ventana abierta
+  useEffect(()=>{ const t = setInterval(()=>window.studioFS.contadorEstado().then(r=>{ setAbierta(r.abierta); setVivo(r); }).catch(()=>{}), 2000); return ()=>clearInterval(t); },[]);
   const cambiar = patch => { const n = {...op, ...patch}; setOp(n); window.studioFS.contadorMeta(n).then(r=>setAbierta(r.abierta)).catch(()=>{}); };
   if(!op) return null;
   const fila = {display:"flex",alignItems:"center",gap:10,fontSize:13,flexWrap:"wrap"};
@@ -65,11 +71,16 @@ function Contador({ toast }) {
           <button onClick={async()=>{ const r = await window.studioFS.contadorAbrir(op); if(r.ok){ setAbierta(true); toast && toast("Ventana del contador abierta"); } }} style={boton(true)}>
           {abierta ? "Mostrar la ventana" : "Abrir la ventana del contador"}</button></span>
       </div>
-      {abierta && <div style={{...fila,fontSize:13}}>
+      {vivo && <div style={{...fila,fontSize:13}}>
         <b style={{minWidth:150}}>Ahora</b>
-        {vivo && vivo.n != null ? <span style={{fontSize:18,fontWeight:800}}>{Number(vivo.n).toLocaleString("es-ES")}</span>
-          : <span style={{color:"#fbbf24"}}>{vivo && vivo.enStudio ? "Esperando el número…" : "Inicia sesión con la cuenta del canal en la ventana (o con «Conectar Google» de Studio)"}</span>}
-        {vivo && vivo.n != null && <span style={{color: vivo.chat ? "#4ade80" : "#fbbf24"}}>{vivo.chat ? "✓ llega a OBS por el RandomChat" : "el RandomChat está apagado: enciéndelo para la fuente de OBS"}</span>}
+        {vivo.estado==="leyendo" && vivo.n != null ? <>
+            <span style={{fontSize:18,fontWeight:800}}>{Number(vivo.n).toLocaleString("es-ES")}</span>
+            <span style={{color: vivo.chat ? "#4ade80" : "#fbbf24"}}>{vivo.chat ? "✓ en tiempo real, llega a OBS" : "leído, pero no llega al RandomChat"}</span></>
+          : vivo.estado==="sin-sesion" ? <>
+            <span style={{color:"#f87171"}}>Falta iniciar sesión en YouTube Studio con la cuenta del canal: sin eso el número no se mueve</span>
+            <button onClick={()=>window.studioFS.contadorSesion && window.studioFS.contadorSesion()} style={{...boton(true),padding:"4px 10px",fontSize:12}}>Iniciar sesión</button></>
+          : vivo.estado==="buscando" || vivo.estado==="cargando" ? <span style={{color:"#fbbf24"}}>Abriendo YouTube Studio y buscando el número…{vivo.n != null ? ` (el último: ${Number(vivo.n).toLocaleString("es-ES")})` : ""}</span>
+          : <span style={{color:"var(--text-3)"}}>Se pone en marcha solo al encender el RandomChat</span>}
       </div>}
       <div style={{...fila,fontSize:13}}><b style={{minWidth:150}}>Fuente de OBS</b>
         <code style={{color:"var(--text-2)"}}>http://localhost:7470/suscriptores</code>
@@ -95,7 +106,8 @@ function Contador({ toast }) {
         <span style={{color:"var(--text-3)",minWidth:42}}>{op.tamMeta||30} px</span>
         <input type="color" value={op.colorMeta||"#ffffff"} onChange={ev=>cambiar({colorMeta:ev.target.value})} title="Color de la meta"/></label>}
       <div style={{fontSize:12.5,color:"var(--text-2)",lineHeight:1.5}}>
-        Usa la sesión de Google de Studio («Conectar Google» con la cuenta del canal); si te la pide, inicia sesión una vez en esa ventana.
+        Se pone en marcha solo con el RandomChat encendido (no hace falta abrir la ventana) y lee el canal del chat. Si sale «Falta iniciar
+        sesión», pulsa «Iniciar sesión» y entra una vez con la cuenta del canal en esa ventana: se queda guardado.
         En OBS: <b>Fuente de navegador</b> con la URL de arriba (transparente, sin croma; con el RandomChat encendido). Así se actualiza
         aunque la ventana esté minimizada, escondida o detrás de otras. (La captura de ventana con croma magenta sigue valiendo, pero no
         funciona con la ventana minimizada.)
@@ -111,8 +123,11 @@ export function RandomChatView({ toast }) {
   const [verLog, setVerLog] = useState(false);
   const [log, setLog] = useState("");
 
+  const [perfiles, setPerfiles] = useState(null);     // { perfil, lista: [{id, nombre}] }: el canal del chat
+  const nombrePerfil = id => ((perfiles && perfiles.lista.find(p=>p.id===id)) || {}).nombre || (id==="rderandom" || !id ? "RDeRandom" : id);
   const refrescar = async () => { const x = await window.studioFS.chatEstado(); setE(x); pasarSesion(x, toast); return x; };
   useEffect(()=>{ if(!enPC) return; refrescar(); const t = setInterval(refrescar, 3000); return ()=>clearInterval(t); },[]);
+  useEffect(()=>{ if(enPC && window.studioFS.chatPerfil) window.studioFS.chatPerfil().then(r=>r && !r.error && setPerfiles(r)).catch(()=>{}); },[]);
   useEffect(()=>{ lsSet("rds_chat_panel", verPanel?"1":"0"); },[verPanel]);
   useEffect(()=>{
     if(!enPC || !verLog) return;
@@ -160,9 +175,18 @@ export function RandomChatView({ toast }) {
         {on && !e.nuestro && <div style={{fontSize:13,color:"#fbbf24"}}>Está encendido con una versión antigua del chat: apágalo y vuelve a encenderlo desde aquí.</div>}
         {/* v3.27: cada perfil tiene sus datos del chat (carpeta «chat» de Ajustes › Carpetas) y su canal */}
         {on && e.nuestro && e.otroPerfil && <div style={{fontSize:13,color:"#fbbf24",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-          Está encendido con los datos de otro perfil (otro canal).
-          <button disabled={!!ocupado} onClick={()=>accion("encender", async()=>{ await window.studioFS.chatApagar(); return window.studioFS.chatEncender(); }, "Chat reiniciado con este perfil")}
-            style={{...boton(true),padding:"4px 10px",fontSize:12}}>Reiniciar con este perfil</button></div>}
+          Está encendido con los datos de otro canal, no con los de {nombrePerfil(e.perfilChat)}.
+          <button disabled={!!ocupado} onClick={()=>accion("encender", async()=>{ await window.studioFS.chatApagar(); return window.studioFS.chatEncender(); }, "Chat reiniciado con " + nombrePerfil(e.perfilChat))}
+            style={{...boton(true),padding:"4px 10px",fontSize:12}}>Reiniciar con {nombrePerfil(e.perfilChat)}</button></div>}
+        {/* 2/11: el chat va con el canal de los directos (por defecto RDeRandom), abras el perfil que abras en Studio */}
+        {perfiles && perfiles.lista.length > 1 && <div style={{display:"flex",alignItems:"center",gap:8,fontSize:13,flexWrap:"wrap"}}>
+          <b>Canal del chat</b>
+          <select value={perfiles.perfil} onChange={async ev=>{ const r = await window.studioFS.chatPerfil(ev.target.value); if(r && !r.error){ setPerfiles(r); refrescar(); } }}
+            style={{fontSize:13,padding:"5px 8px",borderRadius:8,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)"}}>
+            {perfiles.lista.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+          </select>
+          <span style={{color:"var(--text-3)"}}>sus overlays, alertas, contador y sesión de YouTube (no cambia al cambiar de perfil en Studio)</span>
+        </div>}
         {!on && e && !e.falta && <div style={{fontSize:13,color:"var(--text-2)"}}>También se enciende solo al abrir OBS con tu lanzador. Si cierras Studio, el chat sigue funcionando.</div>}
         {on && obs && <div style={{fontSize:13,color:"var(--text-2)"}}>
           OBS: {obs.overlays ? `${obs.overlays} overlay${obs.overlays>1?"s":""} conectado${obs.overlays>1?"s":""}` : "sin overlays conectados"}
@@ -177,7 +201,7 @@ export function RandomChatView({ toast }) {
           <div key={k} style={{display:"flex",alignItems:"center",gap:10,fontSize:13}}>
             {punto(COLOR[v.state]||"var(--text-3)")}<b style={{minWidth:150}}>{NOMBRE[k]}</b><span style={{color:"var(--text-2)"}}>{v.text}</span>
           </div>))}
-        {!ytIsConnected() ? <div style={{fontSize:12.5,color:"#fbbf24"}}>Conecta YouTube en Studio (pestaña YouTube) para que el chat lea los nuevos suscriptores con tu sesión.</div>
+        {!chatConYoutube(e) ? <div style={{fontSize:12.5,color:"#fbbf24"}}>Conecta YouTube en el perfil {(e.perfilChat||"rderandom")==="rderandom" ? "RDeRandom" : e.perfilChat} de Studio (pestaña YouTube) para que el chat lea los nuevos suscriptores y puedas moderar.</div>
           : e.sesionYoutube ? <div style={{fontSize:12.5,color:"var(--text-3)"}}>✓ Usa tu sesión de YouTube de Studio (solo en memoria: no se guarda en el chat).</div> : null}
       </div>}
 
