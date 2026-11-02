@@ -297,7 +297,7 @@ export function iniciarTrabajador(t) {
 
   // los fallos de una etapa de una historia de la cola
   s.onHistoriasProgreso && s.onHistoriasProgreso((d) => {
-    if (d.tipo !== "fin") return;
+    if (d.tipo !== "fin" || d.bloqueada) return;       // (bloqueada: la etapa ni empezó, p. ej. clave de ElevenLabs mala)
     const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id);
     if (d.ok) { if (p && m[p].fallos) { m[p].fallos = 0; guardarMios(m); } return; }
     // parada a mano (botón «Parar» o «Parar todo»): no se reintenta hasta que la sigas tú
@@ -425,6 +425,8 @@ export function iniciarTrabajador(t) {
       // vueltas, para no pisar el paso de una etapa a la siguiente; nunca la parada a mano ni la que espera al límite)
       else if (!(t && t.activa) && !x.parada && !x.pausada && !w["h:" + h.id] && Date.now() >= (x.reintentar || 0)) {
         const sig = et.find(e => e.estado === "pendiente");
+        // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
+        if (sig && sig.id === "voces" && aj.elevenError) continue;
         if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2 && !empezada) empezada = { pid, x, h, sig };
       }
     }

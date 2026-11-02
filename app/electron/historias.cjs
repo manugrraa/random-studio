@@ -417,7 +417,7 @@ function correrEtapa(sender, id, etapaId, nota, encadenar) {
     return lanzarAgente(sender, id, "escena", promptEtapa(id, "animatic", nota), (ok, snd) => { if (ok) lanzar(snd, id, e.args, "animatic", seguir); });
   }
   if (etapaId === "voces" && claveEleven() && elevenPrueba.ok === false) {
-    try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, etapa: "voces", informe: elevenPrueba.error + ". Arréglalo y pulsa «Seguir»." }); } catch (x) {}
+    try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, bloqueada: true, etapa: "voces", informe: elevenPrueba.error + ". Arréglalo y pulsa «Seguir»." }); } catch (x) {}
     probarEleven(true);       // por si ya está arreglada: la próxima vez que se intente, valdrá
     return { ok: false, error: elevenPrueba.error };
   }
