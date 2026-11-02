@@ -4,6 +4,7 @@ import { APP_VERSION } from "./base";
 import { YT_BACKEND } from "./datos";
 import { cabecerasEquipo } from "./seguridad";
 import { perfilActual } from "./perfiles";
+import { ponerDisponible } from "./remoto";
 
 /* ============================ ACTUALIZACIONES (v3.32) ============================
  * El portátil publica su versión (Administración → «Publicar esta versión»). Los demás equipos de escritorio lo
@@ -49,6 +50,7 @@ export function AvisoActualizacion() {
   const [nueva, setNueva] = useState(null);
   const [estado, setEstado] = useState("");
   const [oculto, setOculto] = useState(false);
+  const [espera, setEspera] = useState(null);     // v3.41.4: lo que está en marcha y hay que dejar terminar
   useEffect(() => {
     if (!SF() || !SF().actInstalar) return;
     const mirar = async () => {
@@ -75,8 +77,30 @@ export function AvisoActualizacion() {
     const off = SF().onActCambio ? SF().onActCambio(mirar) : null;
     return () => { clearInterval(t); window.removeEventListener("focus", alFoco); off && off(); };
   }, []);
+  // v3.41.4: esperando a que termine la tarea en marcha; en cuanto el equipo queda libre, se actualiza solo
+  useEffect(() => {
+    if (!espera) return;
+    const iv = setInterval(async () => {
+      try { const t = await SF().historiasTareaEstado(); if (!t.activa) { clearInterval(iv); setEspera(null); aplicar(); } } catch (e) {}
+    }, 10000);
+    return () => clearInterval(iv);
+  }, [espera]);
   if (!nueva || oculto) return null;
+  /* v3.41.4: «Actualizar ahora» con algo en marcha (un render, unas voces…) ya no lo corta: este equipo deja de coger
+   * trabajo, no encadena la etapa siguiente y se actualiza en cuanto termina la que está haciendo. */
   const instalar = async () => {
+    let t = null;
+    try { t = SF().historiasTareaEstado ? await SF().historiasTareaEstado() : null; } catch (e) {}
+    if (t && t.activa) {
+      if (SF().historiasPausarEncadenado) SF().historiasPausarEncadenado(true);
+      ponerDisponible(false);
+      setEspera({ id: t.id || "", etapa: t.etapa || "la tarea" });
+      return;
+    }
+    aplicar();
+  };
+  const cancelarEspera = () => { setEspera(null); if (SF().historiasPausarEncadenado) SF().historiasPausarEncadenado(false); ponerDisponible(true); };
+  const aplicar = async () => {
     setEstado(nueva.local ? "Guardando todo y reiniciando…" : "Bajando la versión " + nueva.version + " (unos segundos)… luego se reinicia sola");
     try { if (perfilActual()) localStorage.setItem("rs_perfil_volver", localStorage.getItem("rs_perfil") || ""); } catch (e) {}
     try {
@@ -92,10 +116,13 @@ export function AvisoActualizacion() {
       <span style={{ flex: 1 }} />
       {nueva.otroElectron
         ? <span style={{ color: "#F59E0B", fontWeight: 600 }}>Esta necesita el paquete completo: pídeselo al portátil.</span>
+        : espera ? <><span style={{ fontWeight: 600 }}>⏳ Se actualizará solo al terminar {espera.etapa}{espera.id ? " de la historia " + String(espera.id).slice(0, 2) : ""} (sin cortarlo)</span>
+            <button onClick={() => { const e = espera; setEspera(null); aplicar(); }} style={{ fontSize: 12, color: "var(--text-2)", textDecoration: "underline" }}>Actualizar ya</button>
+            <button onClick={cancelarEspera} style={{ fontSize: 12, color: "var(--text-3)" }}>Cancelar</button></>
         : estado ? <><span style={{ fontWeight: 600 }}>{estado}</span>
             {estado.startsWith("❌") && <button onClick={instalar} className="grad-gold" style={{ fontSize: 12.5, fontWeight: 700, color: "#000", borderRadius: 9, padding: "7px 14px" }}>Reintentar</button>}</>
         : <button onClick={instalar} className="grad-gold" style={{ fontSize: 12.5, fontWeight: 700, color: "#000", borderRadius: 9, padding: "7px 14px" }}>Actualizar ahora</button>}
-      {!estado && <button onClick={() => setOculto(true)} style={{ fontSize: 12, color: "var(--text-3)" }}>Luego</button>}
+      {!estado && !espera && <button onClick={() => setOculto(true)} style={{ fontSize: 12, color: "var(--text-3)" }}>Luego</button>}
     </div>);
 }
 

@@ -450,8 +450,13 @@ async function instantanea(sender, id, etapa) {
   } catch (e) {} finally { empaquetando = null; }
 }
 /** Tras una etapa: la copia de relevo (si toca) y luego lo de siempre (la siguiente etapa y la cola). */
+// v3.41.4: con una actualización esperando, al terminar la etapa en marcha no se encadena la siguiente (la app se
+// actualiza y, al volver, la historia sigue sola por donde iba)
+let sinEncadenar = false;
+ipcMain.handle("historias-pausar-encadenado", async (e, v) => { sinEncadenar = !!v; return { ok: true }; });
 function trasEtapa(t, id, ok, etapa) {
   const seguir = () => {
+    if (sinEncadenar) return;
     if (t && t.alTerminar) setTimeout(() => t.alTerminar(ok, t.sender), 200);
     setTimeout(() => sacarDeCola(t && t.sender), 1500);
   };
