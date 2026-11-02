@@ -39,6 +39,13 @@ function normalizarPlantilla(dir) {
   fix("montar.py", s => {
     let t = s.replace(/historia\d\d_\{quality\}/g, "historia{NN}_{quality}");
     if (/\{NN\}/.test(t) && !/^NN = /m.test(t)) t = t.replace(/^(HERE = .*\n)/m, "$1NN = os.path.basename(HERE)[:2]        # el número de la historia, de su carpeta\n");
+    // (2-11-2026) contadores en el montaje: las cifras de contadores.py se dibujan sobre el plano limpio
+    if (!/import contadores/.test(t)) {
+      t = t.replace("from planos import SHOTS  # noqa: E402",
+        "from planos import SHOTS  # noqa: E402\nsys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)), \"tools\"))\nimport contadores  # noqa: E402  (2-11-2026: las cifras sobre la cabeza se dibujan aquí, desde contadores.py)");
+      t = t.replace("        out = os.path.join(tmp, f\"{sid}.mp4\")\n        vf = ",
+        "        out = os.path.join(tmp, f\"{sid}.mp4\")\n        # contadores de contadores.py encima del plano limpio (corregir un número = editar y volver a montar)\n        con = os.path.join(tmp, f\"{sid}_contadores.mp4\")\n        if contadores.componer(HERE, sid, clip, con):\n            clip = con\n        vf = ");
+    }
     return t;
   });
   fix("sincronizar.py", s => s.replace(/intro_t = float\(sys\.argv\[3\]\) if len\(sys\.argv\) > 3 else INTRO_TEMPO/, "intro_t = float(sys.argv[3]) if len(sys.argv) > 3 else tempo   # sin arranque acelerado: velocidad constante"));
