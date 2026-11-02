@@ -706,6 +706,12 @@ app.on("second-instance", () => {
 
 // v3.14, él: "al pulsar Alt se baja un menú de la ventana del Studio... no quiero que exista"
 app.whenReady().then(() => { Menu.setApplicationMenu(null); createWindow(); });
+// v3.45.5: en el ordenador (el equipo sin el RandomChat de origen), mientras Studio esté abierto la pantalla no se apaga
+// ni se bloquea por inactividad, y el equipo no se suspende (él: "que el ordenador no se bloquee la pantalla cuando esté
+// abierto el RandomStudio"). Se suelta solo al cerrar la app. En el portátil, Windows sigue como siempre.
+app.whenReady().then(() => {
+  if (require("./chatlocal.cjs").espejo && !process.env.STUDIO_CAPTURA) require("electron").powerSaveBlocker.start("prevent-display-sleep");
+});
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on("window-all-closed", () => app.quit());
 // v3.41.9: al salir no se dejan huérfanos el clon, el ranking ni el convertidor
