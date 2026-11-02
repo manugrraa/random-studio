@@ -602,7 +602,8 @@ ipcMain.handle("estudio-relevada", async (e, id) => {
  * La huella es por CONTENIDO (no por fecha), así que tocar y deshacer no sube nada. */
 const PARTES = {
   base: ["assets/fuentes", "assets/textures", "assets/roblox", "assets/musica", "assets/sfx", "library", "historias/01_bostezo/fuentes"],
-  kit: ["kit", "tools", "historias/_plantilla", "guiones/prompt-produccion.md", "guiones/canal_nuevo.md"],
+  // roblox: el pueblo por código (Luau) y el sombrero, para grabar en Roblox Studio desde cualquier equipo
+  kit: ["kit", "tools", "roblox", "historias/_plantilla", "guiones/prompt-produccion.md", "guiones/canal_nuevo.md"],
 };
 const baseDir = () => path.join(estudioDir(), "_base");
 function huellaDe(cual) {
