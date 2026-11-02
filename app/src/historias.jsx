@@ -928,7 +928,7 @@ function SaludEquipo({ e, ultima, onGit, onCuda }) {
   if (typeof cap.disco === "number" && cap.disco < 25) p.push(["Queda poco disco: " + cap.disco + " GB libres", "Las historias necesitan unos 0,5 GB cada una."]);
   if (ultima && e.datos.version && numV(e.datos.version) < numV(ultima)) p.push(["Versión antigua (v" + e.datos.version + ")", "Pulsa «Actualizar ahora» en ese equipo."]);
   if (cap.esperandoLimite > 0) p.push(["Espera al límite de Claude", cap.esperandoLimite + " tarea(s) seguirán solas cuando se restablezca."]);
-  if (cap.whisper && cap.whisper.dispositivo === "cpu") p.push(["Whisper va por el procesador (" + (cap.whisper.modelo || "") + ")" + (cap.gpu ? ": su gráfica " + cap.gpu + " no se usa" : ""),
+  if (cap.whisper && cap.whisper.dispositivo === "cpu") p.push(["Whisper va por el procesador (" + (cap.whisper.modelo || "") + ")" + (cap.gpu ? ": su gráfica " + cap.gpu + " no se usa" : "") + (cap.whisper.error_cuda ? " · error de la gráfica: " + cap.whisper.error_cuda : ""),
     cap.gpu ? "Instala las librerías de CUDA y irá varias veces más rápido." : "Sin gráfica NVIDIA: usa el modelo turbo, que ya es rápido.", cap.gpu ? "cuda" : null]);
   // v3.45.3: módulos del kit que usaban sus historias y faltaban (los borraba el kit del portátil)
   const rk = cap.rescateKit;

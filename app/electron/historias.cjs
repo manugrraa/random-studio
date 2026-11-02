@@ -107,6 +107,62 @@ function analizarLinea(l) {
   emitir({ tipo: "linea", linea: l });
 }
 
+/* v3.45.6 REPARAR EL RENDER: si el render falla porque un plano no se puede montar (un error de Python: un módulo del kit
+ * rescatado sin sus últimos cambios, una función que falta…), Claude lo arregla en este equipo sin cambiar la escena y el
+ * render se repite (solo los planos que faltan). Como mucho 2 veces por historia. Igual en el portátil y en el ordenador. */
+function erroresDelRender(log) {
+  const ls = log.split(/\r?\n/), grupos = new Map();
+  for (let i = 0; i < ls.length; i++) {
+    const m = ls[i].match(/^\s*\[(s\d+)\] ERROR/);
+    if (!m) continue;
+    const bloque = [ls[i]];
+    for (let j = i + 1; j < ls.length && j < i + 40 && !/^\s*\[s\d+\]/.test(ls[j]); j++) bloque.push(ls[j]);
+    const ultima = bloque.filter(x => x.trim()).pop() || "";
+    const g = grupos.get(ultima) || { planos: [], bloque: bloque.join("\n") };
+    g.planos.push(m[1]); grupos.set(ultima, g);
+  }
+  if (!grupos.size) return ls.slice(-45).join("\n");          // (falló antes de ningún plano: p. ej. un import)
+  return [...grupos.values()].slice(0, 8).map(g => "Planos " + g.planos.join(", ") + ":\n" + g.bloque).join("\n\n").slice(0, 9000);
+}
+function repararRender(t, id) {
+  try {
+    const c = carpetaDe(id);
+    const log = leer(path.join(c, "cadena_log", "render.log"), "");
+    if (!/Traceback|ERROR montando el plano/.test(log)) return false;
+    const est = estudioDe(c);
+    if ((est.reparaciones || 0) >= 2) return false;
+    est.reparaciones = (est.reparaciones || 0) + 1; guardarEstudio(c, est);
+    const rel = path.relative(raiz(), c).replace(/\\/g, "/");
+    const rk = leerJson(path.join(estudioDir(), "_rescate_kit.json"), null);
+    const prompt = instrucciones("reglas") + `\n\n---\nREPARAR EL RENDER de la historia ${rel} (intento ${est.reparaciones} de 2).
+
+El guion, las voces, la escena y el animatic ya están APROBADOS. El render final (rodar.py final) ha fallado en algunos planos
+porque el código no se puede ejecutar. Lo más probable: un módulo del kit (kit/*.py) creado en este equipo se perdió y se
+recuperó del historial de Claude sin sus últimos cambios${rk && rk.restaurados && rk.restaurados.length ? " (recuperados: " + rk.restaurados.map(r => "kit/" + r.nombre + ".py" + (r.aviso ? " — " + r.aviso : "")).join(", ") + ")" : ""}.
+
+QUÉ HACER
+1. Lee los errores de abajo y el código que falla (rodar.py, escena.py y los módulos del kit que usan).
+2. Arréglalo con el cambio MÍNIMO para que esos planos se monten como en las fotos aprobadas (planos_fotos/sNN.png): añade
+   el parámetro, la función o el objeto que falte, con el comportamiento que se deduce de cómo se usa. NO cambies encuadres,
+   personajes, textos ni la historia, y no toques los planos que ya funcionan.
+3. Comprueba los planos que fallaban: "$BLENDER" -b --factory-startup -P ${rel}/rodar.py -- revisar <planos separados por comas>
+   Repite hasta que ninguno dé ERROR ni Traceback.
+4. NO renderices el vídeo final: en cuanto termines, la cadena lo repite sola.
+
+ERRORES DEL RENDER (de ${rel}/cadena_log/render.log):
+${erroresDelRender(log)}
+`;
+    tarea = null;
+    try {
+      emitir2(t, { tipo: "linea", linea: "🔧 Algunos planos no se pueden montar: Claude arregla el kit y se repite el render" });
+      lanzarAgente(t.sender, id, "render", prompt, (ok, snd) => { if (ok) { try { lanzar(snd, id, t.args, "render", t.alTerminar); } catch (e) {} } else if (t.alTerminar) t.alTerminar(false, snd); });
+      return true;
+    } catch (e) { tarea = t; return false; }
+  } catch (e) { return false; }
+}
+// (emitir de una tarea que ya no es la actual)
+function emitir2(t, ev) { try { if (t.sender && !t.sender.isDestroyed()) t.sender.send("historias-progreso", { ...ev, id: t.id }); } catch (e) {} }
+
 function lanzar(sender, id, args, etapa, alTerminar) {
   if (tarea) throw new Error("Ya hay una tarea en marcha (" + tarea.id + ")");
   const c = carpetaDe(id);
@@ -126,6 +182,7 @@ function lanzar(sender, id, args, etapa, alTerminar) {
   proc.on("close", (code) => {
     if (resto.trim()) analizarLinea(resto.trim());
     const t = tarea;
+    if (code !== 0 && t && t.etapa === "render" && !t.cancelada && repararRender(t, id)) return;
     // v3.45.2: el final de la salida va en el informe, así «Equipos» dice POR QUÉ falló (el render del ordenador fallaba sin texto)
     const informe = code === 0 || !t ? "" : t.lineas.slice(-30).join("\n").slice(-1500);
     emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa, cancelada: !!(t && t.cancelada), ...(informe ? { informe } : {}) });
@@ -733,8 +790,32 @@ ipcMain.handle("instalar-cuda", async () => instalandoCuda ? { ok: false, error:
   let out = "";
   p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
   p.on("error", (e) => ok({ ok: false, error: "No encuentro Python: " + e.message }));
-  p.on("close", (code) => ok(code === 0 ? { ok: true } : { ok: false, error: out.trim().split(/\r?\n/).slice(-2).join(" ").slice(0, 300) }));
+  p.on("close", async (code) => {
+    if (code !== 0) return ok({ ok: false, error: out.trim().split(/\r?\n/).slice(-2).join(" ").slice(0, 300) });
+    const g = await probarGpu();          // (v3.45.6) instaladas no basta: se prueba la gráfica de verdad
+    ok(g.ok ? { ok: true, gpu: true } : { ok: false, error: "Librerías instaladas, pero Whisper no puede usar la gráfica: " + g.error });
+  });
 }));
+/* v3.45.6: ¿Whisper puede usar la gráfica DE VERDAD? (tools/transcribir.py --probar-gpu: carga el modelo en CUDA y
+ * transcribe un segundo de silencio; deja el resultado en estudio/_whisper.json, que es lo que se ve en «Equipos»).
+ * Al instalar CUDA y al arrancar, si este equipo tiene una NVIDIA y Whisper iba por el procesador. */
+function probarGpu() {
+  return new Promise((fin) => {
+    let out = "";
+    const p = spawn("python", [path.join(raiz(), "tools", "transcribir.py"), "--probar-gpu"], { cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+    const t = setTimeout(() => { try { p.kill(); } catch (e) {} }, 10 * 60000);
+    p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
+    p.on("error", (e) => { clearTimeout(t); fin({ ok: false, error: e.message }); });
+    p.on("close", (code) => { clearTimeout(t); fin(code === 0 ? { ok: true } : { ok: false, error: out.trim().split(/\r?\n/).slice(-1)[0].slice(0, 300) }); });
+  });
+}
+app.whenReady().then(() => setTimeout(() => {
+  try {
+    const w = leerJson(path.join(estudioDir(), "_whisper.json"), null);
+    if (tarea || !/nvidia/i.test(gpuNombre() || "") || (w && w.dispositivo === "cuda") || !existe(path.join(raiz(), "tools", "transcribir.py"))) return;
+    probarGpu().then(r => console.log("prueba de la gráfica:", r));
+  } catch (e) {}
+}, 45000));
 
 function discoLibre() {
   try { const st = fs.statfsSync(raiz()); return Math.round(st.bavail * st.bsize / 1e9 * 10) / 10; } catch (e) { return null; }

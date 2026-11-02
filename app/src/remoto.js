@@ -120,6 +120,13 @@ export function iniciarRemotoEscritorio(t) {
     }
     ahora.__iniciado = 1;
     try { localStorage.setItem(K_AV, JSON.stringify(ahora)); } catch (e) {}
+    // v3.45.6: con una versión nueva, las historias paradas se vuelven a intentar (una vez): suele traer el arreglo
+    try {
+      if (localStorage.getItem("rs_version_paradas") !== APP_VERSION) {
+        const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m);
+        localStorage.setItem("rs_version_paradas", APP_VERSION);
+      }
+    } catch (e) {}
     // v3.45.3: si el rescate del kit recuperó algo, las historias paradas se vuelven a intentar (una vez por rescate)
     const rk = aj.rescateKit;
     if (rk && (rk.restaurados || []).length) {
