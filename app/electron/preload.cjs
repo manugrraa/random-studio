@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   baseInstalar: (token, info) => ipcRenderer.invoke("base-instalar", token, info),
   estudioRelevoBorrar: (id, token, archivo) => ipcRenderer.invoke("estudio-relevo-borrar", id, token, archivo),
   instalarGit: () => ipcRenderer.invoke("instalar-git"),
+  instalarCuda: () => ipcRenderer.invoke("instalar-cuda"),
   estudioIdeaBorrar: (id) => ipcRenderer.invoke("estudio-idea-borrar", id),
   onEstudioIdeas: (cb) => { const f = (e, d) => cb(d); ipcRenderer.on("estudio-ideas-listas", f); return () => ipcRenderer.removeListener("estudio-ideas-listas", f); },
   estudioCrear: (ideaId, opts) => ipcRenderer.invoke("estudio-crear", ideaId, opts),

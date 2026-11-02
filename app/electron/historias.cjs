@@ -444,6 +444,8 @@ function avanzar(sender, id, auto) {
   const s = siguiente(id);
   if (s.terminado || s.espera) { try { sender.send("historias-progreso", { id, tipo: s.terminado ? "terminado" : "espera", etapa: s.espera && s.espera.id }); } catch (e) {} return { ok: true, ...s }; }
   if (auto && !ajustes().avanzarSolo) return { ok: true };
+  if (auto && !esOrigen() && ["escena", "animatic", "render", "montaje"].includes(s.etapa.id) && s.etapa.id === "escena")
+    return { ok: true, espera: "preparada: decide el reparto" };
   correrEtapa(sender, id, s.etapa.id, null, true);
   return { ok: true, etapa: s.etapa.id };
 }
@@ -490,7 +492,9 @@ function trasEtapa(t, id, ok, etapa) {
     if (t && t.alTerminar) setTimeout(() => t.alTerminar(ok, t.sender), 200);
     setTimeout(() => sacarDeCola(t && t.sender), 1500);
   };
-  if (ok && RELEVABLES.includes(etapa)) instantanea(t && t.sender, id, etapa).finally(seguir);
+  let hecha = false;
+  try { const e = ETAPAS.find(x => x.id === etapa); hecha = !!(e && e.hecho(carpetaDe(id))); } catch (x) {}
+  if (ok && hecha && RELEVABLES.includes(etapa)) instantanea(t && t.sender, id, etapa).finally(seguir);
   else seguir();
 }
 /** Aparta la copia local de una historia que siguió otro equipo (no se borra: historias/_relevadas). */
@@ -543,13 +547,16 @@ ipcMain.handle("estudio-relevada", async (e, id) => {
 /* v3.41.3 BASE: los recursos del proyecto que no son código (efectos, música, fuentes, texturas, biblioteca 3D; ~45 MB).
  * El portátil (origen) los sube a Drive cuando cambian y publica su huella; los demás equipos los bajan si la suya es otra.
  * Sin ellos, el ordenador no podía mezclar el sonido ni montar, y Claude improvisaba (y se quedaba en bucle). */
-const BASE_PARTES = ["assets/fuentes", "assets/textures", "assets/roblox", "assets/musica", "assets/sfx", "library", "historias/01_bostezo/fuentes"];
+const BASE_PARTES = ["assets/fuentes", "assets/textures", "assets/roblox", "assets/musica", "assets/sfx", "library", "historias/01_bostezo/fuentes",
+  // v3.41.7: KIT VIVO: lo que Claude mejora en el portátil (modelos 3D, cámara, herramientas, instrucciones) llega al
+  // ordenador en minutos, sin esperar a otra versión de RandomStudio
+  "kit", "tools", "historias/_plantilla", "guiones/prompt-produccion.md", "guiones/canal_nuevo.md"];
 const baseDir = () => path.join(estudioDir(), "_base");
 function huellaBase() {
   const crypto = require("crypto"), h = crypto.createHash("sha1");
   const ver = (d) => { let ns = []; try { ns = fs.readdirSync(d).sort(); } catch (e) { return; }
-    for (const n of ns) { const f = path.join(d, n), st = fs.statSync(f); if (st.isDirectory()) ver(f); else h.update(path.relative(raiz(), f).replace(/\\/g, "/") + "|" + st.size + "\n"); } };
-  for (const p of BASE_PARTES) ver(path.join(raiz(), p));
+    for (const n of ns) { if (n === "__pycache__") continue; const f = path.join(d, n), st = fs.statSync(f); if (st.isDirectory()) ver(f); else h.update(path.relative(raiz(), f).replace(/\\/g, "/") + "|" + st.size + "|" + Math.round(st.mtimeMs) + "\n"); } };
+  for (const p of BASE_PARTES) { const f = path.join(raiz(), p); if (existe(f) && fs.statSync(f).isFile()) { const st = fs.statSync(f); h.update(p + "|" + st.size + "|" + Math.round(st.mtimeMs) + "\n"); } else ver(f); }
   return h.digest("hex").slice(0, 16);
 }
 const esOrigen = () => existe(path.join(raiz(), ".origen_kit"));
@@ -563,7 +570,7 @@ ipcMain.handle("base-subir", async (e, token) => {
   try {
     fs.mkdirSync(baseDir(), { recursive: true });
     const f = path.join(baseDir(), "base.tgz"), huella = huellaBase();
-    const r = await tar(["-czf", f, "-C", raiz(), ...BASE_PARTES.filter(p => existe(path.join(raiz(), p)))]);
+    const r = await tar(["-czf", f, "--exclude", "*/__pycache__", "-C", raiz(), ...BASE_PARTES.filter(p => existe(path.join(raiz(), p)))]);
     if (!r.ok) return r;
     const up = await drive.subir(token, f, ["RandomStudio", "RandomHistorias", "_Base"]);
     const info = { archivo: up.id, md5: up.md5, tam: up.tam, huella, fecha: new Date().toISOString() };
@@ -587,6 +594,26 @@ ipcMain.handle("base-instalar", async (e, token, info) => {
     return { ok: true };
   } catch (x) { return { ok: false, error: x.message }; }
 });
+
+// v3.41.7: la gráfica de este equipo (NVIDIA), para saber si Whisper puede ir por ella
+let _gpu;
+function gpuNombre() {
+  if (_gpu !== undefined) return _gpu;
+  try { _gpu = require("child_process").execFileSync("nvidia-smi", ["--query-gpu=name,memory.total", "--format=csv,noheader"], { encoding: "utf8", windowsHide: true, timeout: 5000 }).trim().split(/\r?\n/)[0] || null; }
+  catch (e) { _gpu = null; }
+  return _gpu;
+}
+// v3.41.7: las librerías de CUDA para que Whisper use la gráfica NVIDIA (pip, solo para este usuario; ~1 GB)
+let instalandoCuda = false;
+ipcMain.handle("instalar-cuda", async () => instalandoCuda ? { ok: false, error: "Ya se están instalando" } : new Promise((ok0) => {
+  instalandoCuda = true;
+  const ok = (r) => { instalandoCuda = false; ok0(r); };
+  const p = spawn("python", ["-m", "pip", "install", "--user", "nvidia-cublas-cu12", "nvidia-cudnn-cu12==9.*"], { windowsHide: true });
+  let out = "";
+  p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
+  p.on("error", (e) => ok({ ok: false, error: "No encuentro Python: " + e.message }));
+  p.on("close", (code) => ok(code === 0 ? { ok: true } : { ok: false, error: out.trim().split(/\r?\n/).slice(-2).join(" ").slice(0, 300) }));
+}));
 
 function discoLibre() {
   try { const st = fs.statfsSync(raiz()); return Math.round(st.bavail * st.bsize / 1e9 * 10) / 10; } catch (e) { return null; }
@@ -717,6 +744,7 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
   return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
     claudeOk: cl.ok, claudeError: cl.error, blender: !!blenderExe(), proyecto: existe(histDir()),
     elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "",
+    gpu: gpuNombre(), whisper: leerJson(path.join(estudioDir(), "_whisper.json"), null),
     // v3.41: la salud del equipo (Git Bash, espacio libre en el disco del proyecto y fecha del kit)
     bash: !!claude.rutaBash(), disco: discoLibre(), kit: (leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {}).fecha || null };
 });
@@ -777,7 +805,7 @@ ipcMain.handle("estudio-drive-subir", async (e, id, token, perfilNombre, que) =>
     else est.driveRevision = { ...(est.driveRevision || {}), [que]: { fecha: new Date().toISOString(), ver: hechos[0].ver, bajar: hechos[0].bajar } };
     guardarEstudio(c, est);
     // equipo de paso (el ordenador): con el Short ya en Drive y comprobado, se borra lo pesado de este equipo
-    if (que === "short" && ajustes().equipoDePaso && hechos.every(h => h.verificado)) {
+    if (que === "short" && ajustes().equipoDePaso && !esOrigen() && hechos.every(h => h.verificado)) {
       for (const sub of ["planos_final", "planos_revisar", "_animatic"]) { try { fs.rmSync(path.join(c, sub), { recursive: true, force: true }); } catch (x) {} }
       for (const f of fs.readdirSync(c).filter(n => /^historia\d+_final.*\.mp4$/.test(n))) { try { fs.unlinkSync(path.join(c, f)); } catch (x) {} }
       try { fs.rmSync(path.join(listasDir(), tituloArchivo(t)), { recursive: true, force: true }); } catch (x) {}
@@ -826,6 +854,7 @@ function sincronizarKit() {
       puestos++;
     }
     escribirJson(estF, { fecha: man.fecha, archivos: man.archivos, aplicado: new Date().toISOString(), puestos, guardados });
+    if (puestos) { try { fs.unlinkSync(path.join(estudioDir(), "_base", "instalada.json")); } catch (x) {} }   // (v3.41.7) que vuelva a bajar el kit vivo
     return { ok: true, puestos, guardados };
   } catch (e) { return { ok: false, error: e.message }; }
 }

@@ -872,6 +872,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
                   <span style={{ fontSize: 12, color: e.datos.disponible === false ? "var(--text-3)" : "var(--green)" }}>{e.datos.disponible === false ? "· no disponible" : "· disponible"}</span>
                 </div>
                 <SaludEquipo e={e} ultima={equipos.map(x => x.datos.version).filter(Boolean).sort((a, b) => numV(b) - numV(a))[0]}
+                  onCuda={() => { if (confirm("¿Instalar en " + corto(e.nombre) + " las librerías de CUDA para que Whisper use su gráfica?\n\nSon ~1 GB (pip, solo para ese usuario). Tarda unos minutos.")) ordenA(e, "instalar_cuda", {}, "Instalando CUDA en " + corto(e.nombre) + "…"); }}
                   onGit={() => { if (confirm("¿Instalar Git para Windows en " + corto(e.nombre) + "?\n\nSe instala solo para ese usuario (winget, sin pedir permisos de administrador). Con Git Bash, Claude trabaja allí tan rápido como en el portátil.")) ordenA(e, "instalar_git", {}, "Instalando Git en " + corto(e.nombre) + "… (tarda un par de minutos)"); }} />
                 {t ? <TareaEnMarcha tarea={{ ...t, lineas: [] }} ahora={ahora} titulo={t.titulo}
                   onCancelar={() => { if (confirm("¿Parar la tarea en " + e.nombre + "?")) ordenA(e, "cancelar", {}, "Parando en " + e.nombre + "…"); }} />
@@ -885,7 +886,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
 /* v3.41: la salud de un equipo: qué le falta para trabajar bien y cómo se arregla. Solo enseña los problemas; si no hay,
  * una línea en verde. (Los equipos con una versión anterior no mandan todos los datos: lo que no llega no se juzga.) */
 const numV = (v) => String(v || "0").split(".").map(Number).reduce((a, n) => a * 1000 + (n || 0), 0);
-function SaludEquipo({ e, ultima, onGit }) {
+function SaludEquipo({ e, ultima, onGit, onCuda }) {
   const cap = e.datos.capacidad || {};
   const p = [];
   if (!cap.proyecto) p.push(["Le falta el proyecto de historias", "Ábrelo en ese equipo: RandomHistorias → Ajustes."]);
@@ -898,6 +899,8 @@ function SaludEquipo({ e, ultima, onGit }) {
   if (typeof cap.disco === "number" && cap.disco < 25) p.push(["Queda poco disco: " + cap.disco + " GB libres", "Las historias necesitan unos 0,5 GB cada una."]);
   if (ultima && e.datos.version && numV(e.datos.version) < numV(ultima)) p.push(["Versión antigua (v" + e.datos.version + ")", "Pulsa «Actualizar ahora» en ese equipo."]);
   if (cap.esperandoLimite > 0) p.push(["Espera al límite de Claude", cap.esperandoLimite + " tarea(s) seguirán solas cuando se restablezca."]);
+  if (cap.whisper && cap.whisper.dispositivo === "cpu") p.push(["Whisper va por el procesador (" + (cap.whisper.modelo || "") + ")" + (cap.gpu ? ": su gráfica " + cap.gpu + " no se usa" : ""),
+    cap.gpu ? "Instala las librerías de CUDA y irá varias veces más rápido." : "Sin gráfica NVIDIA: usa el modelo turbo, que ya es rápido.", cap.gpu ? "cuda" : null]);
   const uf = e.datos.ultimoFallo;
   if (uf && Date.now() - uf.fecha < 12 * 3600000) p.push(["Último fallo: historia " + String(uf.id).slice(0, 2) + " · " + uf.etapa + " (" + new Date(uf.fecha).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) + ")", uf.texto ? "«" + uf.texto.slice(-260) + "»" : null]);
   if (!p.length) return <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>✓ Todo en orden{cap.bash ? " · Bash" : ""}{cap.drive ? " · Drive" : ""}{typeof cap.disco === "number" ? " · " + cap.disco + " GB libres" : ""}</div>;
@@ -908,6 +911,7 @@ function SaludEquipo({ e, ultima, onGit }) {
           <span style={{ color: "#F59E0B", fontWeight: 700 }}>⚠️ {q}</span>
           {como && <span style={{ color: "var(--text-3)" }}>{como}</span>}
           {boton === "git" && e.en_linea && <button onClick={onGit} style={{ ...botonSec, padding: "4px 10px", fontSize: 11.5 }}>Instalar Git</button>}
+          {boton === "cuda" && e.en_linea && <button onClick={onCuda} style={{ ...botonSec, padding: "4px 10px", fontSize: 11.5 }}>Usar la gráfica</button>}
         </div>))}
     </div>);
 }

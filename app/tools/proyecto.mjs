@@ -55,6 +55,22 @@ if (buena) {
     + "Cada historia nueva copia de aquí sincronizar.py, mezclar.py, subtitulos.py, montar.py, escena.py, rodar.py y la estructura de planos.py.\n");
 }
 
+// v3.41.7: referencia rápida del kit (una página con cada función pública y su uso): Claude ya no lee el kit entero
+{
+  const lineas = ["# Referencia rápida del kit (se genera sola al compilar RandomStudio; no la edites a mano)", "",
+    "Cada función pública de `kit/*.py` con su primera línea de explicación. Para el detalle, Grep de esa función.", ""];
+  for (const n of fs.readdirSync(path.join(ORIGEN, "kit")).filter(x => x.endsWith(".py") && !x.startsWith("_")).sort()) {
+    const src = fs.readFileSync(path.join(ORIGEN, "kit", n), "utf8");
+    const doc = (src.match(/^\s*"""([^\n]*)/) || [])[1] || "";
+    lineas.push("## kit/" + n + (doc.trim() ? " — " + doc.trim() : ""));
+    const re = /^def ([a-zA-Z]\w*)\(([^)]*)\)[^:]*:\s*\n(?:\s*"""([^\n]*))?/gm;
+    let m;
+    while ((m = re.exec(src))) lineas.push("- `" + m[1] + "(" + m[2].replace(/\s+/g, " ").slice(0, 120) + ")`" + (m[3] ? " — " + m[3].trim().replace(/"""$/, "") : ""));
+    lineas.push("");
+  }
+  fs.writeFileSync(path.join(ORIGEN, "tools", "estudio", "kit_referencia.md"), lineas.join("\n"));
+}
+
 fs.rmSync(DEST, { recursive: true, force: true });
 const archivos = {};
 const meter = (rel, buf) => {

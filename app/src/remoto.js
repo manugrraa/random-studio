@@ -50,6 +50,7 @@ async function ejecutar(o) {
     case "drive_subir": return s.estudioDriveSubir(a.id, await driveTokenTrabajo(), perfilDrive(), a.que || "short");
     case "ajustes": return s.estudioAjustes(a.nuevos || {});
     case "instalar_git": return s.instalarGit ? s.instalarGit() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
+    case "instalar_cuda": return s.instalarCuda ? s.instalarCuda() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
   }
   throw new Error("Orden desconocida");
 }
@@ -123,7 +124,7 @@ export function iniciarRemotoEscritorio(t) {
       tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible,
       capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven,
         // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
-        bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", drive: driveConectadoTrabajo(), kit: aj.kit || null, esperandoLimite: Object.keys(esperas()).length },
+        bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", gpu: aj.gpu || null, whisper: aj.whisper || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, esperandoLimite: Object.keys(esperas()).length },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
       tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
       ajustes: aj.ajustes,
@@ -266,7 +267,9 @@ const esperas = () => { try { return JSON.parse(localStorage.getItem(K_LIM) || "
 const guardarEsperas = (w) => { try { localStorage.setItem(K_LIM, JSON.stringify(w)); } catch (e) {} };
 const hora = (ms) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
 
-/* v3.41.2 REPARTO: el ordenador prepara (guion y voces) y el portátil anima (escena, animatic, render, montaje). */
+/* v3.41.2 REPARTO: el ordenador prepara (guion y voces) y el portátil anima (escena, animatic, render, montaje).
+ * v3.41.7: el ordenador prepara TODAS las suyas antes de animar ninguna; cada preparada se ofrece al portátil. */
+let _soyDueno = false;
 const BLENDER = ["escena", "animatic", "render", "montaje"];
 const ETAPA_TXT = { guion: "guion", voces: "voces y efectos", escena: "escena 3D", animatic: "animatic", render: "render", montaje: "montaje" };
 /** Historia preparada en este equipo: si el servidor dice que el portátil puede animarla, se sube su copia y se le pasa. */
@@ -301,7 +304,7 @@ export function iniciarTrabajador(t) {
     const m = mios(), p = Object.keys(m).find(k => m[k].historia === d.id);
     if (d.ok) { if (p && m[p].fallos) { m[p].fallos = 0; guardarMios(m); } return; }
     // parada a mano (botón «Parar» o «Parar todo»): no se reintenta hasta que la sigas tú
-    if (d.cancelada || Date.now() - _parando < 20000) { if (p) { m[p].pausada = true; guardarMios(m); } return; }
+    if (d.cancelada || Date.now() - _parando < 20000) { if (p) { m[p].pausada = Date.now(); guardarMios(m); } return; }
     // v3.41.3: el porqué del último fallo, a la vista en «Equipos» (antes había que adivinarlo)
     _ultimoFallo = { id: d.id, etapa: d.etapa || "", texto: String(d.informe || "").slice(-700), fecha: Date.now() };
     if (d.limite) {
@@ -355,6 +358,7 @@ export function iniciarTrabajador(t) {
   const comprobarRelevos = async () => {
     try {
       const r = await pedidosApi("GET");
+      _soyDueno = ((r.equipos || []).find(e => e.id === r.yo) || {}).rol === "dueno";
       const m = mios(); let cambio = false;
       for (const [pid, x] of Object.entries(m)) {
         if (x.tipo !== "historia" || x.fin) continue;
@@ -407,6 +411,7 @@ export function iniciarTrabajador(t) {
     // 1) seguir el estado de mis pedidos. v3.41.2: las historias EMPEZADAS van antes que cualquier pedido nuevo (de la más
     // antigua a la más nueva); se apunta la primera que puede seguir aquí
     let empezada = null;
+    const blender = [];             // v3.41.7: empezadas a las que les toca Blender (en el ordenador, van al final)
     const ordenadas = Object.entries(m).sort((a, b) => String(a[1].historia || "").localeCompare(String(b[1].historia || "")));
     for (const [pid, x] of ordenadas) {
       if (x.tipo !== "historia" || !x.historia || x.fin || x.traspasada) continue;
@@ -414,6 +419,7 @@ export function iniciarTrabajador(t) {
       if (!h) continue;
       const et = h.etapas || [];
       if (x.parada && x.fallos === undefined) { x.parada = false; x.fallos = 1; }   // las paradas de antes: se reintentan
+      if (x.pausada === true) x.pausada = false;   // (v3.41.7) las paradas a mano de antes se quedaban así para siempre
       if (h.entregada || (et.length && et.every(e => e.estado === "hecho"))) {
         x.fin = true; avisarPedido(Number(pid), "hecho", { historia_id: h.id, detalle: "Short entregado" });
         // v3.41: la copia de relevo ya no hace falta (ni aquí ni en Drive)
@@ -427,20 +433,28 @@ export function iniciarTrabajador(t) {
         const sig = et.find(e => e.estado === "pendiente");
         // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
         if (sig && sig.id === "voces" && aj.elevenError) continue;
-        if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2 && !empezada) empezada = { pid, x, h, sig };
+        if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2) {
+          if (BLENDER.includes(sig.id) && !_soyDueno && !x.faseOk) blender.push({ pid, x, h, sig });
+          else if (!empezada) empezada = { pid, x, h, sig };
+        }
       }
     }
     guardarMios(m);
     // 2) seguir la empezada antes de coger nada nuevo. Lo de Blender (escena, animatic, render, montaje) es del portátil:
     // el ordenador, al terminar de prepararla, se la pasa si el portátil puede animarla (y si no, la anima él)
+    // v3.41.7: en el ordenador, cada historia preparada se ofrece al portátil (cada 5 min como mucho, de una en una)
+    if (_disponible && revisadoRelevo && !(t && t.activa)) {
+      const of = blender.find(b => Date.now() - (b.x.ofrecida || 0) > 5 * 60000);
+      if (of) {
+        of.x.ofrecida = Date.now(); guardarMios(m);
+        const r = await pasarAlPortatil(of.pid, of.h.id).catch(() => null);
+        if (r && r.traspasado) { of.x.traspasada = true; guardarMios(m); toast("➡️ Historia " + of.h.id.slice(0, 2) + " preparada: pasa al portátil para animarla"); return; }
+      }
+    }
     if (empezada && _disponible && revisadoRelevo && !(t && t.activa)) {
       const { pid, x, h, sig } = empezada;
       x.quieta = 0;
-      if (BLENDER.includes(sig.id) && !x.faseOk) {
-        const r = await pasarAlPortatil(pid, h.id).catch(() => null);
-        if (r && r.traspasado) { x.traspasada = true; guardarMios(m); toast("➡️ Historia " + h.id.slice(0, 2) + " preparada: pasa al portátil para animarla"); return; }
-        x.faseOk = true;
-      }
+      if (BLENDER.includes(sig.id) && !x.faseOk) x.faseOk = true;     // (aquí solo llega en el portátil)
       try { delete ultimoAviso[pid + "trabajando"]; await s.estudioAvanzar(h.id); toast("▶ Sigo con la historia " + h.id.slice(0, 2) + " (" + (ETAPA_TXT[sig.id] || sig.id) + ")"); } catch (e) {}
       guardarMios(m);
       return;
@@ -453,7 +467,15 @@ export function iniciarTrabajador(t) {
       // v3.41: solo se ofrece a seguir relevos si puede bajar la copia de Drive
       const r = await pedidosApi("POST", { accion: "reclamar", tipos, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) });
       const p = r.pedido;
-      if (!p) return;
+      if (!p) {
+        // v3.41.7: nada nuevo que preparar ni que animar del portátil: el ordenador anima lo suyo que ya está preparado
+        const b = blender[0];
+        if (b && !_soyDueno) {
+          b.x.faseOk = true; b.x.quieta = 0; guardarMios(m);
+          try { await s.estudioAvanzar(b.h.id); toast("🎬 Ya está todo preparado: animo aquí la historia " + b.h.id.slice(0, 2)); } catch (e) {}
+        }
+        return;
+      }
       if (p.porAnimar && p.historia_id) {
         // v3.41.2: historia preparada para animar. Si la preparó este equipo, ya la tiene; si no, se baja su copia de Drive
         const rv = (p.args || {}).relevo || {}, mia = (p.args || {}).de && (l.historias || []).some(h => h.id === p.historia_id) && Object.values(m).some(x => x.historia === p.historia_id);
@@ -530,6 +552,13 @@ export function iniciarTrabajador(t) {
     const max = Math.max(0, ...((l && l.historias) || []).filter(h => h.legado).map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)));
     if (max) pedidosApi("POST", { accion: "contador", minimo: max }).catch(() => {});
   }).catch(() => {});
+  // v3.41.7: al volver a estar disponible (tras «Parar todo»), lo parado a mano sigue solo
+  alCambiarDisponible((v) => {
+    if (!v) return;
+    const m = mios(); let c = false;
+    for (const x of Object.values(m)) if (x.pausada) { x.pausada = false; c = true; }
+    if (c) guardarMios(m);
+  });
   comprobarRelevos().then(vuelta);
   setInterval(comprobarRelevos, 60000);
   // v3.41: con el timbre, los pedidos nuevos se cogen al instante; la vuelta de siempre queda de respaldo, más espaciada
