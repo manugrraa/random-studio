@@ -31,8 +31,12 @@ let sesionEnviadaA = 0;
 // (antes iba la del perfil abierto: con RandomHistorias abierto, el chat leía los suscriptores de RandomHistorias)
 function tokensChat(e) { try { return JSON.parse(almacenDe((e && e.perfilChat) || "rderandom").get(YT_TOKEN_KEY) || "null"); } catch(x){ return null; } }
 const chatConYoutube = e => { const t = tokensChat(e); return !!(t && (t.access_token || t.refresh_token)); };
+let renovadaA = 0;
 function pasarSesion(e, toast) {
-  if(!e || !e.encendido || !e.nuestro || e.sesionYoutube || sesionEnviadaA===e.pid) return;
+  if(!e || !e.encendido || !e.nuestro || sesionEnviadaA===e.pid) return;
+  // la primera vez en cada arranque de Studio se vuelve a mandar aunque el chat ya tenga una (podía ser la de otro canal)
+  if(e.sesionYoutube && renovadaA===e.pid) return;
+  renovadaA = e.pid;
   const t = tokensChat(e);
   if(!t || !t.refresh_token) return;
   sesionEnviadaA = e.pid;
