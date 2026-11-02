@@ -57,7 +57,7 @@ async function ejecutar(o) {
 let _iniciado = false;
 /* v3.40.1: arrancan al abrir la app (main.jsx), antes de elegir perfil, y siguen igual al cambiar de perfil. Los avisos en
  * pantalla (toast) llegan cuando la ventana principal se monta y se los pasa. */
-let _toast = null;
+let _toast = null, _base = null, _ultimoFallo = null;
 const toast = (m) => { if (_toast) _toast(m); };
 export function iniciarRemotoEscritorio(t) {
   if (t) _toast = t;
@@ -131,9 +131,35 @@ export function iniciarRemotoEscritorio(t) {
       generandoIdeas: !!id.generando,
       // v3.40.6: el uso de Claude de este equipo (lo ve el móvil en su marcador); se lee como mucho cada 10 min
       claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,
+      // v3.41.3: la base que sube el portátil (los demás la bajan) y el último fallo de este equipo (se ve en «Equipos»)
+      base: _base, ultimoFallo: _ultimoFallo,
     };
     const r = await remotoApi("POST", { accion: "publicar", datos }).catch(() => null);
-    if (r) vigilarOtros(r.otros || []);
+    if (r) { vigilarOtros(r.otros || []); igualarBase(r.otros || [], t).catch(() => {}); }
+  };
+  // v3.41.3: los recursos del proyecto, iguales en todos los equipos (el portátil los sube a Drive si cambian; los demás
+  // los bajan cuando su huella no coincide y están libres). Con la base nueva, las historias paradas se vuelven a intentar.
+  let baseOcupada = false, baseMirada = 0;
+  const igualarBase = async (otros, t) => {
+    if (baseOcupada || !s.baseEstado || !driveConectadoTrabajo() || Date.now() - baseMirada < 5 * 60000) return;
+    baseMirada = Date.now(); baseOcupada = true;
+    try {
+      const b = await s.baseEstado();
+      if (!b || !b.ok) return;
+      if (b.origen) {
+        _base = b.subida || null;
+        if (!b.subida || b.subida.huella !== b.huella) { const up = await s.baseSubir(await driveTokenTrabajo()); if (up && up.ok) _base = up; }
+        return;
+      }
+      const o = otros.find(x => x.base && x.base.archivo);
+      if (!o || (b.instalada && b.instalada.huella === o.base.huella) || (t && t.activa)) return;
+      toast("📦 Bajando los recursos del proyecto (efectos, música, texturas) de " + o.nombre + "…");
+      const r = await s.baseInstalar(await driveTokenTrabajo(), o.base);
+      if (!r || !r.ok) { toast("❌ No pude bajar los recursos: " + ((r && r.error) || "")); return; }
+      const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; }
+      guardarMios(m);
+      toast("✅ Recursos del proyecto al día: este equipo ya trabaja igual que " + o.nombre);
+    } finally { baseOcupada = false; }
   };
   // v3.41: si otro equipo se desconecta a mitad de una historia, aviso (una vez hasta que vuelva); a los 10 min, el
   // primer equipo libre la sigue con su copia de Drive (relevo, en el servidor)
@@ -276,6 +302,8 @@ export function iniciarTrabajador(t) {
     if (d.ok) { if (p && m[p].fallos) { m[p].fallos = 0; guardarMios(m); } return; }
     // parada a mano (botón «Parar» o «Parar todo»): no se reintenta hasta que la sigas tú
     if (d.cancelada || Date.now() - _parando < 20000) { if (p) { m[p].pausada = true; guardarMios(m); } return; }
+    // v3.41.3: el porqué del último fallo, a la vista en «Equipos» (antes había que adivinarlo)
+    _ultimoFallo = { id: d.id, etapa: d.etapa || "", texto: String(d.informe || "").slice(-700), fecha: Date.now() };
     if (d.limite) {
       const w = esperas(); w["h:" + d.id] = d.limite; guardarEsperas(w);
       const txt = "Historia " + d.id.slice(0, 2) + " · sigue sola a las " + hora(d.limite);
@@ -337,6 +365,14 @@ export function iniciarTrabajador(t) {
         x.fin = true; x.relevada = true; cambio = true;
         if (s.estudioRelevada) await s.estudioRelevada(x.historia).catch(() => {});
         toast("🔁 La historia " + String(x.historia).slice(0, 2) + " la siguió otro equipo mientras este estaba apagado");
+      }
+      // v3.41.3: historias que el servidor da a este equipo pero que aquí no estaban apuntadas (p. ej. un pedido cancelado
+      // por repetido y reactivado): se adoptan, para seguirlas, reintentarlas y darlas por hechas como las demás
+      const locales = ((await s.historiasLista().catch(() => null)) || {}).historias || [];
+      for (const ped of (r.pedidos || [])) {
+        if (ped.tipo !== "historia" || ped.equipo !== r.yo || !ped.historia_id || m[ped.id] || !["asignado", "trabajando", "revision"].includes(ped.estado)) continue;
+        if (!locales.some(h => h.id === ped.historia_id)) continue;
+        m[ped.id] = { tipo: "historia", historia: ped.historia_id, faseOk: true }; cambio = true;
       }
       if (cambio) guardarMios(m);
       revisadoRelevo = true;

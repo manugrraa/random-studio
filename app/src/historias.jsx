@@ -897,6 +897,8 @@ function SaludEquipo({ e, ultima, onGit }) {
   if (typeof cap.disco === "number" && cap.disco < 25) p.push(["Queda poco disco: " + cap.disco + " GB libres", "Las historias necesitan unos 0,5 GB cada una."]);
   if (ultima && e.datos.version && numV(e.datos.version) < numV(ultima)) p.push(["Versión antigua (v" + e.datos.version + ")", "Pulsa «Actualizar ahora» en ese equipo."]);
   if (cap.esperandoLimite > 0) p.push(["Espera al límite de Claude", cap.esperandoLimite + " tarea(s) seguirán solas cuando se restablezca."]);
+  const uf = e.datos.ultimoFallo;
+  if (uf && Date.now() - uf.fecha < 12 * 3600000) p.push(["Último fallo: historia " + String(uf.id).slice(0, 2) + " · " + uf.etapa + " (" + new Date(uf.fecha).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) + ")", uf.texto ? "«" + uf.texto.slice(-260) + "»" : null]);
   if (!p.length) return <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>✓ Todo en orden{cap.bash ? " · Bash" : ""}{cap.drive ? " · Drive" : ""}{typeof cap.disco === "number" ? " · " + cap.disco + " GB libres" : ""}</div>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>

@@ -101,6 +101,10 @@ contextBridge.exposeInMainWorld("studioFS", {
   estudioRelevoRecibir: (id, token, archivo, md5) => ipcRenderer.invoke("estudio-relevo-recibir", id, token, archivo, md5),
   estudioRelevada: (id) => ipcRenderer.invoke("estudio-relevada", id),
   estudioRelevoPreparar: (id) => ipcRenderer.invoke("estudio-relevo-preparar", id),
+  // v3.41.3: los recursos del proyecto (efectos, música, fuentes, texturas, biblioteca 3D) iguales en todos los equipos
+  baseEstado: () => ipcRenderer.invoke("base-estado"),
+  baseSubir: (token) => ipcRenderer.invoke("base-subir", token),
+  baseInstalar: (token, info) => ipcRenderer.invoke("base-instalar", token, info),
   estudioRelevoBorrar: (id, token, archivo) => ipcRenderer.invoke("estudio-relevo-borrar", id, token, archivo),
   instalarGit: () => ipcRenderer.invoke("instalar-git"),
   estudioIdeaBorrar: (id) => ipcRenderer.invoke("estudio-idea-borrar", id),

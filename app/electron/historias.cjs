@@ -324,8 +324,10 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   const args = ["-p", "--model", claude.MODELO, "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits",
     "--allowedTools", "Bash", "PowerShell", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "TodoWrite"];
   // v3.41: en un equipo sin Git Bash, Claude solo tiene PowerShell; sin estas pautas fallaban muchos comandos (&&, rutas
-  // sin comillas...) y los repetía, y por eso el ordenador tardaba tanto
+  // sin comillas...) y los repetía, y por eso el ordenador tardaba tanto. v3.41.3: con Git Bash, PowerShell se quita
+  // (Claude lo elegía igual y las instrucciones están escritas para Bash): trabaja exactamente como en el portátil
   if (!claude.rutaBash()) args.push("--append-system-prompt", claude.GUIA_POWERSHELL);
+  else { args.splice(args.indexOf("PowerShell"), 1); args.push("--disallowedTools", "PowerShell"); }
   const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), BLENDER: blenderExe() || "" });
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
   tarea = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0 };
@@ -503,6 +505,54 @@ ipcMain.handle("estudio-relevada", async (e, id) => {
   const i = cola.indexOf(id); if (i >= 0) cola.splice(i, 1);
   try { return apartar(id); } catch (x) { return { ok: false, error: x.message }; }
 });
+/* v3.41.3 BASE: los recursos del proyecto que no son código (efectos, música, fuentes, texturas, biblioteca 3D; ~45 MB).
+ * El portátil (origen) los sube a Drive cuando cambian y publica su huella; los demás equipos los bajan si la suya es otra.
+ * Sin ellos, el ordenador no podía mezclar el sonido ni montar, y Claude improvisaba (y se quedaba en bucle). */
+const BASE_PARTES = ["assets/fuentes", "assets/textures", "assets/roblox", "assets/musica", "assets/sfx", "library", "historias/01_bostezo/fuentes"];
+const baseDir = () => path.join(estudioDir(), "_base");
+function huellaBase() {
+  const crypto = require("crypto"), h = crypto.createHash("sha1");
+  const ver = (d) => { let ns = []; try { ns = fs.readdirSync(d).sort(); } catch (e) { return; }
+    for (const n of ns) { const f = path.join(d, n), st = fs.statSync(f); if (st.isDirectory()) ver(f); else h.update(path.relative(raiz(), f).replace(/\\/g, "/") + "|" + st.size + "\n"); } };
+  for (const p of BASE_PARTES) ver(path.join(raiz(), p));
+  return h.digest("hex").slice(0, 16);
+}
+const esOrigen = () => existe(path.join(raiz(), ".origen_kit"));
+ipcMain.handle("base-estado", async () => {
+  try { return { ok: true, origen: esOrigen(), huella: esOrigen() ? huellaBase() : null,
+    subida: leerJson(path.join(baseDir(), "subida.json"), null), instalada: leerJson(path.join(baseDir(), "instalada.json"), null) }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle("base-subir", async (e, token) => {
+  if (!esOrigen()) return { ok: false, error: "Solo la sube el portátil" };
+  try {
+    fs.mkdirSync(baseDir(), { recursive: true });
+    const f = path.join(baseDir(), "base.tgz"), huella = huellaBase();
+    const r = await tar(["-czf", f, "-C", raiz(), ...BASE_PARTES.filter(p => existe(path.join(raiz(), p)))]);
+    if (!r.ok) return r;
+    const up = await drive.subir(token, f, ["RandomStudio", "RandomHistorias", "_Base"]);
+    const info = { archivo: up.id, md5: up.md5, tam: up.tam, huella, fecha: new Date().toISOString() };
+    escribirJson(path.join(baseDir(), "subida.json"), info);
+    try { fs.unlinkSync(f); } catch (x) {}
+    return { ok: true, ...info };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
+ipcMain.handle("base-instalar", async (e, token, info) => {
+  if (esOrigen()) return { ok: false, error: "El portátil es el origen" };
+  if (!info || !info.archivo) return { ok: false, error: "Sin base" };
+  if (tarea || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
+  try {
+    fs.mkdirSync(baseDir(), { recursive: true });
+    const f = path.join(baseDir(), "base.tgz");
+    await drive.bajar(token, String(info.archivo), f, info.md5 || null);
+    const r = await tar(["-xzf", f, "-C", raiz()]);
+    try { fs.unlinkSync(f); } catch (x) {}
+    if (!r.ok) return r;
+    escribirJson(path.join(baseDir(), "instalada.json"), { huella: info.huella, fecha: new Date().toISOString() });
+    return { ok: true };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
+
 function discoLibre() {
   try { const st = fs.statfsSync(raiz()); return Math.round(st.bavail * st.bsize / 1e9 * 10) / 10; } catch (e) { return null; }
 }
@@ -720,8 +770,10 @@ function sincronizarKit() {
     if (est.fecha === man.fecha) return { ok: true, al_dia: true };
     const sello = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     let puestos = 0, guardados = 0;
+    // v3.41.3: la memoria de las historias (_memoria/) va a la carpeta donde Claude Code la lee para este proyecto
+    const memDir = path.join(require("os").homedir(), ".claude", "projects", R.replace(/[^a-zA-Z0-9]/g, "-"), "memory");
     for (const [rel, h] of Object.entries(man.archivos)) {
-      const dst = path.join(R, rel);
+      const dst = rel.startsWith("_memoria/") ? path.join(memDir, rel.slice(9)) : path.join(R, rel);
       let actual = null;
       try { actual = sha(fs.readFileSync(dst)); } catch (e) {}
       if (actual === h) continue;
