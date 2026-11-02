@@ -86,7 +86,7 @@ export function NuevaPeticion({ toast, alHacer }) {
             onClick={() => pedir({ accion: "crear", tipo: "historia", titulo: t, args: { idea: { titulo: t, regla: idea.trim().split(/[.\n]/)[0], resumen: idea.trim(), fundamento: "idea del usuario" } } }, "📋 «" + t + "» añadida a la cola")}
             style={{ ...boton, color: "#000", border: "none", background: undefined, alignSelf: "flex-start", padding: "9px 15px", opacity: (!listo || enviando) ? .5 : 1 }}>
             {enviando ? "Añadiendo…" : "📋 Añadir a la cola"}</button>
-          <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>La coge el primer equipo disponible (el portátil tiene preferencia) y la ves avanzar aquí mismo.</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>La prepara el primer equipo libre (guion y voces) y la anima el portátil; la ves avanzar aquí mismo.</div>
         </div>)}
     </div>);
 }
@@ -108,7 +108,7 @@ export function ColaTrabajo({ toast }) {
   const trabajan = equipos.filter(e => e.disponible && e.capacidad && e.capacidad.proyecto && e.capacidad.claude);
   const modo = trabajan.length >= 2 ? "dual" : trabajan.length === 1 ? "individual" : "parado";
   const esperando = r.pedidos.filter(p => p.estado === "en_cola");
-  const enCurso = r.pedidos.filter(p => ["asignado", "trabajando", "revision"].includes(p.estado));
+  const enCurso = r.pedidos.filter(p => ["asignado", "trabajando", "revision", "por_animar"].includes(p.estado));
   const pasados = r.pedidos.filter(p => ["hecho", "cancelado", "fallido"].includes(p.estado)).sort((a, b) => new Date(b.terminado || b.actualizado) - new Date(a.terminado || a.actualizado));
 
   const Fila = ({ p, i }) => {
@@ -133,7 +133,7 @@ export function ColaTrabajo({ toast }) {
           <button disabled={i === 0} onClick={() => accion({ accion: "mover", id: p.id, antes_de: esperando[i - 1].id })} title="Subir" style={{ ...boton, opacity: i === 0 ? .4 : 1 }}>↑</button>
           <button disabled={i === esperando.length - 1} onClick={() => accion({ accion: "mover", id: p.id, antes_de: esperando[i + 2] ? esperando[i + 2].id : undefined, al_final: !esperando[i + 2] })} title="Bajar" style={{ ...boton, opacity: i === esperando.length - 1 ? .4 : 1 }}>↓</button>
         </>)}
-        {["en_cola", "asignado", "trabajando", "revision"].includes(p.estado) && (
+        {["en_cola", "asignado", "trabajando", "revision", "por_animar"].includes(p.estado) && (
           <button onClick={() => { if (confirm(p.estado === "en_cola" ? "¿Quitar este pedido de la cola?" : "¿Parar y cancelar este pedido? Lo hecho hasta ahora se queda en su equipo.")) accion({ accion: "cancelar", id: p.id }, "Pedido cancelado"); }}
             style={{ ...boton, color: "var(--red)", borderColor: "rgba(248,113,113,.35)" }}>Cancelar</button>)}
         {["fallido", "cancelado"].includes(p.estado) && !p.historia_id && (

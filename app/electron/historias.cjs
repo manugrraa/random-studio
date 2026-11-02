@@ -70,7 +70,7 @@ function resumen(id) {
   return {
     // v3.37.5: mientras se escribe el guion aún no hay titulo.txt: se enseña el de la idea (solo para verlo; la entrega usa el real)
     id, titulo: t || (() => { try { return ((estudioDe(c).idea || {}).titulo || "").trim(); } catch (e) { return ""; } })(), provisional: !t, carpeta: c, pasos: PASOS.map(p => ({ paso: p, hecho: !!estado[p], fin: estado[p] && estado[p].fin, s: estado[p] && estado[p].s })),
-    hechos: hechos.length, entregada: existe(path.join(entrega, tituloArchivo(t) + ".mp4")), carpetaEntrega: entrega,
+    hechos: hechos.length, entregada: existe(path.join(entrega, tituloArchivo(t) + ".mp4")) || !!estudioDe(c).drive, carpetaEntrega: entrega,
     final: existe(path.join(c, `historia${id.slice(0, 2)}_final.mp4`)) ? path.join(c, `historia${id.slice(0, 2)}_final.mp4`) : null,
     miniatura: mini ? miniDataUrl(mini, 220) : null,
     nPlanos: planos(c).length,
@@ -174,7 +174,7 @@ ipcMain.handle("historias-tarea", async (e, id, args) => lanzar(e.sender, id, ar
 ipcMain.handle("historias-tarea-estado", async (e) => {
   if (!tarea && empaquetando) return { activa: true, id: empaquetando, tipo: "relevo", etapa: "copia de relevo", inicio: Date.now(), accion: "Guardando la copia de relevo", acciones: [], lineas: [] };
   if (!tarea) return { activa: false };
-  tarea.sender = e.sender;        // la ventana que pregunta recibe el progreso a partir de ahora
+  if (!tarea.sender || tarea.sender.isDestroyed()) tarea.sender = e.sender;   // (v3.41.9) sin robarle el progreso a la ventana principal
   return { activa: true, id: tarea.id, args: tarea.args, tipo: tarea.tipo, etapa: tarea.etapa, inicio: tarea.inicio, paso: tarea.paso,
     render: tarea.render, accion: tarea.accion, acciones: (tarea.acciones || []).slice(-30), lineas: tarea.lineas.slice(-60) };
 });
@@ -185,6 +185,12 @@ ipcMain.handle("historias-cancelar", async (e, soloId) => {
   if (tarea) { tarea.alTerminar = null; tarea.cancelada = true; }   // cancelar también para el avance automático (y no se reintenta)
   if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
   return { ok: true };
+});
+
+// v3.41.9: al cerrar la app (o reiniciarla para actualizar) se mata el árbol de la tarea en marcha: antes Blender o Claude
+// seguían huérfanos y la app nueva, al no verlos, lanzaba otra tarea sobre la misma historia
+app.on("before-quit", () => {
+  if (tarea && tarea.proc) { try { require("child_process").spawnSync("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true, timeout: 8000 }); } catch (e) {} }
 });
 
 // v3.38.2: PARAR TODO (p. ej. antes de apagar el equipo): vacía la cola local y para lo que esté en marcha.
@@ -289,7 +295,8 @@ const ETAPAS = [
   { id: "animatic", nombre: "Animatic", tipo: "cadena", args: ["--desde", "subtitulos", "--hasta", "animatic"], hecho: c => existe(path.join(c, "animatic.mp4")) },
   { id: "render", nombre: "Render", tipo: "cadena", args: ["--solo", "render"], hecho: todosFinal },
   { id: "montaje", nombre: "Montaje y entrega", tipo: "cadena", args: ["--desde", "montar", "--sin-parar"],
-    hecho: c => { const t = titulo(c); return !!t && existe(path.join(listasDir(), tituloArchivo(t), tituloArchivo(t) + ".mp4")); } },
+    // (v3.41.9) o ya subido a Drive: el equipo de paso borra la entrega local y la historia volvía a «montaje pendiente»
+    hecho: c => { const t = titulo(c); return (!!t && existe(path.join(listasDir(), tituloArchivo(t), tituloArchivo(t) + ".mp4"))) || !!estudioDe(c).drive; } },
 ];
 const REVISABLES = ["guion", "voces", "animatic"];
 
@@ -331,7 +338,7 @@ function describir(nombre, input) {
     if (/rodar\.py.*fotos/.test(cmd)) return "Blender: haciendo las fotos de los planos (Animatic)";
     if (/rodar\.py.*revisar/.test(cmd)) return "Blender: revisando la escena 3D";
     if (/rodar\.py.*final/.test(cmd)) return "Blender: renderizando";
-    if (/test_|blender/i.test(cmd)) return "Blender: probando modelos nuevos";
+    if (/blender(\.exe)?["']?\s+-b|%BLENDER%|\$BLENDER|-P\s+\S*test_\S*\.py/i.test(cmd)) return "Blender: probando modelos nuevos";
     if (/voz_eleven/.test(cmd)) return "ElevenLabs: generando las voces";
     if (/transcribir/.test(cmd)) return "Whisper: comprobando la voz";
     if (/insertar_voces/.test(cmd)) return "Metiendo las voces de los personajes";
@@ -487,10 +494,21 @@ async function instantanea(sender, id, etapa) {
 /* v3.41.8 VIGILANTE: una etapa de Claude que pasa mucho rato sin dar ninguna señal (p. ej. esperando en un bucle a un
  * archivo que no llega) se corta y se reintenta sola a los 2 min, como cualquier fallo. Lo de Blender puede tardar
  * de verdad (fotos de 60 planos), así que con Blender se le dan 45 min; con lo demás, 15. */
+function huellaCarpeta(id) {
+  // (v3.41.9) algo cambia en la carpeta de la historia = la herramienta sigue trabajando aunque Claude no escriba nada
+  try {
+    const c = path.join(histDir(), id);
+    let m = fs.statSync(c).mtimeMs;
+    for (const n of fs.readdirSync(c)) { try { m = Math.max(m, fs.statSync(path.join(c, n)).mtimeMs); } catch (e) {} }
+    return m;
+  } catch (e) { return 0; }
+}
 setInterval(() => {
   if (!tarea || tarea.tipo !== "agente" || !tarea.proc || tarea.atascada) return;
+  const h = huellaCarpeta(tarea.id);
+  if (h !== tarea.huellaCarpeta) { tarea.huellaCarpeta = h; tarea.actividad = Date.now(); }
   const quieto = Date.now() - (tarea.actividad || tarea.inicio);
-  if (quieto < (/^Blender/.test(tarea.accion || "") ? 45 : 15) * 60000) return;
+  if (quieto < (/^Blender/.test(tarea.accion || "") ? 45 : 30) * 60000) return;
   tarea.atascada = Math.round(quieto / 60000);
   try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (e) {}
 }, 60000);
@@ -639,9 +657,16 @@ const leerIdeas = () => leerJson(ideasArchivo(), []);
 let ideasProc = null;
 
 function extraerJson(txt) {
-  const m = String(txt).match(/\[[\s\S]*\]/);
-  if (!m) throw new Error("Claude no devolvió ideas en el formato esperado");
-  return JSON.parse(m[0]);
+  // (v3.41.9) el primer «[…]» que sea un array válido (antes, otro «[» en el texto rompía todo el pedido)
+  const s = String(txt);
+  let intentos = 0;
+  for (let i = s.indexOf("["); i >= 0 && intentos < 40; i = s.indexOf("[", i + 1)) {
+    for (let k = s.lastIndexOf("]"); k > i && intentos < 40; k = s.lastIndexOf("]", k - 1)) {
+      intentos++;
+      try { const v = JSON.parse(s.slice(i, k + 1)); if (Array.isArray(v) && v.length) return v; } catch (e) {}
+    }
+  }
+  throw new Error("Claude no devolvió ideas en el formato esperado");
 }
 
 ipcMain.handle("estudio-ideas", async () => ({ ok: true, ideas: leerIdeas(), generando: !!ideasProc }));
@@ -687,7 +712,7 @@ function slugDe(t) {
 
 // opts.nn: número que toca contando las historias de TODOS los equipos (trabajo dual); opts.idea: la idea si viene de otro equipo
 ipcMain.handle("estudio-crear", async (e, ideaId, opts) => {
-  if (tarea) return { ok: false, error: "Ya hay una tarea en marcha: espera a que termine" };
+  if (tarea || empaquetando) return { ok: false, error: "Ya hay una tarea en marcha: espera a que termine" };
   fs.mkdirSync(histDir(), { recursive: true });
   const ideas = leerIdeas();
   let idea = ideas.find(x => x.id === ideaId);
@@ -757,7 +782,7 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
   const cl = claude.estadoClaude();
   return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
     claudeOk: cl.ok, claudeError: cl.error, blender: !!blenderExe(), proyecto: existe(histDir()),
-    elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "",
+    elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "", origen: esOrigen(),
     gpu: gpuNombre(), whisper: leerJson(path.join(estudioDir(), "_whisper.json"), null),
     // v3.41: la salud del equipo (Git Bash, espacio libre en el disco del proyecto y fecha del kit)
     bash: !!claude.rutaBash(), disco: discoLibre(), kit: (leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {}).fecha || null };

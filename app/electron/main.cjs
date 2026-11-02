@@ -703,6 +703,12 @@ app.on("second-instance", () => {
 app.whenReady().then(() => { Menu.setApplicationMenu(null); createWindow(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 app.on("window-all-closed", () => app.quit());
+// v3.41.9: al salir no se dejan huérfanos el clon, el ranking ni el convertidor
+app.on("before-quit", () => {
+  for (const p of [tarea && tarea.proc, rankingProc, ytProc]) {
+    if (p && p.pid) { try { require("child_process").spawnSync("taskkill", ["/PID", String(p.pid), "/T", "/F"], { windowsHide: true, timeout: 8000 }); } catch (e) {} }
+  }
+});
 
 // ——— RANDOMCHAT DENTRO DE STUDIO (v3.6) ———
 // Él: "implementar el RandomChat dentro de RandomStudio, encender y apagar el servidor desde un apartado".

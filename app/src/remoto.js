@@ -310,7 +310,7 @@ export function iniciarTrabajador(t) {
     pedidosApi("POST", { accion: "estado", id: Number(pid), estado: "trabajando", detalle: det }).catch(() => { delete detalles[pid]; });
   };
   const avisarPedido = (id, estado, extra) => {
-    const k = id + estado;
+    const k = id + estado + (estado === "trabajando" && extra && extra.detalle ? ":" + extra.detalle : "");   // (v3.41.9) el detalle cuenta
     if (ultimoAviso[k]) return Promise.resolve();
     ultimoAviso[k] = 1;
     return pedidosApi("POST", { accion: "estado", id, estado, ...(extra || {}) }).catch(() => { delete ultimoAviso[k]; });
@@ -394,7 +394,7 @@ export function iniciarTrabajador(t) {
       for (const ped of (r.pedidos || [])) {
         if (ped.tipo !== "historia" || ped.equipo !== r.yo || !ped.historia_id || m[ped.id] || !["asignado", "trabajando", "revision"].includes(ped.estado)) continue;
         if (!locales.some(h => h.id === ped.historia_id)) continue;
-        m[ped.id] = { tipo: "historia", historia: ped.historia_id, faseOk: true }; cambio = true;
+        m[ped.id] = { tipo: "historia", historia: ped.historia_id, faseOk: _soyDueno }; cambio = true;
       }
       if (cambio) guardarMios(m);
       revisadoRelevo = true;

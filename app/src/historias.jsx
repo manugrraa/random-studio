@@ -386,7 +386,7 @@ function AjustesEstudio({ toast }) {
         <Interruptor on={r.voces} titulo="Revisar las voces y efectos" ayuda="Se para tras la mezcla de voz y efectos." onClick={() => poner({ revisar: { voces: !r.voces } }, r.voces ? "Las voces ya no se paran" : "Revisarás las voces")} />
         <Interruptor on={r.animatic} titulo="Revisar el animatic" ayuda="Se para antes del render largo." onClick={() => poner({ revisar: { animatic: !r.animatic } }, r.animatic ? "El animatic ya no se para" : "Revisarás el animatic")} />
         <Interruptor on={a.ajustes.driveAuto} titulo="Subir cada Short a Drive" ayuda="Al entregarlo, se sube entero (vídeo, miniatura y texto) y se comprueba que la copia es idéntica." onClick={() => poner({ driveAuto: !a.ajustes.driveAuto }, "Hecho")} />
-        <Interruptor on={a.ajustes.equipoDePaso} titulo="Este equipo no guarda los Shorts" ayuda="Para el ordenador: cuando un Short ya está en Drive (y la copia es idéntica), borra de aquí los vídeos pesados. Los guiones y el audio se quedan." onClick={() => poner({ equipoDePaso: !a.ajustes.equipoDePaso }, a.ajustes.equipoDePaso ? "Este equipo guardará los Shorts" : "Este equipo borrará lo pesado al subirlo a Drive")} />
+        {!a.origen && <Interruptor on={a.ajustes.equipoDePaso} titulo="Este equipo no guarda los Shorts" ayuda="Para el ordenador: cuando un Short ya está en Drive (y la copia es idéntica), borra de aquí los vídeos pesados. Los guiones y el audio se quedan." onClick={() => poner({ equipoDePaso: !a.ajustes.equipoDePaso }, a.ajustes.equipoDePaso ? "Este equipo guardará los Shorts" : "Este equipo borrará lo pesado al subirlo a Drive")} />}
         <Interruptor on={a.ajustes.avanzarSolo} titulo="Seguir solo" ayuda="Al terminar una etapa empieza la siguiente sin esperar (salvo las que revisas)." onClick={() => poner({ avanzarSolo: !a.ajustes.avanzarSolo }, "Hecho")} />
       </div>
       <div style={{ ...tarjeta }}>
@@ -698,6 +698,9 @@ export function HistoriasRemoto({ toast, incrustado }) {
       : (h.etapas || []).some(x => x.estado === "fallo" || x.estado === "error") || (p && p.estado === "fallido") ? "paradas" : "marcha_pausa";
     items.push({ clave: "h" + h.id, tipo: "historia", h, e, t, rev, p, grupo, nn: h.id.slice(0, 2), titulo: h.titulo });
   }
+  // (v3.41.9) en pleno traspaso entre equipos ningún equipo la lista todavía: se enseña desde el pedido
+  pedidos.filter(p => p.tipo === "historia" && p.historia_id && !quien[p.historia_id] && ["asignado", "trabajando", "revision", "por_animar"].includes(p.estado))
+    .forEach(p => items.push({ clave: "p" + p.id, tipo: "pedido", p, grupo: "marcha_pausa", titulo: p.titulo, nn: p.numero ? String(p.numero).padStart(2, "0") : null }));
   const enCola = pedidos.filter(p => p.tipo === "historia" && ["en_cola", "asignado"].includes(p.estado) && !p.historia_id);
   enCola.forEach((p, i) => items.push({ clave: "p" + p.id, tipo: "pedido", p, grupo: "cola", pos: i, titulo: p.titulo, nn: p.numero ? String(p.numero).padStart(2, "0") : null }));
   pedidos.filter(p => p.tipo === "historia" && p.estado === "fallido" && !p.historia_id)
@@ -731,14 +734,17 @@ export function HistoriasRemoto({ toast, incrustado }) {
     let estado, color;
     if (it.tipo === "pedido") {
       estado = it.grupo === "paradas" ? "No se pudo empezar" + (it.p.detalle ? ": " + it.p.detalle : "")
+        : it.p.estado === "por_animar" ? "Preparada: espera al portátil para animarla"
+        : it.grupo === "marcha_pausa" ? "Cambiando de equipo… (" + (it.p.detalle || it.p.estado) + ")"
         : it.p.estado === "asignado" ? "Empezando en " + (it.p.equipo_nombre || "un equipo") + "…" : it.pos === 0 ? "La siguiente en empezar" : "Esperando · puesto " + (it.pos + 1);
-      color = it.grupo === "paradas" ? "var(--red)" : "var(--text-3)";
+      color = it.grupo === "paradas" ? "var(--red)" : it.p.estado === "por_animar" ? "#60A5FA" : "var(--text-3)";
     } else if (it.rev) { estado = "Revisa: " + ETAPA_NOMBRE[it.rev.id]; color = "#F59E0B"; }
     else if (it.t) {
       estado = (ETAPA_NOMBRE[it.t.etapa] || "Trabajando") + (it.t.render ? " · plano " + it.t.render.plano + (it.t.render.total ? " (" + it.t.render.hechos + "/" + it.t.render.total + ")" : "") : it.t.accion ? " · " + String(it.t.accion).slice(0, 60) : "");
       color = "var(--gold)";
     } else if (h.entregada) { estado = h.drive ? "Lista y en tu Drive" : "Lista"; color = "var(--green)"; }
     else if (it.grupo === "paradas") { estado = "Parada" + (it.p && it.p.detalle ? ": " + it.p.detalle : ""); color = "var(--red)"; }
+    else if (it.p && it.p.estado === "por_animar") { estado = "Preparada: espera al portátil para animarla"; color = "#60A5FA"; }
     else { const s = (h.etapas || []).find(x => x.estado === "pendiente"); estado = s ? "Siguiente: " + ETAPA_NOMBRE[s.id] : "A medias"; color = "var(--text-2)"; }
     const siguiente = h && (h.etapas || []).find(x => x.estado === "pendiente");
     return (
