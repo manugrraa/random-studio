@@ -34,7 +34,7 @@ function Barra({ nombre, v }) {
 }
 
 /** El marcador. Sin «uso», lo lee él solo de este equipo (escritorio). */
-export function UsoClaude({ uso, compacto }) {
+export function UsoClaude({ uso, compacto, lateral }) {
   const propio = uso === undefined;
   const [u, setU] = useState(null);
   const [leyendo, setLeyendo] = useState(false);
@@ -58,9 +58,11 @@ export function UsoClaude({ uso, compacto }) {
     : "Uso de Claude: " + (d.error || "no disponible");
   return (
     <button onClick={() => propio && leer(true)} title={titulo} className="uso-claude"
-      style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 11,
-        padding: "6px 10px", opacity: leyendo ? 0.6 : 1, cursor: propio ? "pointer" : "default", whiteSpace: "nowrap" }}>
-      <span style={{ fontSize: 12, fontWeight: 800, color: "var(--gold)" }}>Claude</span>
+      style={lateral
+        ? { display: "flex", alignItems: "center", gap: 8, opacity: leyendo ? 0.6 : 1, cursor: propio ? "pointer" : "default", whiteSpace: "nowrap", width: "100%" }
+        : { display: "flex", alignItems: "center", gap: 9, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 11,
+            padding: "6px 10px", opacity: leyendo ? 0.6 : 1, cursor: propio ? "pointer" : "default", whiteSpace: "nowrap" }}>
+      {!compacto && <span style={{ fontSize: 12, fontWeight: 700, color: lateral ? "var(--text-2)" : "var(--gold)" }}>Claude</span>}
       {d.ok ? <><Barra nombre="5h" v={d.cinco} />{!compacto && <Barra nombre="Semana" v={d.semana} />}</>
         : <span style={{ fontSize: 11, color: "var(--text-3)" }}>sin datos</span>}
     </button>);

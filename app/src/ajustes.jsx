@@ -24,15 +24,15 @@ const GUIA_ATAJOS = [
  * esa sección, en filas claras «qué es · para qué · control». Recuerda la última sección abierta.
  */
 const SECCIONES = [
-  { id: "cuenta", icono: "👤", titulo: "Cuenta y conexiones", ayuda: "Con qué perfil estás, Google y Drive" },
-  { id: "apartados", icono: "🧭", titulo: "Apartados", ayuda: "Qué sale en la barra y en qué orden" },
-  { id: "apariencia", icono: "🎨", titulo: "Apariencia", ayuda: "Tema y cómo se ven las tarjetas" },
-  { id: "objetivos", icono: "🎯", titulo: "Objetivos e ingresos", ayuda: "Meta mensual, Shorts al día y RPM" },
-  { id: "carpetas", icono: "📁", titulo: "Carpetas", ayuda: "De dónde se coge y a dónde va todo", escritorio: true },
-  { id: "almacen", icono: "💽", titulo: "Almacenamiento", ayuda: "Qué ocupa cada cosa, archivar en Drive y borrar", escritorio: true },
-  { id: "seguridad", icono: "🔒", titulo: "Seguridad", ayuda: "Este equipo y sus permisos" },
-  { id: "datos", icono: "💾", titulo: "Datos y copias", ayuda: "Exportar, importar y restablecer" },
-  { id: "atajos", icono: "⌨️", titulo: "Atajos de teclado", ayuda: "Todas las teclas rápidas" },
+  { id: "cuenta", icono: Icons.link, titulo: "Cuenta y conexiones", ayuda: "Con qué perfil estás, Google y Drive" },
+  { id: "apartados", icono: Icons.kanban, titulo: "Apartados", ayuda: "Qué sale en la barra y en qué orden" },
+  { id: "apariencia", icono: Icons.sun, titulo: "Apariencia", ayuda: "Tema y cómo se ven las tarjetas" },
+  { id: "objetivos", icono: Icons.chart, titulo: "Objetivos e ingresos", ayuda: "Meta mensual, Shorts al día y RPM" },
+  { id: "carpetas", icono: Icons.inbox, titulo: "Carpetas", ayuda: "De dónde se coge y a dónde va todo", escritorio: true },
+  { id: "almacen", icono: Icons.cloud, titulo: "Almacenamiento", ayuda: "Qué ocupa cada cosa, archivar en Drive y borrar", escritorio: true },
+  { id: "seguridad", icono: Icons.shield, titulo: "Seguridad", ayuda: "Este equipo y sus permisos" },
+  { id: "datos", icono: Icons.download, titulo: "Datos y copias", ayuda: "Exportar, importar y restablecer" },
+  { id: "atajos", icono: Icons.tasks, titulo: "Atajos de teclado", ayuda: "Todas las teclas rápidas" },
 ];
 
 const Interruptor = ({ on, onClick }) => (
@@ -97,16 +97,15 @@ export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExp
     <div className="fade-in">
       <style>{".cfg-nav button:hover { background: var(--card-2) !important; } @media (max-width: 820px) { .cfg-grid { grid-template-columns: 1fr !important; } .cfg-nav { flex-direction: row !important; overflow-x: auto; position: static !important; padding-bottom: 4px; } .cfg-nav .cfg-ayuda { display: none !important; } .cfg-nav button { flex: 0 0 auto; } }"}</style>
       <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700,marginBottom:4}}>Configuración</h2>
-      <p style={{fontSize:12.5,color:"var(--text-2)",marginBottom:18}}>Elige una sección.</p>
       <div className="cfg-grid" style={{ display: "grid", gridTemplateColumns: "250px 1fr", gap: 22, alignItems: "start" }}>
         <nav className="cfg-nav" style={{ display: "flex", flexDirection: "column", gap: 4, position: "sticky", top: 86 }}>
           {secciones.map(x => {
             const on = x.id === actual.id;
             return (
               <button key={x.id} onClick={() => setSec(x.id)}
-                style={{ display: "flex", alignItems: "center", gap: 11, textAlign: "left", padding: "10px 12px", borderRadius: 12,
-                  background: on ? "linear-gradient(135deg,rgba(212,175,55,.16),rgba(212,175,55,.04))" : "transparent", border: "1px solid " + (on ? "var(--border-gold)" : "transparent") }}>
-                <span style={{ fontSize: 17, width: 22, textAlign: "center" }}>{x.icono}</span>
+                style={{ display: "flex", alignItems: "center", gap: 11, textAlign: "left", padding: "9px 12px", borderRadius: 10,
+                  background: on ? "var(--gold-soft)" : "transparent", color: on ? "var(--gold)" : "var(--text-2)" }}>
+                <span style={{ display: "flex", width: 22, justifyContent: "center", color: "inherit" }}>{x.icono}</span>
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: on ? "var(--gold)" : "var(--text)" }}>{x.titulo}</span>
                   <span className="cfg-ayuda" style={{ display: "block", fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{x.ayuda}</span>
@@ -117,7 +116,7 @@ export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExp
 
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
-            <span style={{ fontSize: 26 }}>{actual.icono}</span>
+            <span className="app-titulo"><span className="ico">{actual.icono}</span></span>
             <div><div style={{ fontFamily: "'Sora'", fontSize: 19, fontWeight: 800 }}>{actual.titulo}</div><div style={{ fontSize: 12.5, color: "var(--text-3)" }}>{actual.ayuda}</div></div>
           </div>
 

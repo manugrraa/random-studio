@@ -5,6 +5,7 @@ import { FormatPill, Icon, Icons, makeVideo } from "./base";
 import { ChannelHeroCard } from "./canal";
 import { clasificarFormato, fechaISO, fireNotification, iaDisponible, iaGenerar, ytAnalyticsQuery, ytAuthHeader, ytCheckVideos, ytDeleteVideo, ytExpireAccess, ytFetchDiario, ytFetchRpmReal, ytIsConnected, ytListChannelComments, ytListUploadsFull, ytPostComment, ytReplyComment, ytTokenValid, ytViewCounts } from "./datos";
 import { Field, inputStyle } from "./videos";
+import { AccionesDeVista } from "./base";
 
 export const BarraProgreso = ({pct, alto=8, color}) => (
   <div style={{height:alto, background:"var(--card)", borderRadius:alto, overflow:"hidden"}}>
@@ -843,27 +844,11 @@ export function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAdd
   return (
     <div className="fade-in">
       <ChannelHeroCard subHistory={subHistory} onRecordSubs={onRecordSubs} onConnect={onConnect} toast={toast}/>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
-        <div>
-          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Vídeos en YouTube</h2>
-          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Controla los vídeos que has subido o programado y gestiónalos sin salir de la app</p>
-        </div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {!ytIsConnected() && (
-            <button onClick={onConnect} className="grad-gold" style={{
-              display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:700,color:"#000",
-              borderRadius:10,padding:"9px 14px"
-            }}>{Icons.link} Conectar Google</button>
-          )}
-          <button onClick={refresh} disabled={checking} style={{
-            display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",
-            border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 13px",background:"rgba(212,175,55,0.05)",opacity:checking?0.6:1
-          }}>
-            <span className={checking?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
-            {checking?"Comprobando…":"Comprobar estado"}
-          </button>
-        </div>
-      </div>
+      <AccionesDeVista>
+        <button onClick={refresh} disabled={checking} className="rs-btn">
+          <span className={checking?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>{checking?"Comprobando…":"Comprobar estado"}
+        </button>
+      </AccionesDeVista>
 
       {/* ——— Sub-pestañas del apartado ——— */}
       <div style={{display:"flex",gap:7,marginBottom:16,flexWrap:"wrap"}}>
@@ -1175,17 +1160,12 @@ export function StatsView({ videos, goals, onConnect }) {
 
   return (
     <div className="fade-in">
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:16}}>
-        <div>
-          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Estadísticas del canal</h2>
-          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
-            {datos ? `Últimos 28 días cerrados (${new Date(datos.desde+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})} – ${new Date(datos.hasta+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}) comparados con los 28 anteriores` : "Análisis real de tu canal con la API de YouTube"}
-          </p>
-        </div>
-        <button onClick={cargar} disabled={cargando} style={{display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 13px",background:"rgba(212,175,55,0.05)",opacity:cargando?0.6:1}}>
+      <AccionesDeVista>
+        <span className="rs-chip" style={{whiteSpace:"normal"}}>{datos ? `Últimos 28 días cerrados (${new Date(datos.desde+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})} – ${new Date(datos.hasta+"T00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}) comparados con los 28 anteriores` : "Análisis real de tu canal con la API de YouTube"}</span>
+        <button onClick={cargar} disabled={cargando} className="rs-btn">
           <span className={cargando?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>{cargando?"Analizando…":"Refrescar"}
         </button>
-      </div>
+      </AccionesDeVista>
 
       {error && (
         <div style={{marginBottom:14,padding:"12px 14px",background:"rgba(212,175,55,0.07)",border:"1px solid var(--border-gold)",borderRadius:11,fontSize:12.5,color:"var(--text-2)",lineHeight:1.6}}>
@@ -1332,21 +1312,10 @@ export function TrashView({trash, onRestore, onDeleteForever, onEmpty, formats})
   };
   return (
     <div className="fade-in">
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
-        <div>
-          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Papelera</h2>
-          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
-            {trash.length===0 ? "No hay vídeos en la papelera" : `${trash.length} vídeo${trash.length!==1?"s":""} · restaura los que necesites o vacíala para borrarlos definitivamente`}
-          </p>
-        </div>
-        <button onClick={onEmpty} disabled={trash.length===0} style={{
-          display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,
-          color: trash.length===0?"var(--text-3)":"var(--red)",
-          border:`1px solid ${trash.length===0?"var(--border)":"rgba(248,113,113,0.3)"}`,
-          borderRadius:10, padding:"9px 14px", background: trash.length===0?"transparent":"rgba(248,113,113,0.05)",
-          cursor: trash.length===0?"not-allowed":"pointer", opacity: trash.length===0?.5:1
-        }}>{Icons.trashBig} Vaciar papelera</button>
-      </div>
+      <AccionesDeVista>
+        {trash.length>0 && <span className="rs-chip">{trash.length} vídeo{trash.length!==1?"s":""}</span>}
+        <button onClick={onEmpty} disabled={trash.length===0} className="rs-btn danger">{Icons.trashBig} Vaciar papelera</button>
+      </AccionesDeVista>
 
       {trash.length===0 ? (
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"70px 20px",color:"var(--text-3)",border:"1px dashed var(--border)",borderRadius:14,gap:14}}>

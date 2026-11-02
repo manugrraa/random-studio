@@ -28,10 +28,9 @@ export function BotonDisponible() {
   if (!window.studioFS) return null;
   return (
     <button onClick={() => ponerDisponible(!d)} title={d ? "Este equipo coge trabajo de la cola. Pulsa para dejar de cogerlo." : "Este equipo no coge trabajo nuevo. Pulsa para ponerlo disponible."}
-      style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, borderRadius: 99, padding: "7px 13px",
-        border: "1px solid " + (d ? "rgba(74,222,128,.5)" : "var(--border)"), background: d ? "rgba(74,222,128,.10)" : "var(--card-2)", color: d ? "var(--green)" : "var(--text-3)" }}>
-      <span style={{ width: 9, height: 9, borderRadius: 9, background: d ? "var(--green)" : "var(--text-3)", boxShadow: d ? "0 0 8px var(--green)" : "none" }} />
-      {d ? "Disponible para trabajar" : "No disponible"}
+      className={"rs-btn" + (d ? " ok" : "")}>
+      <span style={{ width: 8, height: 8, borderRadius: 8, background: d ? "var(--green)" : "var(--text-3)" }} />
+      {d ? "Disponible" : "No disponible"}
     </button>);
 }
 
@@ -49,8 +48,8 @@ export function BotonPararTodo({ toast }) {
       catch (e) { if (toast) toast("❌ " + e.message); }
       setParando(false);
     }} title="Para lo que esté haciendo este equipo y deja de coger trabajo (para apagarlo tranquilo)"
-      style={{ fontSize: 12.5, fontWeight: 700, borderRadius: 99, padding: "7px 13px", border: "1px solid rgba(248,113,113,.4)", background: "rgba(248,113,113,.08)", color: "var(--red)" }}>
-      {parando ? "Parando…" : "⏹ Parar todo"}</button>);
+      className="rs-btn danger">
+      {parando ? "Parando…" : "Parar todo"}</button>);
 }
 
 /** Pedir trabajo a la cola desde cualquier equipo (también el móvil): una historia con tu propia idea, o que piensen ideas.

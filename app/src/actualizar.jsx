@@ -5,6 +5,7 @@ import { YT_BACKEND } from "./datos";
 import { cabecerasEquipo } from "./seguridad";
 import { perfilActual } from "./perfiles";
 import { ponerDisponible } from "./remoto";
+import { Icons } from "./base";
 
 /* ============================ ACTUALIZACIONES (v3.32) ============================
  * El portátil publica su versión (Administración → «Publicar esta versión»). Los demás equipos de escritorio lo
@@ -109,20 +110,20 @@ export function AvisoActualizacion() {
     } catch (e) { setEstado("❌ No se pudo: " + e.message); }
   };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 16px", background: "linear-gradient(90deg,rgba(96,165,250,.16),rgba(212,175,55,.10))",
-      borderBottom: "1px solid rgba(96,165,250,.35)", fontSize: 13 }}>
-      <span style={{ fontSize: 16 }}>⬆️</span>
-      <span><b>Hay una versión nueva de RandomStudio ({nueva.version})</b>{nueva.notas ? " · " + nueva.notas : ""}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "8px 16px", background: "var(--gold-soft)",
+      borderBottom: "1px solid var(--border-gold)", fontSize: 12.5 }}>
+      <span style={{ display: "flex", color: "var(--gold)" }}>{Icons.upload}</span>
+      <span><b>Versión nueva: {nueva.version}</b>{nueva.notas ? " · " + nueva.notas : ""}</span>
       <span style={{ flex: 1 }} />
       {nueva.otroElectron
         ? <span style={{ color: "#F59E0B", fontWeight: 600 }}>Esta necesita el paquete completo: pídeselo al portátil.</span>
         : espera ? <><span style={{ fontWeight: 600 }}>⏳ Se actualizará solo al terminar {espera.etapa}{espera.id ? " de la historia " + String(espera.id).slice(0, 2) : ""} (sin cortarlo)</span>
-            <button onClick={() => { const e = espera; setEspera(null); aplicar(); }} style={{ fontSize: 12, color: "var(--text-2)", textDecoration: "underline" }}>Actualizar ya</button>
-            <button onClick={cancelarEspera} style={{ fontSize: 12, color: "var(--text-3)" }}>Cancelar</button></>
+            <button onClick={() => { const e = espera; setEspera(null); aplicar(); }} className="rs-btn sm ghost">Actualizar ya</button>
+            <button onClick={cancelarEspera} className="rs-btn sm ghost">Cancelar</button></>
         : estado ? <><span style={{ fontWeight: 600 }}>{estado}</span>
-            {estado.startsWith("❌") && <button onClick={instalar} className="grad-gold" style={{ fontSize: 12.5, fontWeight: 700, color: "#000", borderRadius: 9, padding: "7px 14px" }}>Reintentar</button>}</>
-        : <button onClick={instalar} className="grad-gold" style={{ fontSize: 12.5, fontWeight: 700, color: "#000", borderRadius: 9, padding: "7px 14px" }}>Actualizar ahora</button>}
-      {!estado && !espera && <button onClick={() => setOculto(true)} style={{ fontSize: 12, color: "var(--text-3)" }}>Luego</button>}
+            {estado.startsWith("❌") && <button onClick={instalar} className="rs-btn sm primary">Reintentar</button>}</>
+        : <button onClick={instalar} className="rs-btn sm primary">Actualizar ahora</button>}
+      {!estado && !espera && <button onClick={() => setOculto(true)} className="rs-btn sm ghost">Luego</button>}
     </div>);
 }
 

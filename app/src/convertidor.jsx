@@ -72,8 +72,7 @@ export function ConvertidorView({ toast }) {
   return (
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{maxWidth:680}}>
-        <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Convertidor YT</h2>
-        <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
+        <p style={{fontSize:12.5,color:"var(--text-2)"}}>
           Pega enlaces de YouTube (uno por línea) y bájalos en MP4 o MP3. Es tu Convertidor YT con su mismo motor rápido.
           Para la música de los Shorts, guárdala en la Música de la biblioteca (y que sea sin copyright).
         </p>

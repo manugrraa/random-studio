@@ -3,6 +3,7 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { Icons } from "./base";
 import { askNotifPermission, fireNotification, registerNotifSW, tid } from "./datos";
 import { CollapsibleBox } from "./planificacion";
+import { AccionesDeVista } from "./base";
 
 export function TaskRow({ t, onToggle, onDelete, onSetDue, onEditTitle, onToggleUrgent, isDone }) {
   const [editing, setEditing] = useState(false);
@@ -557,29 +558,14 @@ export function TasksView({ taskLists, setTaskLists, dailyArchive, toast, askCon
 
   return (
     <div className="fade-in">
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
-        <div>
-          <h2 className="titulo-vista" style={{fontSize:20,fontWeight:700}}>Tareas</h2>
-          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Organiza en listas, programa recordatorios y repite tus rutinas diarias</p>
-        </div>
-        {notifState!=="granted" && notifState!=="unsupported" && (
-          <button onClick={enableNotifs} style={{
-            display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--gold)",
-            border:"1px solid var(--border-gold)",borderRadius:10,padding:"9px 13px",background:"rgba(212,175,55,0.05)"
-          }}>{Icons.bell} Activar notificaciones</button>
-        )}
-      </div>
+      {notifState!=="granted" && notifState!=="unsupported" && (
+        <AccionesDeVista><button onClick={enableNotifs} className="rs-btn">{Icons.bell} Activar notificaciones</button></AccionesDeVista>
+      )}
 
-      {/* Indicadores visuales (como los del calendario) */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:20}} className="stat-grid">
+      {/* Cifras en una línea */}
+      <div className="rs-kpis" style={{marginBottom:18}}>
         {indicators.map((it,i)=>(
-          <div key={i} style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:"13px 14px",display:"flex",alignItems:"center",gap:11}}>
-            <div style={{width:36,height:36,borderRadius:10,flexShrink:0,background:"var(--card)",display:"flex",alignItems:"center",justifyContent:"center",color:it.color}}>{it.icon}</div>
-            <div style={{minWidth:0}}>
-              <div style={{fontSize:21,fontWeight:700,fontFamily:"'Sora'",color:it.color,lineHeight:1.1}}>{it.value}</div>
-              <div style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".03em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.label}</div>
-            </div>
-          </div>
+          <span key={i} className="kpi"><span className="punto" style={{background:it.color}}/><b>{it.value}</b>{String(it.label).toLowerCase()}</span>
         ))}
       </div>
 

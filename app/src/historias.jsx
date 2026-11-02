@@ -7,6 +7,7 @@ import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./d
 import { esAdmin, useRolEquipo } from "./admin";
 import { UsoClaude, usoDeEquipos } from "./uso_claude";
 import { alTimbre } from "./timbre";
+import { AccionesDeVista } from "./base";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
  * Todo el proceso de RandomHistorias dentro del Studio, con una «carpeta» por historia:
@@ -36,8 +37,6 @@ const CSS = `
 @keyframes rh-entra { from { transform: translateY(6px) } to { transform: none } }
 .rh-rayas { background-image: linear-gradient(45deg, rgba(0,0,0,.18) 25%, transparent 25%, transparent 50%, rgba(0,0,0,.18) 50%, rgba(0,0,0,.18) 75%, transparent 75%, transparent);
   background-size: 40px 40px; animation: rh-rayas .9s linear infinite; }
-.rh-tab { font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 10px; color: var(--text-2); border: 1px solid transparent; }
-.rh-tab.on { color: #000; background: linear-gradient(135deg,#FFD700,#D4AF37); }
 `;
 
 function mmss(ms) {
@@ -507,18 +506,11 @@ export function HistoriasView({ toast }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 1180, margin: "0 auto", width: "100%" }}>
       <style>{CSS}</style>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 24, letterSpacing: "-.02em" }}>Random<span className="gold-text">Historias</span></div>
-          <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>De la idea al Short, con Claude, y tú decides en cada paso</div>
-        </div>
-        <span style={{ flex: 1 }} />
-        <BotonPararTodo toast={toast} />
-        <BotonDisponible />
-        <div style={{ display: "flex", gap: 4, background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: 4 }}>
-          {[...(admin ? [["todo", "🌐 Todos los equipos"]] : []), ["proyectos", "📁 Historias"], ["cola", "📋 Cola"], ["ideas", "💡 Ideas"], ["ajustes", "⚙️ Ajustes"]].map(([k, t]) => (
-            <button key={k} onClick={() => setPestana(k)} className={"rh-tab" + (pestana === k ? " on" : "")}>{t}</button>))}
-        </div>
+      {/* v3.43: el título ya está en la cabecera de la app; aquí solo las pestañas, y los botones del equipo arriba a la derecha */}
+      <AccionesDeVista><BotonPararTodo toast={toast} /><BotonDisponible /></AccionesDeVista>
+      <div className="rs-seg" style={{ alignSelf: "flex-start" }}>
+        {[...(admin ? [["todo", "Todos los equipos", Icons.cloud]] : []), ["proyectos", "Historias", Icons.camera], ["cola", "Cola", Icons.tasks], ["ideas", "Ideas", Icons.sparkle], ["ajustes", "Ajustes", Icons.gear]].map(([k, t, ic]) => (
+          <button key={k} onClick={() => setPestana(k)} className={pestana === k ? "on" : ""}>{ic}{t}</button>))}
       </div>
 
       {error && <div style={{ ...tarjeta, color: "var(--red)", fontSize: 13 }}>{error}</div>}

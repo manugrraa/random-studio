@@ -46,10 +46,7 @@ export function AgentView({ promptTemplates, setPromptTemplates, toast }) {
 
   return (
     <div className="fade-in">
-      <div style={{marginBottom:18}}>
-        <h2 style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:9}}><span style={{color:"var(--gold)",display:"flex"}}>{Icons.sparkles}</span> Agente de IA</h2>
-        <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Crea plantillas de prompt para generar descripciones con Claude. Luego elígelas en cada vídeo.</p>
-      </div>
+      <p style={{fontSize:12.5,color:"var(--text-2)",marginBottom:14}}>Crea plantillas de prompt para generar descripciones con Claude. Luego elígelas en cada vídeo.</p>
 
       <div style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:14,padding:18,marginBottom:16}}>
         <div style={{fontSize:13.5,fontWeight:700,marginBottom:6,display:"flex",alignItems:"center",gap:8}}>{Icons.sparkles} Claude (tu plan Max)</div>

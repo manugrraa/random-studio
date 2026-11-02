@@ -33,6 +33,8 @@ function Inicio() {
       else setEstado(r);
     });
   }, []);
+  // solo en desarrollo (vite): ?diseno=1 abre la app sin cuenta para revisar la interfaz; no existe en la versión publicada
+  if (import.meta.env.DEV && q.get("diseno")) return <App/>;
   if (estado === null) return null;
   if (estado.bloqueado) return <PantallaBloqueo ip={estado.ip}/>;
   // el aviso de versión nueva también en la pantalla de cuentas (encima de todo)

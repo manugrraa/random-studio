@@ -2,6 +2,7 @@ import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { DAYS, Icon, Icons, PALETTE, STATUSES, dnd, iso, sortedFormats } from "./base";
 import { VideoCard, inputStyle, labelStyle } from "./videos";
+import { AccionesDeVista } from "./base";
 
 export function FormatsModal({formats, setFormats, videos, onClose, toast, askConfirm}) {
   const [name, setName] = useState("");
@@ -275,7 +276,7 @@ export function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, we
     <div className="fade-in" style={{padding:"4px 2px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
         <div>
-          <h2 style={{fontSize:20,fontWeight:700,textTransform:"capitalize"}}>{headerLabel}</h2>
+          <h2 style={{fontSize:20,fontWeight:700}}>{headerLabel.charAt(0).toUpperCase()+headerLabel.slice(1)}</h2>
           <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>
             <span className="hint-desktop">{calView==="week" && `${weekCount} vídeo${weekCount!==1?"s":""} esta semana · `}arrastra para reprogramar</span>
             <span className="hint-touch">mantén pulsado un vídeo para moverlo</span>
@@ -449,16 +450,7 @@ export function KanbanView({videos, onOpen, onDrop, onDragStart, onDragEnd, onQu
   const board = filtered.filter(v=>!isCompleted(v));
   return (
     <div className="fade-in">
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
-        <div>
-          <h2 style={{fontSize:20,fontWeight:700}}>Tablero de producción</h2>
-          <p style={{fontSize:12.5,color:"var(--text-2)",marginTop:2}}>Mueve cada vídeo por su etapa de producción</p>
-        </div>
-        <button onClick={()=>onQuickAdd(null)} style={{
-          display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,color:"var(--gold)",
-          border:"1px solid var(--border-gold)", borderRadius:10, padding:"9px 14px", background:"rgba(212,175,55,0.05)"
-        }}>{Icons.plus} Añadir idea rápida</button>
-      </div>
+      <AccionesDeVista><button onClick={()=>onQuickAdd(null)} className="rs-btn primary">{Icons.plus} Añadir idea</button></AccionesDeVista>
       <div style={{display:"grid", gridTemplateColumns:"repeat(5, minmax(190px,1fr))", gap:12, overflowX:"auto", paddingBottom:8}} className="kanban-grid">
         {cols.map(col=>{
           const items = board.filter(v=>v.status===col);
@@ -501,4 +493,4 @@ export function KanbanView({videos, onOpen, onDrop, onDragStart, onDragEnd, onQu
   );
 }
 
-/* ============================ DIÁLOGO DE CONFIRMACIÓN ============================ */
+/* ============================ DIÁLOGO DE CONFIRMACIÓN ============================ */

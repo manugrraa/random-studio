@@ -6,25 +6,20 @@ import { perfilEnUso } from "./perfil_estado";
 import { DEFAULT_FORMATS, Icons, STATUSES, clone, getIdBase, setIdBase } from "./base";
 
 export function StatStrip({videos}) {
+  // v3.43: una sola línea de cifras (antes seis cajas grandes que se repetían en Calendario, Tablero y YouTube)
   const count = st => videos.filter(v=>v.status===st).length;
   const items = [
-    {label:"Total vídeos", value:videos.length, icon:Icons.calendar, color:"var(--text)"},
-    {label:"Ideas en bruto", value:count("idea"), icon:Icons.sparkle, color:STATUSES.idea.color},
-    {label:"Grabados", value:count("grabacion"), icon:Icons.camera, color:STATUSES.grabacion.color},
-    {label:"Editados", value:count("edicion"), icon:Icons.scissors, color:STATUSES.edicion.color},
-    {label:"Programados", value:count("programado"), icon:Icons.clock, color:STATUSES.programado.color},
-    {label:"Publicados", value:count("publicado"), icon:Icons.check, color:STATUSES.publicado.color},
+    {label:"vídeos", value:videos.length, color:"var(--text-2)"},
+    {label:"ideas", value:count("idea"), color:STATUSES.idea.color},
+    {label:"grabados", value:count("grabacion"), color:STATUSES.grabacion.color},
+    {label:"editados", value:count("edicion"), color:STATUSES.edicion.color},
+    {label:"programados", value:count("programado"), color:STATUSES.programado.color},
+    {label:"publicados", value:count("publicado"), color:STATUSES.publicado.color},
   ];
   return (
-    <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:22}} className="stat-grid">
+    <div className="rs-kpis" style={{marginBottom:18}}>
       {items.map((it,i)=>(
-        <div key={i} style={{background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:13,padding:"13px 14px",display:"flex",alignItems:"center",gap:11}}>
-          <div style={{width:36,height:36,borderRadius:10,flexShrink:0,background:"var(--card)",display:"flex",alignItems:"center",justifyContent:"center",color:it.color||"var(--text-2)"}}>{it.icon}</div>
-          <div style={{minWidth:0}}>
-            <div style={{fontSize:21,fontWeight:700,fontFamily:"'Sora'",color:it.color||"var(--text)",lineHeight:1.1}}>{it.value}</div>
-            <div style={{fontSize:10,color:"var(--text-3)",textTransform:"uppercase",letterSpacing:".03em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.label}</div>
-          </div>
-        </div>
+        <span key={i} className="kpi"><span className="punto" style={{background:it.color}}/><b>{it.value}</b>{it.label}</span>
       ))}
     </div>
   );

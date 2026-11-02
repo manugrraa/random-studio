@@ -1,5 +1,14 @@
 import React from "react";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
+import ReactDOM from "react-dom";
+
+/* v3.43: las acciones de cada vista (sus botones principales) se pintan en la cabecera, a la derecha del título,
+   para que cada apartado tenga UNA cabecera y no dos. La vista las envuelve en <AccionesDeVista>. */
+export function AccionesDeVista({ children }) {
+  const [el, setEl] = useState(null);
+  useEffect(() => { setEl(document.getElementById("rs-acciones")); }, []);
+  return el ? ReactDOM.createPortal(children, el) : null;
+}
 
 
 export const APP_VERSION = __APP_VERSION__;   // de package.json (vite.config.mjs)

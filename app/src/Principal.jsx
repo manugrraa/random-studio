@@ -778,9 +778,9 @@ export function App() {
   const rolEquipo = useRolEquipo();
   const solicitudes = useSolicitudesPendientes(esAdmin(rolEquipo));
   const todasTabsBase = [
-    {id:"calendar", label:"Calendario", icon:Icons.calendar, primary:true, grupo:"plan"},
-    {id:"kanban", label:"Ideas y tablero", icon:Icons.kanban, primary:true, grupo:"plan"},
-    {id:"tasks", label:"Tareas", icon:Icons.tasks, grupo:"plan", badge: taskLists.reduce((a,l)=>{
+    {id:"calendar", desc:"Qué sale y cuándo", label:"Calendario", icon:Icons.calendar, primary:true, grupo:"plan"},
+    {id:"kanban", desc:"Ideas y etapas de producción", label:"Ideas y tablero", icon:Icons.kanban, primary:true, grupo:"plan"},
+    {id:"tasks", desc:"Listas y rutinas", label:"Tareas", icon:Icons.tasks, grupo:"plan", badge: taskLists.reduce((a,l)=>{
       if(l.fixed){
         // Diarias: vencidas si no se hicieron hoy y pasó su hora límite
         const tk = (()=>{ const d=new Date();const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; })();
@@ -788,21 +788,21 @@ export function App() {
       }
       return a + l.tasks.filter(t=>!t.done && t.due && new Date(t.due).getTime()<Date.now()).length;
     },0)},
-    {id:"scheduled", label:"YouTube", icon:Icons.youtube, primary:true, grupo:"canal"},
-    {id:"stats", label:"Estadísticas", icon:Icons.chart, grupo:"canal"},
-    {id:"directos", label:"Directos", icon:Icons.live, primary:true, grupo:"produccion", pc:true},
-    {id:"clips", label:"Clips", icon:Icons.scissors, primary:true, grupo:"produccion", pc:true},
+    {id:"scheduled", desc:"Subidos y programados en el canal", label:"YouTube", icon:Icons.youtube, primary:true, grupo:"canal"},
+    {id:"stats", desc:"Rendimiento del canal", label:"Estadísticas", icon:Icons.chart, grupo:"canal"},
+    {id:"directos", desc:"VODs para clipear", label:"Directos", icon:Icons.live, primary:true, grupo:"produccion", pc:true},
+    {id:"clips", desc:"Cribar y montar los clips", label:"Clips", icon:Icons.scissors, primary:true, grupo:"produccion", pc:true},
     // v3.40 (Carental): los brutos del perfil, para cribarlos, juntarlos en carpetas y que el clon los monte (perfiles locales)
-    ...(esLocal(perfilDeAhora()) ? [{id:"brutos", label:"Brutos", icon:Icons.camera, primary:true, grupo:"produccion", pc:true}] : []),
-    {id:"editor", label:"RandomEditor", icon:Icons.edit, grupo:"produccion", pc:true},
-    {id:"ranking", label:"Ranking de Shorts", icon:Icons.chart, primary:true, grupo:"produccion", pc:true},
-    {id:"historias", label:"RandomHistorias", icon:Icons.camera, primary:true, grupo:"produccion", pc:true},
-    {id:"convertidor", label:"Convertidor", icon:Icons.download, primary:true, grupo:"produccion", pc:true},
-    {id:"randomchat", label:"RandomChat", icon:Icons.chat, grupo:"produccion", pc:true},
-    {id:"agent", label:"Agente", icon:Icons.sparkles, grupo:"asistente"},
-    ...(esAdmin(rolEquipo) ? [{id:"admin", label:"Administración", icon:Icons.shield, grupo:"abajo", badge:solicitudes}] : []),
-    {id:"config", label:"Configuración", icon:Icons.gear, grupo:"abajo"},
-    {id:"trash", label:"Papelera", icon:Icons.trash, badge:trash.length, grupo:"abajo"},
+    ...(esLocal(perfilDeAhora()) ? [{id:"brutos", desc:"Grabaciones en bruto", label:"Brutos", icon:Icons.camera, primary:true, grupo:"produccion", pc:true}] : []),
+    {id:"editor", desc:"Edición en su propia ventana", label:"RandomEditor", icon:Icons.edit, grupo:"produccion", pc:true},
+    {id:"ranking", desc:"Qué Short subir primero", label:"Ranking de Shorts", icon:Icons.chart, primary:true, grupo:"produccion", pc:true},
+    {id:"historias", desc:"De la idea al Short, con Claude", label:"RandomHistorias", icon:Icons.camera, primary:true, grupo:"produccion", pc:true},
+    {id:"convertidor", desc:"YouTube a MP4 o MP3", label:"Convertidor", icon:Icons.download, primary:true, grupo:"produccion", pc:true},
+    {id:"randomchat", desc:"El chat de los directos", label:"RandomChat", icon:Icons.chat, grupo:"produccion", pc:true},
+    {id:"agent", desc:"Plantillas para Claude", label:"Agente", icon:Icons.sparkles, grupo:"asistente"},
+    ...(esAdmin(rolEquipo) ? [{id:"admin", desc:"Equipos, cuentas y accesos", label:"Administración", icon:Icons.shield, grupo:"abajo", badge:solicitudes}] : []),
+    {id:"config", desc:"Cuenta, apartados y ajustes", label:"Configuración", icon:Icons.gear, grupo:"abajo"},
+    {id:"trash", desc:"Vídeos borrados", label:"Papelera", icon:Icons.trash, badge:trash.length, grupo:"abajo"},
   ];
   // v3.33: y su orden (arrastrando en Configuración → Apartados)
   const todasTabs = ordenarTabs(todasTabsBase, ordenMods);
@@ -1066,92 +1066,62 @@ export function App() {
     return ()=>{ clearInterval(iv); clearInterval(clean); timers.forEach(clearTimeout); };
   },[]);
 
+  // v3.43: qué va en la cabecera según la vista (deshacer/rehacer y formatos solo donde hay vídeos)
+  const conVideos = ["calendar","kanban","scheduled"].includes(view);
+  const conHistorial = conVideos || view==="tasks";
+  // v3.43: el estado de ESTE equipo (nube, Claude, tema) vive abajo en la barra lateral, no en la cabecera
+  const estadoEquipo = (()=>{
+    const manualPending = syncMode==="manual" && pendingChanges;
+    const si = {
+      connecting:{c:"var(--gold)",t:"Conectando…",pulse:true},
+      online:{c:"var(--green)",t:"Sincronizado",pulse:false},
+      saving:{c:"var(--gold)",t:"Guardando…",pulse:true},
+      offline:{c:"var(--red)",t:"Sin conexión",pulse:false},
+    }[syncStatus] || {c:"var(--text-3)",t:"—",pulse:false};
+    const disp = manualPending ? {c:"var(--gold)",t:"Cambios sin subir",pulse:true} : (syncMode==="manual" ? {c:si.c,t:"Manual · al día",pulse:false} : si);
+    return (<>
+      <div className="fila">
+        <button onClick={()=>setShowSync(true)} title={"Nube: " + disp.t + " · abrir la sincronización"}>
+          <span className={"sync-dot"+(disp.pulse?" pulsing":"")} style={{background:disp.c}}/>
+          {!plegada && <span className="txt">{disp.t}</span>}
+        </button>
+        {!plegada && <button onClick={syncNow} disabled={manualSyncing} className="rs-icon-btn" style={{width:26,height:24,flex:"0 0 auto",margin:0,padding:0}} title={syncMode==="manual"?"Sincronizar ahora (subir y bajar)":"Sincronizar ahora"}>
+          <span className={manualSyncing?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span></button>}
+      </div>
+      {window.studioFS && <div className="fila"><UsoClaude compacto={plegada} lateral/></div>}
+    </>);
+  })();
   return (
-    <div className="app-shell" style={{display:"flex",minHeight:"100vh",background:"radial-gradient(1200px 600px at 80% -10%, rgba(212,175,55,0.06), transparent), var(--bg)"}}>
-      <BarraLateral tabs={tabs} view={view} setView={setView} plegada={plegada} setPlegada={setPlegada}/>
+    <div className="app-shell" style={{display:"flex",minHeight:"100vh",background:"var(--bg)"}}>
+      <BarraLateral tabs={tabs} view={view} setView={setView} plegada={plegada} setPlegada={setPlegada} version={APP_VERSION} estado={estadoEquipo}
+        tema={theme} onTema={()=>setTheme(t=>t==="dark"?"light":"dark")}/>
       <div className="app-col" style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
       <AvisoActualizacion/>
-      {/* HEADER */}
-      <header style={{borderBottom:"1px solid var(--border)",position:"sticky",top:"env(safe-area-inset-top, 0px)",zIndex:50,backdropFilter:"blur(12px)",background:"var(--header-bg)"}}>
-        <div className="app-header" style={{maxWidth:1500,margin:"0 auto",padding:"0 24px",height:66,display:"flex",alignItems:"center",justifyContent:"space-between",gap:16}}>
-          <div style={{display:"flex",alignItems:"center",gap:13}}>
-            <button onClick={()=>setMenuOpen(true)} title="Abrir menú" className="menu-btn" style={{
-              display:"none",alignItems:"center",justifyContent:"center",width:40,height:40,borderRadius:11,
-              color:"var(--text)",border:"1px solid var(--border)",flexShrink:0
-            }}>{Icons.menu}</button>
-            {/* v3.11: arriba, dónde estás (la navegación va en la barra lateral) */}
-            <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-              <span style={{display:"flex",color:"var(--gold)"}}>{vistaActual.icon}</span>
-              <h1 style={{fontFamily:"'Sora'",fontSize:18,fontWeight:700,letterSpacing:"-.01em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{vistaActual.label}</h1>
+      {/* HEADER (v3.43): dónde estás, las acciones de ESTA vista (portal rs-acciones) y el buscador. Lo demás vive en la barra lateral. */}
+      <header className="app-header-wrap">
+        <div className="app-header">
+          <div className="app-titulo">
+            <button onClick={()=>setMenuOpen(true)} title="Abrir menú" className="menu-btn rs-icon-btn" style={{display:"none",border:"1px solid var(--border)",flexShrink:0}}>{Icons.menu}</button>
+            <span className="ico">{vistaActual.icon}</span>
+            <div style={{minWidth:0}}>
+              <h1>{vistaActual.label}</h1>
+              {vistaActual.desc && <div className="sub">{vistaActual.desc}</div>}
             </div>
           </div>
-
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {/* v3.40.6: lo gastado de Claude (5 h y semana), para dosificar las historias */}
-            {window.studioFS && <span className="uso-claude-cab"><UsoClaude/></span>}
+          <div className="app-derecha">
+            <div id="rs-acciones" className="rs-acciones"/>
+            {conHistorial && <div className="rs-grupo undo-group">
+              <button className="rs-icon-btn" onClick={undo} disabled={!historyRef.current.past.length} title="Deshacer (Ctrl+Z)">{Icons.undo}</button>
+              <button className="rs-icon-btn" onClick={redo} disabled={!historyRef.current.future.length} title="Rehacer (Ctrl+Y)">{Icons.redo}</button>
+              {conVideos && <>
+                <button className="rs-icon-btn fmt-btn" onClick={()=>setShowFormats(true)} title="Formatos de vídeo">{Icons.tag}</button>
+                <button className={"rs-icon-btn"+(cardsExpanded?" activo":"")} onClick={()=>setCardsExpanded(x=>!x)} title={cardsExpanded?"Contraer todas las tarjetas":"Expandir todas las tarjetas"}>
+                  <span style={{display:"flex",transform:cardsExpanded?"rotate(180deg)":"none",transition:"transform .18s"}}>{Icons.chevron}</span>
+                </button>
+              </>}
+            </div>}
             {/* Buscador global: encuentra cualquier vídeo y abre su ventana */}
             <GlobalSearch videos={videos} formats={formats} onOpen={setEditing} secciones={tabs} onIr={setView}/>
-
-            {/* Grupo edición: deshacer / rehacer (oculto en móvil, va al menú lateral) */}
-            <div className="undo-group" style={{display:"flex",gap:2,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:11,padding:3}}>
-              <button onClick={undo} disabled={!historyRef.current.past.length} title="Deshacer (Ctrl+Z)" style={{
-                display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,
-                color: historyRef.current.past.length?"var(--text-2)":"var(--empty)", opacity: historyRef.current.past.length?1:0.5, transition:"color .15s"
-              }} onMouseEnter={e=>{if(historyRef.current.past.length)e.currentTarget.style.color="var(--gold)";}}
-                 onMouseLeave={e=>e.currentTarget.style.color=historyRef.current.past.length?"var(--text-2)":"var(--empty)"}>{Icons.undo}</button>
-              <button onClick={redo} disabled={!historyRef.current.future.length} title="Rehacer (Ctrl+Y)" style={{
-                display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,
-                color: historyRef.current.future.length?"var(--text-2)":"var(--empty)", opacity: historyRef.current.future.length?1:0.5, transition:"color .15s"
-              }} onMouseEnter={e=>{if(historyRef.current.future.length)e.currentTarget.style.color="var(--gold)";}}
-                 onMouseLeave={e=>e.currentTarget.style.color=historyRef.current.future.length?"var(--text-2)":"var(--empty)"}>{Icons.redo}</button>
-            </div>
-
-            {/* Grupo herramientas: tema + formatos (formatos oculto en móvil, va al menú) */}
-            <div className="tools-group" style={{display:"flex",gap:2,background:"var(--bg-2)",border:"1px solid var(--border)",borderRadius:11,padding:3}}>
-              <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} title={theme==="dark"?"Tema claro":"Tema oscuro"} style={{
-                display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,color:"var(--text-2)",transition:"color .15s"
-              }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-2)"}>
-                {theme==="dark"?Icons.sun:Icons.moon}
-              </button>
-              <button onClick={()=>setShowFormats(true)} title="Gestionar formatos" className="fmt-btn" style={{
-                display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,color:"var(--text-2)",transition:"color .15s"
-              }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>e.currentTarget.style.color="var(--text-2)"}>
-                {Icons.tag}
-              </button>
-            </div>
-
-            {/* Grupo sincronización: refrescar + estado */}
-            {(()=>{
-              const manualPending = syncMode==="manual" && pendingChanges;
-              const si = {
-                connecting:{c:"var(--gold)",t:"Conectando…",icon:Icons.cloud,pulse:true},
-                online:{c:"var(--green)",t:"Sincronizado",icon:Icons.cloudCheck,pulse:false},
-                saving:{c:"var(--gold)",t:"Guardando…",icon:Icons.cloud,pulse:true},
-                offline:{c:"var(--red)",t:"Sin conexión",icon:Icons.cloud,pulse:false},
-              }[syncStatus] || {c:"var(--text-3)",t:"—",icon:Icons.cloud,pulse:false};
-              const off = syncStatus==="offline";
-              // En modo manual con cambios sin subir, el badge lo indica claramente
-              const disp = manualPending
-                ? {c:"var(--gold)",t:"Cambios sin subir",pulse:true}
-                : (syncMode==="manual" ? {c:si.c,t:"Manual · al día",pulse:false} : si);
-              return (
-                <div style={{display:"flex",gap:2,background:"var(--bg-2)",border:`1px solid ${off?"rgba(248,113,113,0.5)":(manualPending?"var(--border-gold)":"var(--border)")}`,borderRadius:11,padding:3}}>
-                  <button onClick={syncNow} disabled={manualSyncing} title={syncMode==="manual"?"Sincronizar ahora (subir y bajar)":"Sincronizar ahora"} style={{
-                    display:"flex",alignItems:"center",justifyContent:"center",width:32,height:30,borderRadius:8,
-                    color: (manualSyncing||manualPending)?"var(--gold)":"var(--text-2)",transition:"color .15s"
-                  }} onMouseEnter={e=>e.currentTarget.style.color="var(--gold)"} onMouseLeave={e=>{if(!manualSyncing&&!manualPending)e.currentTarget.style.color="var(--text-2)";}}>
-                    <span className={manualSyncing?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>
-                  </button>
-                  <button onClick={()=>setShowSync(true)} title="Sincronización entre dispositivos" className="sync-btn" style={{
-                    display:"flex",alignItems:"center",gap:7,fontSize:12,fontWeight:600,color:disp.c,padding:"0 11px 0 9px",borderRadius:8,
-                    background: off?"rgba(248,113,113,0.1)":(manualPending?"rgba(212,175,55,0.08)":"transparent"), transition:"all .15s",whiteSpace:"nowrap"
-                  }}>
-                    <span className={"sync-dot"+(disp.pulse?" pulsing":"")} style={{background:disp.c}}/>
-                    <span className={off?"":"sync-label"}>{disp.t}</span>
-                  </button>
-                </div>
-              );
-            })()}
           </div>
         </div>
       </header>
@@ -1240,19 +1210,8 @@ export function App() {
       )}
 
       {/* MAIN */}
-      <main className="app-main" style={{maxWidth:1500,width:"100%",boxSizing:"border-box",margin:"0 auto",padding:"26px 24px 60px"}}>
+      <main className="app-main">
         <ExpandCtx.Provider value={cardsExpanded}>
-        {(view==="calendar" || view==="kanban" || view==="scheduled") && (
-          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:8}}>
-            <button onClick={()=>setCardsExpanded(x=>!x)} title={cardsExpanded?"Contraer todas las tarjetas":"Expandir todas las tarjetas"} style={{
-              display:"flex",alignItems:"center",gap:6,fontSize:11.5,fontWeight:600,color:"var(--text-3)",
-              border:"1px solid var(--border)",borderRadius:8,padding:"6px 11px"
-            }}>
-              <span style={{display:"flex",transform:cardsExpanded?"rotate(180deg)":"none",transition:"transform .18s"}}>{Icons.chevron}</span>
-              {cardsExpanded?"Contraer todo":"Expandir todo"}
-            </button>
-          </div>
-        )}
         {["calendar","kanban","scheduled"].includes(view) && <StatStrip videos={videos}/>}
         {view==="kanban" && (
           <div style={{position:"relative",marginBottom:16,maxWidth:340}}>
@@ -1277,27 +1236,6 @@ export function App() {
         {view==="trash" && <TrashView trash={trash} onRestore={restoreVideo} onDeleteForever={deleteForever} onEmpty={emptyTrash} formats={formats}/>}
         {view==="config" && <ConfigView modulos={todasTabs} goals={goals} setGoals={setGoals} theme={theme} setTheme={setTheme} cardsExpanded={cardsExpanded} setCardsExpanded={setCardsExpanded} onConnect={connectGoogle} onExport={exportData} onImport={importData} onReset={resetAll} toast={toast}/>}
 
-        <footer style={{marginTop:40,paddingTop:20,borderTop:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-            <p style={{fontSize:12,color:"var(--text-3)",lineHeight:1.5,maxWidth:520}}>
-              Tus datos se guardan en este dispositivo y se sincronizan en la nube con tu código de sincronización. Úsalo en otro dispositivo para tener todo al día.
-            </p>
-            <button onClick={resetAll} style={{
-              display:"flex",alignItems:"center",gap:7,fontSize:12.5,fontWeight:600,color:"var(--text-3)",padding:"8px 13px",borderRadius:9,
-              border:"1px solid var(--border)",transition:"all .15s",whiteSpace:"nowrap"
-            }} onMouseEnter={e=>{e.currentTarget.style.color="var(--red)";e.currentTarget.style.borderColor="rgba(248,113,113,0.3)";}}
-               onMouseLeave={e=>{e.currentTarget.style.color="var(--text-3)";e.currentTarget.style.borderColor="var(--border)";}}>
-              {Icons.trash} Restablecer datos
-            </button>
-          </div>
-          <div style={{textAlign:"center",fontSize:11.5,color:"var(--text-3)",paddingTop:6,borderTop:"1px solid var(--border)"}}>
-            <span style={{fontFamily:"'Sora'",fontWeight:700}}>Random<span className="gold-text">Studio</span></span>
-            <span style={{margin:"0 8px",opacity:.5}}>·</span>
-            <span>v{APP_VERSION}</span>
-            <span style={{margin:"0 8px",opacity:.5}}>·</span>
-            <span>© {new Date().getFullYear()} RDeRandom. Todos los derechos reservados.</span>
-          </div>
-        </footer>
         </ExpandCtx.Provider>
       </main>
       </div>
@@ -1363,7 +1301,7 @@ export function App() {
         .modal-overlay > div, .yt-modal-panel { animation: modalIn .16s ease; }
         @keyframes modalIn { from { opacity:0; transform: translateY(8px) scale(.985); } to { opacity:1; transform:none; } }
 
-        @media (max-width: 1100px) {
+        @media (max-width: 760px) {
           .global-search { display:none; }
         }
 
@@ -1381,7 +1319,6 @@ export function App() {
         details.ayuda > summary { cursor:pointer; font-size:12.5px; color:var(--text-3); list-style:none; display:inline-flex; gap:6px; align-items:center; }
         details.ayuda > summary::before { content:"ⓘ"; color:var(--gold); }
         details.ayuda[open] > summary { color:var(--text-2); margin-bottom:4px; }
-        .side-btn:not(.activo):hover { background: var(--bg-3, rgba(255,255,255,0.04)); color: var(--text) !important; }
         @media (max-width: 920px) {
           .tab-label { display:none; }
           .brand-text { display:none; }
@@ -1396,7 +1333,6 @@ export function App() {
           .modal-hint { display:none !important; }
           .hint-desktop { display:none; }
           .hint-touch { display:inline; }
-          .app-header { padding: 0 14px !important; height: 58px !important; gap: 10px !important; }
           .app-main { padding: 16px 14px 80px !important; }
           /* En móvil: menú lateral (cajón) en vez de la barra lateral fija */
           .side-nav { display:none !important; }
@@ -1417,8 +1353,6 @@ export function App() {
           .stat-grid { grid-template-columns: repeat(2,1fr) !important; gap: 8px !important; }
           .cal-grid { grid-template-columns: 1fr !important; }
           .app-main { padding: 14px 11px 90px !important; }
-          /* Botones del header más compactos */
-          .app-header { gap: 8px !important; }
           /* Modales casi a pantalla completa, respetando el notch */
           .modal-overlay { padding: calc(env(safe-area-inset-top) + 12px) 10px calc(env(safe-area-inset-bottom) + 16px) 10px !important; align-items: flex-start !important; }
           /* El modal de YouTube ocupa casi toda la pantalla y permite scroll cómodo */

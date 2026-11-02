@@ -3,6 +3,7 @@ const { useState, useEffect, useCallback, useRef } = React;
 import { YT_BACKEND, cloudToken, fireNotification } from "./datos";
 import { estadoEquipo, idEquipo, seguridadApi } from "./seguridad";
 import { PublicarVersion } from "./actualizar";
+import { AccionesDeVista } from "./base";
 
 /* ============================ ADMINISTRACIÓN (v3.30) ============================
  * Solo para el portátil (rol «dueno») y los equipos a los que el portátil dé ese poder («admin»).
@@ -137,15 +138,13 @@ export function AdminView({ toast }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 1100 }}>
       <style>{CSS}</style>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontFamily: "'Sora'", fontSize: 22, fontWeight: 800 }}>Administración</div>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: error ? "var(--red)" : "var(--text-2)", fontWeight: 600 }}>
-          <span style={{ width: 8, height: 8, borderRadius: 9, background: error ? "var(--red)" : "var(--green)", animation: error ? "none" : "adm-pulso 2s infinite" }} />
+      <AccionesDeVista>
+        <span className="rs-chip" style={{ color: error ? "var(--red)" : "var(--text-2)" }}>
+          <span className="punto" style={{ background: error ? "var(--red)" : "var(--green)", animation: error ? "none" : "adm-pulso 2s infinite" }} />
           {error ? "Sin conexión: " + error : "En vivo · " + (seg < 2 ? "ahora" : "hace " + seg + " s")}
         </span>
-        <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: "var(--text-3)" }}>Este equipo: <b style={{ color: ROL[d.rol][1] }}>{ROL[d.rol][0]}</b></span>
-      </div>
+        <span className="rs-chip">Este equipo: <b style={{ color: ROL[d.rol][1] }}>{ROL[d.rol][0]}</b></span>
+      </AccionesDeVista>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <Tile n={sols.length} txt="Solicitudes esperando" color="var(--gold)" onClick={() => ir("sol")} />
