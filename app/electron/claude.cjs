@@ -151,7 +151,8 @@ function limiteDe(texto) {
   const s = String(texto || "");
   const margen = 2 * 60000, ahora = Date.now();
   if (/overloaded|529|saturad/i.test(s) && !/limit/i.test(s)) return ahora + 5 * 60000;
-  if (!/usage limit|limit reached|hit your limit|rate.?limit|429|out of (extra )?usage|limit will reset|weekly limit|session limit/i.test(s)) return 0;
+  // (3.42.2) también «hit your 5-hour limit» y «hit your weekly limit»: el ordenador los contaba como fallo y gastaba reintentos
+  if (!/usage limit|limit reached|hit your [\w-]* ?limit|rate.?limit|429|out of (extra )?usage|limit will reset|weekly limit|session limit|5-hour limit/i.test(s)) return 0;
   const ep = s.match(/limit reached\|(\d{10})/i);
   if (ep) return Math.max(Number(ep[1]) * 1000, ahora) + margen;
   const m = s.match(/resets?\s+(?:at\s+)?(?:([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
