@@ -1,7 +1,7 @@
 {
   "name": "rderandom-studio",
   "productName": "RandomStudio",
-  "version": "3.44.2",
+  "version": "3.45.0",
   "description": "RandomStudio: gestor de contenido de RDeRandom (escritorio + web)",
   "private": true,
   "main": "electron/arranque.cjs",
@@ -14,7 +14,7 @@
     "app": "electron .",
     "dist": "electron-builder --win && node tools/instalar.mjs",
     "instalar": "node tools/instalar.mjs",
-    "prebuild": "node tools/proyecto.mjs"
+    "prebuild": "node tools/proyecto.mjs && node tools/chat.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
@@ -41,7 +41,8 @@
       "dist/**/*",
       "build/icon.png",
       "package.json",
-      "proyecto/**/*"
+      "proyecto/**/*",
+      "chat/**/*"
     ],
     "win": {
       "target": [

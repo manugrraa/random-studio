@@ -35,7 +35,8 @@ const LEER = `(() => { const cs = [...document.querySelectorAll(".counter.yta-sm
     recorrer(h); } };
   recorrer(c);
   const d = s.replace(/[^0-9]/g, ""); return d ? Number(d) : null; })()`;
-const CHAT_DIR = process.env.RANDOMCHAT_DIR || "E:\\A RdeRandom\\RandomChat";
+const chatLocal = require("./chatlocal.cjs");
+const CHAT_DIR = chatLocal.chatDir();
 let ultimo = null, enviado = 0, chatOk = null, leidoA = 0, numeroA = 0;
 // lo que hay en la página, para afinar la lectura si YouTube cambia (contador-diag.json en los datos del perfil)
 const DIAG = `(() => ({ t: Date.now(), url: location.href.slice(0, 90), vis: document.visibilityState,
@@ -94,6 +95,7 @@ function chatEncendido() {
 }
 app.whenReady().then(() => setInterval(async () => {
   if (process.env.STUDIO_CAPTURA && !process.env.STUDIO_CONTADOR_SOLO) return;
+  if (chatLocal.espejo) return;      // (en los otros equipos el chat es solo un espejo: el contador lo lleva el portátil)
   const on = await chatEncendido();
   if (on) { chatApagadoDesde = 0; cargarOp(); if (!lector || lector.isDestroyed() || lectorPerfil !== perfil()) abrirLector(); }
   else if (lector && !lector.isDestroyed() && !(win && !win.isDestroyed())) {

@@ -12,8 +12,9 @@ import { RandomChatView } from "./randomchat";
    (en YouTube, con la API oficial y la sesión de Studio: RandomChat/src/moderacion.js) y «Quitar del overlay».
    Pestaña «Ajustes»: el apartado RandomChat de siempre (encender, contador, overlays, panel). */
 
-const URL_CHAT = "http://localhost:7470";
-const WS_CHAT = "ws://127.0.0.1:7470";
+const PUERTO = Number(new URLSearchParams(location.search).get("puerto")) || 7470;     // (otro solo en las pruebas)
+const URL_CHAT = `http://localhost:${PUERTO}`;
+const WS_CHAT = `ws://127.0.0.1:${PUERTO}`;
 const MAX = 400;
 const PALETA = ["#ff5a5a", "#ff9f1c", "#ffd23f", "#7bd389", "#3ddbd9", "#4ea8ff", "#a78bfa", "#f472b6", "#ff7aa2", "#9be564", "#5ce1e6", "#ffb3c6"];
 const ROL = { owner: "#ffd600", moderator: "#5e84f1", member: "#2ba640" };
@@ -113,6 +114,7 @@ function ChatEnDirecto({ toast, compacto }) {
   const [tam, setTam] = useState(() => Number(ls("rds_chatwin_tam", "15")) || 15);
   const [abajo, setAbajo] = useState(true);
   const [verBaneos, setVerBaneos] = useState(false);
+  const [encendiendo, setEncendiendo] = useState(false);
   const caja = useRef(null);
   useEffect(() => { lsSet("rds_chatwin_tam", String(tam)); }, [tam]);
   const leerMod = () => window.studioFS.chatModeracion().then(r => setMod(r && !r.error ? r : null)).catch(() => setMod(null));
@@ -134,7 +136,7 @@ function ChatEnDirecto({ toast, compacto }) {
   };
 
   const baneos = (mod && mod.baneos) || [];
-  const aviso = !conectado ? "El RandomChat está apagado: enciéndelo en «Ajustes»"
+  const aviso = !conectado ? ""
     : !mod ? "" : !mod.sesion ? "Para moderar: conecta YouTube en Studio con la cuenta del canal (pestaña YouTube)"
     : !mod.directo ? "Sin directo conectado: borrar, silenciar y banear funcionan cuando empiece el directo" : "";
   return (
@@ -156,7 +158,11 @@ function ChatEnDirecto({ toast, compacto }) {
         </div>)}
       </div>}
       <div ref={caja} onScroll={alMover} style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "4px 0" }}>
-        {msgs.length === 0 && <div style={{ padding: 20, color: "var(--text-3)", fontSize: 13, textAlign: "center" }}>{conectado ? "Aún no hay mensajes" : "Esperando al RandomChat…"}</div>}
+        {msgs.length === 0 && <div style={{ padding: 20, color: "var(--text-3)", fontSize: 13, textAlign: "center", display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
+          {conectado ? "Aún no hay mensajes" : <>El RandomChat está apagado
+            <button disabled={encendiendo} onClick={async () => { setEncendiendo(true); try { const r = await window.studioFS.chatEncender(); if (r && r.error) toast && toast("✕ " + r.error, "red"); } finally { setEncendiendo(false); } }}
+              style={{ ...boton(true), padding: "6px 16px" }}>{encendiendo ? "Encendiendo…" : "Encender el chat"}</button></>}
+        </div>}
         {msgs.map(m => <Mensaje key={m.id} m={m} tam={tam} puede={puede || /^(sim-|test)/.test(String(m.platformId))} ocupado={!!ocupados[m.id]} onAccion={accion}/>)}
       </div>
       {!abajo && <button onClick={() => setAbajo(true)} style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", ...boton(true), padding: "5px 14px", fontSize: 12.5, boxShadow: "0 4px 14px rgba(0,0,0,0.5)" }}>↓ Mensajes nuevos</button>}

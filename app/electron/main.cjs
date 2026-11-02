@@ -725,8 +725,10 @@ app.on("before-quit", () => {
 // La sesión de YouTube de Studio (refresh token) se le pasa en memoria por 127.0.0.1: nunca se escribe en
 // disco ni sale en el registro.
 const http = require("http");
-const CHAT_DIR = process.env.RANDOMCHAT_DIR || "E:\\A RdeRandom\\RandomChat";
-const CHAT_PORT = 7470;
+// 2/11: en el portátil, E:\A RdeRandom\RandomChat; en los demás equipos, la copia que viaja con Studio (modo espejo)
+const chatLocal = require("./chatlocal.cjs");
+const CHAT_DIR = chatLocal.chatDir();
+const CHAT_PORT = Number(process.env.RANDOMCHAT_PORT) || 7470;     // (otro puerto solo en las pruebas)
 const CHAT_LOG = () => path.join(CHAT_DIR, "logs", "servidor.log");
 
 function chatKey() {
@@ -759,7 +761,7 @@ async function chatEstado() {
   const r = await chatPeticion("GET", "/studio/estado");
   if (r.apagado) return { encendido: false };
   if (r.status === 200 && r.data) {
-    const quiere = String(perfilC().carpetasDe(chatPerfil()).chat || CHAT_DIR).toLowerCase().replace(/[\\/]+$/, "");
+    const quiere = String((chatLocal.espejo ? chatLocal.datosEspejo(chatPerfil()) : perfilC().carpetasDe(chatPerfil()).chat) || CHAT_DIR).toLowerCase().replace(/[\\/]+$/, "");
     const tiene = String(r.data.datos || CHAT_DIR).toLowerCase().replace(/[\\/]+$/, "");
     return { encendido: true, nuestro: true, ...r.data, otroPerfil: quiere !== tiene, perfilChat: chatPerfil() };
   }
@@ -769,12 +771,36 @@ async function chatEstado() {
 const esperar = ms => new Promise(r => setTimeout(r, ms));
 
 ipcMain.handle("chat-estado", async () => {
+  if (chatLocal.espejo && !fs.existsSync(path.join(CHAT_DIR, "src", "server.js"))) chatLocal.instalar();
   if (!fs.existsSync(path.join(CHAT_DIR, "src", "server.js"))) return { encendido: false, falta: CHAT_DIR };
   return await chatEstado();
 });
 
+// El espejo (otros equipos): con el Node de la propia app, sin ventana, y su registro en logs/servidor.log
+async function encenderEspejo() {
+  const ins = chatLocal.instalar();
+  if (!ins.ok) return { error: ins.error };
+  fs.mkdirSync(path.dirname(CHAT_LOG()), { recursive: true });
+  try { if (fs.existsSync(CHAT_LOG())) fs.renameSync(CHAT_LOG(), CHAT_LOG().replace(/\.log$/, ".anterior.log")); } catch (e) {}
+  const log = fs.openSync(CHAT_LOG(), "w");
+  const datos = chatLocal.datosEspejo(chatPerfil());
+  fs.mkdirSync(datos, { recursive: true });
+  const p = spawn(process.execPath, [path.join(CHAT_DIR, "src", "server.js")], { cwd: CHAT_DIR, detached: true, windowsHide: true, stdio: ["ignore", log, log],
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", RANDOMCHAT_ESPEJO: "1", RANDOMCHAT_DATOS: datos, RANDOMCHAT_CANAL: perfilC().canalDe(chatPerfil()) } });
+  let fallo = null;
+  p.on("error", e => { fallo = e; });
+  p.unref();
+  try { fs.closeSync(log); } catch (e) {}
+  for (let i = 0; i < 50; i++) {
+    await esperar(300);
+    if (fallo) return { error: fallo.message };
+    if ((await chatEstado()).encendido) return { ok: true };
+  }
+  return { error: "No arranca: mira el registro del servidor" };
+}
 ipcMain.handle("chat-encender", async () => {
   if ((await chatEstado()).encendido) return { ok: true };
+  if (chatLocal.espejo) { try { return await encenderEspejo(); } catch (e) { return { error: e.message }; } }
   const cmd = path.join(CHAT_DIR, "arrancar.cmd");
   if (!fs.existsSync(cmd)) return { error: "No encuentro " + cmd };
   try {
@@ -850,6 +876,21 @@ ipcMain.handle("chat-abrir", async (e, que) => {
   return { ok: true };
 });
 
+// El espejo solo tiene sentido con Studio abierto: se apaga al cerrarlo. Y si esta versión trae otro RandomChat, se
+// instala al arrancar y el espejo encendido se reinicia con él.
+if (chatLocal.espejo) {
+  let espejoApagado = false;
+  app.on("before-quit", e => {
+    if (espejoApagado) return;
+    e.preventDefault(); espejoApagado = true;
+    chatPeticion("POST", "/studio/apagar", null, 1500).then(() => app.quit());
+  });
+  app.whenReady().then(() => setTimeout(async () => {
+    const r = chatLocal.instalar();
+    if (r.instalado && (await chatEstado()).encendido) { await chatApagar(); await encenderEspejo().catch(() => {}); }
+  }, 4000));
+}
+
 // 2/11, él: "que el apartado de RandomChat se haga ventana como RandomEditor y poder ponerme el chat en directo en la
 // parte que yo quiera de la pantalla", y "borrar mensajes, silenciar y banear desde el apartado". La ventana recuerda
 // su sitio, su tamaño, si va siempre encima y su opacidad. La moderación pasa por aquí (con la clave de Studio).
@@ -876,7 +917,7 @@ function abrirChat() {
   if (v.max && !process.env.STUDIO_CAPTURA) chatWin.maximize();
   chatWin.once("ready-to-show", () => { try { if (process.env.STUDIO_CAPTURA) { aPortatil(chatWin); chatWin.showInactive(); } else chatWin.show(); } catch (x) {} });
   let perfil = "rderandom"; try { perfil = chatPerfil(); } catch (x) {}     // (su sesión de YouTube: la del perfil del chat)
-  chatWin.loadFile(path.join(__dirname, "..", "dist", "index.html"), { hash: "randomchat", search: "perfil=" + encodeURIComponent(perfil) });
+  chatWin.loadFile(path.join(__dirname, "..", "dist", "index.html"), { hash: "randomchat", search: "perfil=" + encodeURIComponent(perfil) + "&puerto=" + CHAT_PORT });
   chatWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: "deny" }; });
   chatWin.webContents.on("will-navigate", (e, u) => { if (!u.startsWith("file:")) e.preventDefault(); });
   chatWin.on("close", () => { try { if (!process.env.STUDIO_CAPTURA) guardarVentanaChat({ ...chatWin.getNormalBounds(), max: chatWin.isMaximized() }); } catch (x) {} });

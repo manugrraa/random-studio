@@ -159,7 +159,13 @@ export function RandomChatView({ toast }) {
     <div className="fade-in" style={{display:"flex",flexDirection:"column",gap:14}}>
       <div>{titulo}<div style={{fontSize:13,color:"var(--text-2)"}}>Chat y alertas de los directos para OBS</div></div>
 
-      {window.studioFS.contadorEstado && <Contador toast={toast}/>}
+      {/* 2/11: en los otros equipos el chat es un espejo (solo lee el chat): el contador y las alertas van en el portátil */}
+      {e && e.espejo && <div style={{...tarjeta,fontSize:13,color:"var(--text-2)",lineHeight:1.5}}>
+        <b style={{color:"var(--text)"}}>Este equipo solo ve el chat (espejo)</b>
+        Lee el chat del directo por su cuenta para verlo en esta pantalla y moderar. Las alertas, el contador de suscriptores, la voz
+        y las respuestas de RandomBot salen solo del equipo de los directos (el de OBS), así que no se duplica nada ni choca con él.
+      </div>}
+      {window.studioFS.contadorEstado && !(e && e.espejo) && <Contador toast={toast}/>}
 
       <div style={tarjeta}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -209,7 +215,7 @@ export function RandomChatView({ toast }) {
           : e.sesionYoutube ? <div style={{fontSize:12.5,color:"var(--text-3)"}}>✓ Usa tu sesión de YouTube de Studio (solo en memoria: no se guarda en el chat).</div> : null}
       </div>}
 
-      {on && e.nuestro && e.perfiles && <div style={tarjeta}>
+      {on && e.nuestro && e.perfiles && !e.espejo && <div style={tarjeta}>
         <div style={{fontWeight:700,fontSize:14}}>Overlays para OBS <span style={{fontWeight:400,fontSize:12.5,color:"var(--text-3)"}}>(fuente de navegador a pantalla completa)</span></div>
         {Object.entries(e.perfiles).map(([id,nombre])=>(
           <div key={id} style={{display:"flex",alignItems:"center",gap:10,fontSize:13,flexWrap:"wrap"}}>
