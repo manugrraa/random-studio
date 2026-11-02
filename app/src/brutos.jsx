@@ -28,6 +28,7 @@ export function BrutosView({ toast }) {
   const [sel, setSel] = useState(new Set());
   const [abierta, setAbierta] = useState(null);           // id de la carpeta abierta a la derecha
   const [verDesc, setVerDesc] = useState(false);
+  const [nombrando, setNombrando] = useState(null);       // nombre de la carpeta nueva que se está escribiendo
   const [plegados, setPlegados] = useState(() => new Set(JSON.parse(ls("rds_brutos_plegados", "[]"))));
   const [viendo, setViendo] = useState(null);             // bruto que se está viendo
   const [cargando, setCargando] = useState(false);
@@ -96,13 +97,15 @@ export function BrutosView({ toast }) {
   const car = est.carpetas.find(c => c.id === abierta) || null;
   const elegir = (rel) => setSel(s => { const n = new Set(s); n.has(rel) ? n.delete(rel) : n.add(rel); return n; });
 
+  // v3.43.3: el nombre se escribe en la propia barra (window.prompt no existe en la app de escritorio: devolvía null
+  // y la carpeta no se creaba nunca)
   const nuevaCarpeta = async () => {
-    const rels = [...sel];
-    const n = window.prompt("Nombre de la carpeta (el vídeo que harás con estos clips):", "");
-    if (n == null) return;
+    const rels = [...sel], n = (nombrando || "").trim();
     const id = uidC();
-    await cambiar({ tipo: "carpeta", carpeta: { id, nombre: n.trim() || "Vídeo sin nombre", clips: rels } });
-    setSel(new Set()); setAbierta(id);
+    const r = await cambiar({ tipo: "carpeta", carpeta: { id, nombre: n || "Vídeo sin nombre", clips: rels } });
+    if (!r || r.error) return;
+    setNombrando(null); setSel(new Set()); setAbierta(id);
+    toast(`Carpeta «${n || "Vídeo sin nombre"}» creada con ${rels.length} clip(s)`);
   };
   const anadirA = async (c) => {
     const rels = [...sel].filter(r => !c.clips.includes(r));
@@ -158,11 +161,19 @@ export function BrutosView({ toast }) {
             <div style={{ position: "sticky", top: 0, zIndex: 3, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "10px 12px", borderRadius: 12,
               background: "var(--bg-2)", border: "1px solid rgba(212,175,55,0.5)", boxShadow: "0 8px 24px rgba(0,0,0,0.35)" }}>
               <b style={{ fontSize: 13 }}>{sel.size} elegido(s)</b>
-              <button onClick={nuevaCarpeta} style={boton(true)}>Nueva carpeta con ellos</button>
+              {nombrando == null
+                ? <button onClick={() => setNombrando("")} style={boton(true)}>Nueva carpeta con ellos</button>
+                : <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input autoFocus value={nombrando} onChange={e => setNombrando(e.target.value)} placeholder="Nombre del vídeo (p. ej. Audi A3 vendido)"
+                      onKeyDown={e => { e.stopPropagation(); if (e.key === "Enter") nuevaCarpeta(); if (e.key === "Escape") setNombrando(null); }}
+                      style={{ width: 230, background: "var(--bg)", border: "1px solid rgba(212,175,55,0.5)", borderRadius: 8, padding: "6px 9px", color: "var(--text)", fontSize: 12.5 }} />
+                    <button onClick={nuevaCarpeta} style={boton(true)}>Crear</button>
+                    <button onClick={() => setNombrando(null)} style={boton(false)}>Cancelar</button>
+                  </span>}
               {est.carpetas.filter(c => c.estado !== "montando").slice(0, 6).map(c => <button key={c.id} onClick={() => anadirA(c)} style={boton(false)} title="Añadir a esta carpeta">+ {c.nombre}</button>)}
               <button onClick={async () => { await cambiar({ tipo: "descartar", rels: [...sel] }); setSel(new Set()); }} style={boton(false, true)}>Descartar</button>
               {[...sel].some(r => desc.has(r)) && <button onClick={async () => { await cambiar({ tipo: "restaurar", rels: [...sel] }); setSel(new Set()); }} style={boton(false)}>Restaurar</button>}
-              <button onClick={() => setSel(new Set())} style={{ ...boton(false), marginLeft: "auto" }}>Quitar selección</button>
+              <button onClick={() => { setSel(new Set()); setNombrando(null); }} style={{ ...boton(false), marginLeft: "auto" }}>Quitar selección</button>
             </div>)}
           {dias === null && <div style={{ color: "var(--text-3)", fontSize: 13 }}>Buscando los brutos…</div>}
           {(dias || []).map(d => {

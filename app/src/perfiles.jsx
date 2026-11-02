@@ -302,6 +302,11 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
   const crearLocal = async () => {
     const nombre = (creando && creando.nombre || "").trim();
     if (!nombre) { setError("Ponle un nombre al perfil"); return; }
+    if (creando.renombrar) {
+      const r = await window.studioFS.localesRenombrar(creando.renombrar.id, nombre);
+      if (r && r.error) { setError(r.error); return; }
+      setCreando(null); setError(""); await actualizar(); return;
+    }
     const r = await window.studioFS.localesCrear(nombre, (creando.brutos || "").trim() || null);
     if (!r || r.error) { setError((r && r.error) || "No se pudo crear el perfil"); return; }
     // de entrada, solo los apartados que tienen sentido sin canal de YouTube (se pueden encender en Configuración)
@@ -309,13 +314,8 @@ export function PantallaPerfiles({ onElegir, codigo, inicial: ini }) {
     setCreando(null); setError("");
     await actualizar();
   };
-  const renombrarLocal = async (p) => {
-    setMenu(null);
-    const n = window.prompt("Nuevo nombre del perfil:", p.nombre);
-    if (!n || !n.trim()) return;
-    const r = await window.studioFS.localesRenombrar(p.id, n.trim());
-    if (r && r.error) setError(r.error); else await actualizar();
-  };
+  // v3.43.3: con el mismo formulario (window.prompt no existe en la app de escritorio: devolvía null y no hacía nada)
+  const renombrarLocal = (p) => { setMenu(null); setError(""); setCreando({ nombre: p.nombre, brutos: "", renombrar: p }); };
   const quitarLocal = async (p) => {
     setMenu(null);
     if (!window.confirm(`¿Quitar el perfil «${p.nombre}» de este equipo?
@@ -435,19 +435,19 @@ No se borra nada: sus vídeos, sus brutos y sus carpetas se quedan donde están.
       {creando && (
         <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", marginTop: 30, width: "min(460px, 100%)", background: "#141414", border: "1px solid #3a3119",
           borderRadius: 14, padding: 18, display: "flex", flexDirection: "column", gap: 12, animation: "rsp-entra .25s ease both", textAlign: "left" }}>
-          <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16 }}>Nuevo perfil local</div>
-          <div style={{ fontSize: 12.5, color: "#A3A3A3", lineHeight: 1.5 }}>Solo existe en este equipo y no necesita cuenta de Google. {"Sus vídeos se guardan en «Vídeos RDR\\Editados\\<nombre>» y, si conectas Drive dentro del perfil, se suben allí."}</div>
+          <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 16 }}>{creando.renombrar ? "Cambiar el nombre del perfil" : "Nuevo perfil local"}</div>
+          {!creando.renombrar && <div style={{ fontSize: 12.5, color: "#A3A3A3", lineHeight: 1.5 }}>Solo existe en este equipo y no necesita cuenta de Google. {"Sus vídeos se guardan en «Vídeos RDR\\Editados\\<nombre>» y, si conectas Drive dentro del perfil, se suben allí."}</div>}
           <input autoFocus value={creando.nombre} onChange={(e) => setCreando({ ...creando, nombre: e.target.value })} onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter") crearLocal(); }}
             placeholder="Nombre (p. ej. Carental)" style={{ background: "#0b0b0b", border: "1px solid #2a2a2a", borderRadius: 9, padding: "10px 12px", color: "#F5F5F5", fontSize: 14 }} />
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {!creando.renombrar && <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input value={creando.brutos} onChange={(e) => setCreando({ ...creando, brutos: e.target.value })} onKeyDown={(e) => e.stopPropagation()}
               placeholder="Carpeta de los brutos (opcional)" style={{ flex: 1, minWidth: 0, background: "#0b0b0b", border: "1px solid #2a2a2a", borderRadius: 9, padding: "10px 12px", color: "#F5F5F5", fontSize: 12.5 }} />
             <button className="rsp-op" style={{ border: "1px solid #3a3119", color: "#FFD700" }}
               onClick={async () => { const r = await window.studioFS.carpetasElegir(creando.brutos || null); if (r) setCreando(c => ({ ...c, brutos: r })); }}>Elegir…</button>
-          </div>
+          </div>}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button className="rsp-op" onClick={() => { setCreando(null); setError(""); }}>Cancelar</button>
-            <button className="rsp-op" onClick={crearLocal} style={{ background: "linear-gradient(135deg,#FFD700,#D4AF37)", color: "#000" }}>Crear perfil</button>
+            <button className="rsp-op" onClick={crearLocal} style={{ background: "linear-gradient(135deg,#FFD700,#D4AF37)", color: "#000" }}>{creando.renombrar ? "Guardar" : "Crear perfil"}</button>
           </div>
         </div>)}
 

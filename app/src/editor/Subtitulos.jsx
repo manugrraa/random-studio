@@ -99,6 +99,7 @@ function Muestra({ pl, info }) {
 
 export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setMaxPal, onGenerar, ocupado, generando, onPlantilla, onEstilo, alGesto, onQuitar, fuentes,
                                   favs = [], onFav, soloFavs, vacioFavs, onGuardarPlantilla, onBorrarPlantilla, ia, setIa, contexto, setContexto }) {
+  const [nombrePl, setNombrePl] = useState(null);   // v3.43.3: el nombre de la plantilla nueva (window.prompt no existe en la app)
   if(!info) return <div style={{fontSize:12.5,color:"#888",padding:8}}>Cargando las plantillas…</div>;
   const actual = plantillaDe(info, pista || { plantilla: elegida });
   const e = actual ? actual.estilo : {};
@@ -155,8 +156,15 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
           <button onClick={()=>onPlantilla(pista.plantilla)} className="rd-btn" style={{flex:1,justifyContent:"center"}} title="Vuelve al estilo de la plantilla">Restablecer estilo</button>
           <button onClick={onQuitar} className="rd-btn" style={{flex:1,justifyContent:"center"}}>Quitar subtítulos</button>
         </div>
-        {onGuardarPlantilla && pista.estilo && Object.keys(pista.estilo).length > 0 && <button onClick={()=>{ const n = window.prompt("Nombre de tu plantilla:", (actual ? actual.nombre : "Mi plantilla") + " (mía)"); if(n && n.trim()) onGuardarPlantilla(n.trim()); }}
-          className="rd-btn primario" style={{justifyContent:"center"}} title="Guarda este estilo como una plantilla más (sale en la lista para los próximos vídeos)">Guardar como plantilla</button>}
+        {onGuardarPlantilla && pista.estilo && Object.keys(pista.estilo).length > 0 && (nombrePl == null
+          ? <button onClick={()=>setNombrePl((actual ? actual.nombre : "Mi plantilla") + " (mía)")}
+              className="rd-btn primario" style={{justifyContent:"center"}} title="Guarda este estilo como una plantilla más (sale en la lista para los próximos vídeos)">Guardar como plantilla</button>
+          : <div style={{display:"flex",gap:6}}>
+              <input autoFocus value={nombrePl} onChange={ev=>setNombrePl(ev.target.value)} className="rd-input" style={{flex:1,minWidth:0}} placeholder="Nombre de tu plantilla"
+                onKeyDown={ev=>{ ev.stopPropagation(); if(ev.key==="Enter" && nombrePl.trim()){ onGuardarPlantilla(nombrePl.trim()); setNombrePl(null); } if(ev.key==="Escape") setNombrePl(null); }} />
+              <button onClick={()=>{ if(nombrePl.trim()){ onGuardarPlantilla(nombrePl.trim()); setNombrePl(null); } }} className="rd-btn primario">Guardar</button>
+              <button onClick={()=>setNombrePl(null)} className="rd-btn">✕</button>
+            </div>)}
       </>}
     </div>);
 }
