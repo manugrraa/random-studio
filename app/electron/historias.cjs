@@ -126,7 +126,9 @@ function lanzar(sender, id, args, etapa, alTerminar) {
   proc.on("close", (code) => {
     if (resto.trim()) analizarLinea(resto.trim());
     const t = tarea;
-    emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa, cancelada: !!(t && t.cancelada) });
+    // v3.45.2: el final de la salida va en el informe, así «Equipos» dice POR QUÉ falló (el render del ordenador fallaba sin texto)
+    const informe = code === 0 || !t ? "" : t.lineas.slice(-30).join("\n").slice(-1500);
+    emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa, cancelada: !!(t && t.cancelada), ...(informe ? { informe } : {}) });
     tarea = null;
     trasEtapa(t, id, code === 0, t && t.etapa);
   });

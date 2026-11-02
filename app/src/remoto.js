@@ -386,7 +386,7 @@ export function iniciarTrabajador(t) {
     // parada a mano (botón «Parar» o «Parar todo»): no se reintenta hasta que la sigas tú
     if (d.cancelada || Date.now() - _parando < 20000) { if (p) { m[p].pausada = Date.now(); guardarMios(m); } return; }
     // v3.41.3: el porqué del último fallo, a la vista en «Equipos» (antes había que adivinarlo)
-    _ultimoFallo = { id: d.id, etapa: d.etapa || "", texto: String(d.informe || "").slice(-700), fecha: Date.now() };
+    _ultimoFallo = { id: d.id, etapa: d.etapa || "", texto: String(d.informe || "").slice(-1500), fecha: Date.now() };
     try { localStorage.setItem(K_FALLO, JSON.stringify(_ultimoFallo)); } catch (e) {}
     if (d.limite) {
       const w = esperas(); w["h:" + d.id] = d.limite; guardarEsperas(w);
