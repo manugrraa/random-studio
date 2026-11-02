@@ -58,7 +58,10 @@ async function ejecutar(o) {
 let _iniciado = false;
 /* v3.40.1: arrancan al abrir la app (main.jsx), antes de elegir perfil, y siguen igual al cambiar de perfil. Los avisos en
  * pantalla (toast) llegan cuando la ventana principal se monta y se los pasa. */
-let _toast = null, _base = null, _kitVivo = null, _ultimoFallo = null, _basePendiente = null, _instalarBase = null;
+let _toast = null, _base = null, _kitVivo = null, _basePendiente = null, _instalarBase = null;
+// (v3.42.1) el último fallo se guarda: antes vivía en memoria y se perdía al reiniciar la app
+const K_FALLO = "rs_perfil_ultimo_fallo";
+let _ultimoFallo = (() => { try { return JSON.parse(localStorage.getItem(K_FALLO) || "null"); } catch (e) { return null; } })();
 const toast = (m) => { if (_toast) _toast(m); };
 export function iniciarRemotoEscritorio(t) {
   if (t) _toast = t;
@@ -332,6 +335,7 @@ export function iniciarTrabajador(t) {
     if (d.cancelada || Date.now() - _parando < 20000) { if (p) { m[p].pausada = Date.now(); guardarMios(m); } return; }
     // v3.41.3: el porqué del último fallo, a la vista en «Equipos» (antes había que adivinarlo)
     _ultimoFallo = { id: d.id, etapa: d.etapa || "", texto: String(d.informe || "").slice(-700), fecha: Date.now() };
+    try { localStorage.setItem(K_FALLO, JSON.stringify(_ultimoFallo)); } catch (e) {}
     if (d.limite) {
       const w = esperas(); w["h:" + d.id] = d.limite; guardarEsperas(w);
       const txt = "Historia " + d.id.slice(0, 2) + " · sigue sola a las " + hora(d.limite);

@@ -70,6 +70,15 @@ function md5(ruta) {
 
 /** Sube (o sustituye, si ya existe con el mismo nombre en esa carpeta) un archivo. Subida reanudable por trozos. */
 async function subir(token, ruta, partes, alProgreso) {
+  try { return await _subir(token, ruta, partes, alProgreso); }
+  catch (e) {
+    // (v3.42.1) la carpeta de la caché ya no existe en Drive (la borraste): se olvida la caché y se vuelve a intentar
+    if (!/Drive 404/.test(e.message || "")) throw e;
+    cacheCarpetas.clear();
+    return await _subir(token, ruta, partes, alProgreso);
+  }
+}
+async function _subir(token, ruta, partes, alProgreso) {
   const tam = fs.statSync(ruta).size, nombre = path.basename(ruta);
   const padre = await rutaCarpetas(token, partes);
   const q = `name='${esc(nombre)}' and '${padre}' in parents and trashed=false`;

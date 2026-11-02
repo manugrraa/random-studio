@@ -1,6 +1,7 @@
 import React from "react";
 const { useState, useEffect, useCallback } = React;
 import { alCambiarDisponible, disponible, pararTodo, pedidosApi, ponerDisponible } from "./remoto";
+import { alTimbre } from "./timbre";
 
 /* ============================ COLA DE TRABAJO (v3.33) ============================
  * La cola compartida de pedidos (/api/pedidos): se ve igual desde el portátil, el ordenador y el móvil.
@@ -98,8 +99,11 @@ export function ColaTrabajo({ toast }) {
   const cargar = useCallback(async () => { try { setR(await pedidosApi("GET")); setError(""); } catch (e) { setError(e.message); } }, []);
   useEffect(() => {
     cargar();
-    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 4000);
-    return () => clearInterval(t);
+    // (v3.42.1) con el timbre, los cambios se ven al instante; la vuelta de 15 s queda de respaldo
+    let pronto = null;
+    const off = alTimbre(() => { clearTimeout(pronto); pronto = setTimeout(cargar, 300); });
+    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 15000);
+    return () => { off(); clearTimeout(pronto); clearInterval(t); };
   }, [cargar]);
   const accion = async (cuerpo, ok) => { try { await pedidosApi("POST", cuerpo); if (ok) toast(ok); cargar(); } catch (e) { toast("❌ " + e.message); } };
 
@@ -149,7 +153,7 @@ export function ColaTrabajo({ toast }) {
           <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16 }}>
             {modo === "dual" ? "⚡ Trabajo dual" : modo === "individual" ? "Trabajo individual" : "Ningún equipo trabajando"}</div>
           <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-            {modo === "dual" ? "los pedidos se reparten entre los dos equipos; el portátil coge primero" : modo === "individual" ? "todo lo hace " + trabajan[0].nombre : "abre RandomStudio en un equipo y déjalo disponible"}</span>
+            {modo === "dual" ? "los pedidos nuevos los prepara el ordenador (guion y voces) y el portátil anima y renderiza" : modo === "individual" ? "todo lo hace " + trabajan[0].nombre : "abre RandomStudio en un equipo y déjalo disponible"}</span>
           <span style={{ flex: 1 }} />
           <BotonDisponible />
         </div>

@@ -400,7 +400,7 @@ function AjustesEstudio({ toast }) {
             style={{ flex: 1, fontSize: 13, padding: "9px 11px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)" }} />
           <button onClick={async () => { const x = await SF().estudioClaveEleven(clave); setClave(""); toast(x.eleven ? "Clave guardada" : "Clave borrada"); cargar(); }} className="grad-gold" style={botonOro}>{clave ? "Guardar" : a.eleven ? "Borrar" : "Guardar"}</button>
         </div>
-        <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 6 }}>La sacas de elevenlabs.io → Developers → API Keys. Se guarda cifrada en este portátil y no sale de él.</div>
+        <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 6 }}>La sacas de elevenlabs.io → Developers → API Keys. Se guarda cifrada en este equipo y no sale de él (cada equipo necesita la suya).</div>
       </div>
       <div style={{ ...tarjeta }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8 }}>Google Drive</div>
