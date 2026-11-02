@@ -120,6 +120,16 @@ export function iniciarRemotoEscritorio(t) {
     }
     ahora.__iniciado = 1;
     try { localStorage.setItem(K_AV, JSON.stringify(ahora)); } catch (e) {}
+    // v3.45.3: si el rescate del kit recuperó algo, las historias paradas se vuelven a intentar (una vez por rescate)
+    const rk = aj.rescateKit;
+    if (rk && (rk.restaurados || []).length) {
+      let visto = ""; try { visto = localStorage.getItem("rs_rescate_kit_visto") || ""; } catch (e) {}
+      if (visto !== rk.fecha) {
+        const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m);
+        try { localStorage.setItem("rs_rescate_kit_visto", rk.fecha); } catch (e) {}
+        toast("🧰 Recuperado del kit: " + rk.restaurados.map(r => r.nombre + ".py").join(", ") + ". Las historias paradas siguen solas");
+      }
+    }
     const historias = [];
     for (const h of l.historias.slice(0, 12)) {
       const x = { id: h.id, titulo: h.titulo, etapas: h.etapas, entregada: h.entregada, legado: h.legado, drive: h.drive, driveRevision: h.driveRevision };
@@ -132,7 +142,7 @@ export function iniciarRemotoEscritorio(t) {
       tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible,
       capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven,
         // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
-        bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", gpu: aj.gpu || null, whisper: aj.whisper || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, esperandoLimite: Object.keys(esperas()).length },
+        bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", gpu: aj.gpu || null, whisper: aj.whisper || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, rescateKit: aj.rescateKit || null, esperandoLimite: Object.keys(esperas()).length },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
       tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
       ajustes: aj.ajustes,

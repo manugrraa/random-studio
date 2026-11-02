@@ -488,6 +488,20 @@ function tar(args) {
     p.on("close", (code) => ok(code === 0 ? { ok: true } : { ok: false, error: err.trim().slice(0, 300) || "tar terminó con " + code }));
   });
 }
+/* v3.45.3: los módulos del kit que usa la historia y que NO vienen del portátil (los creó Claude aquí, p. ej. kit/pasos.py):
+ * viajan con el relevo, si no el otro equipo no puede rodarla (la 11 se quedó parada en el portátil por eso). */
+function kitPropioDe(id) {
+  try {
+    const rk = require("./rescatekit.cjs");
+    const man = leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {};
+    const delPortatil = new Set(Object.keys(man.archivos || {}));
+    if (esOrigen() || !delPortatil.size) return [];
+    const c = path.join(histDir(), id), usados = new Set(), pend = [];
+    for (const f of fs.readdirSync(c)) if (f.endsWith(".py")) pend.push(...rk.importados(leer(path.join(c, f), "")));
+    while (pend.length) { const n = pend.pop(); if (usados.has(n)) continue; usados.add(n); const k = path.join(raiz(), "kit", n + ".py"); if (existe(k)) pend.push(...rk.importados(leer(k, ""))); }
+    return [...usados].map(n => "kit/" + n + ".py").filter(r => !delPortatil.has(r) && existe(path.join(raiz(), r)));
+  } catch (e) { return []; }
+}
 async function instantanea(sender, id, etapa) {
   try {
     if (!existe(path.join(histDir(), id))) return;
@@ -496,7 +510,7 @@ async function instantanea(sender, id, etapa) {
     let guion = null; try { guion = fs.readdirSync(path.join(raiz(), "guiones")).find(n => n.startsWith("historia-" + id.slice(0, 2) + "-")); } catch (x) {}
     const fuera = ["__pycache__", "planos_final", "planos_revisar", "_animatic", "historia*_final*.mp4"].flatMap(x => ["--exclude", "*/" + x]);
     empaquetando = id;
-    const r = await tar(["-czf", out + ".tmp", ...fuera, "-C", raiz(), "historias/" + id, ...(guion ? ["guiones/" + guion] : [])]);
+    const r = await tar(["-czf", out + ".tmp", ...fuera, "-C", raiz(), "historias/" + id, ...(guion ? ["guiones/" + guion] : []), ...kitPropioDe(id)]);
     if (!r.ok) { try { fs.unlinkSync(out + ".tmp"); } catch (x) {} return; }
     fs.renameSync(out + ".tmp", out);
     try { if (sender && !sender.isDestroyed()) sender.send("historias-progreso", { id, tipo: "relevo", etapa }); } catch (x) {}
@@ -578,6 +592,7 @@ ipcMain.handle("estudio-relevo-recibir", async (e, id, token, archivo, md5) => {
     if (!r.ok || !existe(path.join(tmp, "historias", id))) { fs.rmSync(tmp, { recursive: true, force: true }); return { ok: false, error: "No se pudo abrir la copia: " + (r.error || "vacía") }; }
     apartar(id);
     fs.renameSync(path.join(tmp, "historias", id), path.join(histDir(), id));
+    try { for (const k of fs.readdirSync(path.join(tmp, "kit"))) { const d = path.join(raiz(), "kit", k); if (k.endsWith(".py") && !existe(d)) fs.renameSync(path.join(tmp, "kit", k), d); } } catch (x) {}
     try { for (const g of fs.readdirSync(path.join(tmp, "guiones"))) { fs.mkdirSync(path.join(raiz(), "guiones"), { recursive: true }); fs.renameSync(path.join(tmp, "guiones", g), path.join(raiz(), "guiones", g)); } } catch (x) {}
     fs.rmSync(tmp, { recursive: true, force: true });
     return { ok: true };
@@ -653,7 +668,7 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
     const f = path.join(baseDir(), cual + ".tgz");
     await drive.bajar(token, String(info.archivo), f, info.md5 || null);
     const r = await tar(["-xzf", f, "-C", raiz()]);
-    if (r.ok && cual === "kit") limpiarRestos(f);
+    if (r.ok && cual === "kit") { limpiarRestos(f); rescatarKit(); }
     try { fs.unlinkSync(f); } catch (x) {}
     if (!r.ok) return r;
     escribirJson(path.join(baseDir(), (cual === "kit" ? "kit_" : "") + "instalada.json"), { huella: info.huella, fecha: new Date().toISOString(), origen: info.fecha });
@@ -662,16 +677,25 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
 });
 // v3.42.3: al instalar el kit vivo se borran los archivos del kit que ya no existen en el portátil (un módulo renombrado o
 // una herramienta quitada se quedaban aquí para siempre y Claude podía seguir usándolos). Solo dentro de las carpetas del kit.
+// v3.45.3: borraba TAMBIÉN lo que Claude había creado en este equipo (kit/escuela.py de la historia 13) y el ordenador ya
+// no podía renderizar. Ahora solo se quita lo que vino de un kit anterior del portátil y ya no está en el nuevo, y no se
+// borra: se aparta a _kit_local/<fecha>/ (de ahí lo recupera el rescate si una historia lo usa).
 function limpiarRestos(tgz) {
   try {
     const dentro = new Set(require("child_process").execFileSync(tarExe(), ["-tzf", tgz], { encoding: "utf8", windowsHide: true, maxBuffer: 64 << 20 })
       .split(/\r?\n/).map(x => x.replace(/^\.\//, "").replace(/\/$/, "")).filter(Boolean));
+    const listaF = path.join(baseDir(), "kit_lista.json");
+    const antes = new Set(leerJson(listaF, []));
+    const sello = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     const ver = (d) => { let ns = []; try { ns = fs.readdirSync(d); } catch (e) { return; }
       for (const n of ns) { if (n === "__pycache__" || n.endsWith(".pyc")) continue; const f = path.join(d, n);
         const rel = path.relative(raiz(), f).split(path.sep).join("/");
         if (fs.statSync(f).isDirectory()) { ver(f); continue; }
-        if (!dentro.has(rel)) { try { fs.unlinkSync(f); } catch (e) {} } } };
+        if (!dentro.has(rel) && antes.has(rel)) {
+          try { const bk = path.join(raiz(), "_kit_local", sello, rel); fs.mkdirSync(path.dirname(bk), { recursive: true }); fs.renameSync(f, bk); } catch (e) {}
+        } } };
     for (const p of PARTES.kit) { const f = path.join(raiz(), p); if (existe(f) && fs.statSync(f).isDirectory()) ver(f); }
+    escribirJson(listaF, [...dentro]);
   } catch (e) {}
 }
 // v3.42: la fuente de los subtítulos (Lilita One) instalada para este usuario (sin administrador), por si el equipo no la
@@ -851,7 +875,7 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
     elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "", origen: esOrigen(),
     gpu: gpuNombre(), whisper: leerJson(path.join(estudioDir(), "_whisper.json"), null),
     // v3.41: la salud del equipo (Git Bash, espacio libre en el disco del proyecto y fecha del kit)
-    bash: !!claude.rutaBash(), disco: discoLibre(), kit: (leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {}).fecha || null };
+    rescateKit, bash: !!claude.rutaBash(), disco: discoLibre(), kit: (leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {}).fecha || null };
 });
 
 ipcMain.handle("estudio-clave-eleven", async (e, clave) => {
@@ -1016,7 +1040,18 @@ function sincronizarKit() {
     return { ok: true, puestos, guardados };
   } catch (e) { return { ok: false, error: e.message }; }
 }
-app.whenReady().then(() => setTimeout(() => { const r = sincronizarKit(); if (r.puestos) console.log("kit actualizado:", r); }, 8000));
+app.whenReady().then(() => setTimeout(() => { const r = sincronizarKit(); if (r.puestos) console.log("kit actualizado:", r); rescatarKit(); }, 8000));
+/* v3.45.3: recupera los módulos del kit que usan las historias de este equipo y faltan (ver rescatekit.cjs). El resultado
+ * sale en «Equipos» (capacidad.rescateKit). Nunca en el portátil: allí el kit es el original. */
+let rescateKit = null;
+function rescatarKit() {
+  try {
+    if (esOrigen() || !existe(path.join(raiz(), "kit"))) return null;
+    const r = require("./rescatekit.cjs").rescatar(raiz());
+    if (r.restaurados.length || r.faltan.length) { rescateKit = r; escribirJson(path.join(estudioDir(), "_rescate_kit.json"), r); console.log("rescate del kit:", r); }
+    return r;
+  } catch (e) { rescateKit = { fecha: new Date().toISOString(), error: e.message, restaurados: [], faltan: [] }; return null; }
+}
 ipcMain.handle("kit-sincronizar", async () => sincronizarKit());
 
 /* v3.38.1: borrar una historia del estudio. Va a la PAPELERA de este equipo (se puede recuperar), nunca se borra del todo.

@@ -930,6 +930,10 @@ function SaludEquipo({ e, ultima, onGit, onCuda }) {
   if (cap.esperandoLimite > 0) p.push(["Espera al límite de Claude", cap.esperandoLimite + " tarea(s) seguirán solas cuando se restablezca."]);
   if (cap.whisper && cap.whisper.dispositivo === "cpu") p.push(["Whisper va por el procesador (" + (cap.whisper.modelo || "") + ")" + (cap.gpu ? ": su gráfica " + cap.gpu + " no se usa" : ""),
     cap.gpu ? "Instala las librerías de CUDA y irá varias veces más rápido." : "Sin gráfica NVIDIA: usa el modelo turbo, que ya es rápido.", cap.gpu ? "cuda" : null]);
+  // v3.45.3: módulos del kit que usaban sus historias y faltaban (los borraba el kit del portátil)
+  const rk = cap.rescateKit;
+  if (rk && (rk.faltan || []).length) p.push(["Le faltan módulos del kit: " + rk.faltan.map(n => n + ".py").join(", "), "Sus historias no se pueden renderizar: hay que rehacer su escena."]);
+  if (rk && (rk.restaurados || []).length) p.push(["Kit recuperado: " + rk.restaurados.map(r => r.nombre + ".py" + (r.aviso ? " (" + r.aviso + ")" : "")).join(", "), null]);
   const uf = e.datos.ultimoFallo;
   if (uf && Date.now() - uf.fecha < 12 * 3600000) p.push(["Último fallo: historia " + String(uf.id).slice(0, 2) + " · " + uf.etapa + " (" + new Date(uf.fecha).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) + ")", uf.texto ? "«" + uf.texto.slice(-260) + "»" : null]);
   if (!p.length) return <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>✓ Todo en orden{cap.bash ? " · Bash" : ""}{cap.drive ? " · Drive" : ""}{typeof cap.disco === "number" ? " · " + cap.disco + " GB libres" : ""}</div>;
