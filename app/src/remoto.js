@@ -58,7 +58,7 @@ async function ejecutar(o) {
 let _iniciado = false;
 /* v3.40.1: arrancan al abrir la app (main.jsx), antes de elegir perfil, y siguen igual al cambiar de perfil. Los avisos en
  * pantalla (toast) llegan cuando la ventana principal se monta y se los pasa. */
-let _toast = null, _base = null, _ultimoFallo = null, _basePendiente = null, _instalarBase = null;
+let _toast = null, _base = null, _kitVivo = null, _ultimoFallo = null, _basePendiente = null, _instalarBase = null;
 const toast = (m) => { if (_toast) _toast(m); };
 export function iniciarRemotoEscritorio(t) {
   if (t) _toast = t;
@@ -133,7 +133,7 @@ export function iniciarRemotoEscritorio(t) {
       // v3.40.6: el uso de Claude de este equipo (lo ve el móvil en su marcador); se lee como mucho cada 10 min
       claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,
       // v3.41.3: la base que sube el portátil (los demás la bajan) y el último fallo de este equipo (se ve en «Equipos»)
-      base: _base, ultimoFallo: _ultimoFallo,
+      base: _base, kitVivo: _kitVivo, ultimoFallo: _ultimoFallo,
     };
     const r = await remotoApi("POST", { accion: "publicar", datos }).catch(() => null);
     if (r) { vigilarOtros(r.otros || []); igualarBase(r.otros || [], t).catch(() => {}); }
@@ -141,37 +141,44 @@ export function iniciarRemotoEscritorio(t) {
   // v3.41.3: los recursos del proyecto, iguales en todos los equipos (el portátil los sube a Drive si cambian; los demás
   // los bajan cuando su huella no coincide y están libres). Con la base nueva, las historias paradas se vuelven a intentar.
   let baseOcupada = false, baseMirada = 0;
+  // v3.42: dos paquetes: «base» (recursos fijos, ~45 MB, casi nunca cambia) y «kit» (kit vivo, ~1 MB, cambia a menudo)
+  const instalarPaquetes = async (pendientes) => {
+    let alguno = false;
+    for (const { cual, o } of pendientes) {
+      toast((cual === "kit" ? "🧰 Pongo al día el kit (del " : "📦 Bajo los recursos del proyecto (del ") + o.nombre + ")…");
+      const r = await s.baseInstalar(await driveTokenTrabajo(), o[cual === "kit" ? "kitVivo" : "base"], cual);
+      if (!r || !r.ok) { toast("❌ No pude bajar " + (cual === "kit" ? "el kit" : "los recursos") + ": " + ((r && r.error) || "")); continue; }
+      alguno = true;
+    }
+    if (alguno) { const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m); toast("✅ Este equipo trabaja ya con lo mismo que el portátil"); }
+    return alguno;
+  };
   _instalarBase = async () => {            // (lo llama el trabajador entre etapas)
     const pb = _basePendiente; if (!pb || baseOcupada) return false;
     _basePendiente = null; baseOcupada = true;
-    try {
-      toast("📦 Pongo al día el kit y los recursos (del " + pb.o.nombre + ") antes de seguir…");
-      const r = await s.baseInstalar(await driveTokenTrabajo(), pb.o.base);
-      if (r && r.ok) { const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m); }
-      return !!(r && r.ok);
-    } catch (e) { return false; } finally { baseOcupada = false; }
+    try { return await instalarPaquetes(pb); } catch (e) { return false; } finally { baseOcupada = false; }
   };
   const igualarBase = async (otros, t) => {
-    if (baseOcupada || !s.baseEstado || !driveConectadoTrabajo() || Date.now() - baseMirada < 5 * 60000) return;
+    if (baseOcupada || !s.baseEstado || !driveConectadoTrabajo() || Date.now() - baseMirada < 3 * 60000) return;
     baseMirada = Date.now(); baseOcupada = true;
     try {
       const b = await s.baseEstado();
       if (!b || !b.ok) return;
       if (b.origen) {
-        _base = b.subida || null;
-        if (!b.subida || b.subida.huella !== b.huella) { const up = await s.baseSubir(await driveTokenTrabajo()); if (up && up.ok) _base = up; }
+        _base = b.subida || null; _kitVivo = b.subidaKit || null;
+        if (!b.subida || b.subida.huella !== b.huella) { const up = await s.baseSubir(await driveTokenTrabajo(), "base"); if (up && up.ok) _base = up; }
+        if (!b.subidaKit || b.subidaKit.huella !== b.huellaKit) { const up = await s.baseSubir(await driveTokenTrabajo(), "kit"); if (up && up.ok) _kitVivo = up; }
         return;
       }
-      const o = otros.find(x => x.base && x.base.archivo);
-      if (!o || (b.instalada && b.instalada.huella === o.base.huella)) { _basePendiente = null; return; }
-      // v3.41.8: ocupado ahora: se apunta y se instala en el primer hueco entre etapas (lo hace la vuelta del trabajador)
-      if (t && t.activa) { _basePendiente = { o, b }; return; }
-      toast("📦 Bajando los recursos del proyecto (efectos, música, texturas) de " + o.nombre + "…");
-      const r = await s.baseInstalar(await driveTokenTrabajo(), o.base);
-      if (!r || !r.ok) { toast("❌ No pude bajar los recursos: " + ((r && r.error) || "")); return; }
-      const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; }
-      guardarMios(m);
-      toast("✅ Recursos del proyecto al día: este equipo ya trabaja igual que " + o.nombre);
+      const pend = [];
+      const ob = otros.find(x => x.base && x.base.archivo);
+      if (ob && !(b.instalada && b.instalada.huella === ob.base.huella)) pend.push({ cual: "base", o: ob });
+      const ok = otros.find(x => x.kitVivo && x.kitVivo.archivo);
+      if (ok && !(b.instaladaKit && b.instaladaKit.huella === ok.kitVivo.huella)) pend.push({ cual: "kit", o: ok });
+      if (!pend.length) { _basePendiente = null; return; }
+      // ocupado ahora: se instala en el primer hueco entre etapas (la vuelta del trabajador)
+      if (t && t.activa) { _basePendiente = pend; return; }
+      await instalarPaquetes(pend);
     } finally { baseOcupada = false; }
   };
   // v3.41: si otro equipo se desconecta a mitad de una historia, aviso (una vez hasta que vuelva); a los 10 min, el

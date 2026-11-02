@@ -30,6 +30,22 @@ if (!fs.existsSync(path.join(ORIGEN, "kit"))) {
   process.exit(0);
 }
 
+/* (2-11-2026, revisión) La plantilla se NORMALIZA al copiarla, vengan de la historia que vengan sus scripts:
+ *  - montar.py: el número de historia sale de la carpeta (no «historia09_» fijo).
+ *  - sincronizar.py: sin arranque acelerado por defecto (velocidad constante, como pidió Manu).
+ *  - subtitulos.py: la fuente también se busca en assets/fuentes del proyecto (sin ella fallaba la etapa Animatic). */
+function normalizarPlantilla(dir) {
+  const fix = (n, f) => { const p = path.join(dir, n); if (!fs.existsSync(p)) return; const s = fs.readFileSync(p, "utf8"); const t = f(s); if (t !== s) fs.writeFileSync(p, t); };
+  fix("montar.py", s => {
+    let t = s.replace(/historia\d\d_\{quality\}/g, "historia{NN}_{quality}");
+    if (/\{NN\}/.test(t) && !/^NN = /m.test(t)) t = t.replace(/^(HERE = .*\n)/m, "$1NN = os.path.basename(HERE)[:2]        # el número de la historia, de su carpeta\n");
+    return t;
+  });
+  fix("sincronizar.py", s => s.replace(/intro_t = float\(sys\.argv\[3\]\) if len\(sys\.argv\) > 3 else INTRO_TEMPO/, "intro_t = float(sys.argv[3]) if len(sys.argv) > 3 else tempo   # sin arranque acelerado: velocidad constante"));
+  fix("subtitulos.py", s => s.replace(/    for d in \(os\.path\.join\(os\.environ\.get\("WINDIR", "C:\/Windows"\), "Fonts"\),/,
+    '    for d in (os.path.join(os.path.dirname(os.path.dirname(HERE)), "assets", "fuentes"),      # la del proyecto, en cualquier equipo\n              os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts"),'));
+}
+
 // la plantilla: los scripts de la historia entregada más reciente (las instrucciones de cada etapa copian de aquí)
 const plantilla = path.join(ORIGEN, "historias", "_plantilla");
 const listas = process.env.RH_ENTREGAS || path.join(path.dirname(ORIGEN), "Vídeos RDR", "Editados", "RandomHistorias");
@@ -51,6 +67,7 @@ if (buena) {
   for (const f of ["titulo.txt", "narracion.txt"]) if (fs.existsSync(path.join(src, f))) fs.copyFileSync(path.join(src, f), path.join(plantilla, f.replace(".txt", "_ejemplo.md")));
   const g = fs.readdirSync(path.join(ORIGEN, "guiones")).find(n => n.startsWith("historia-" + buena.slice(0, 2) + "-"));
   if (g) fs.copyFileSync(path.join(ORIGEN, "guiones", g), path.join(plantilla, "guion_ejemplo.md"));
+  normalizarPlantilla(plantilla);
   fs.writeFileSync(path.join(plantilla, "LEEME.md"), "Plantilla buena (scripts de la historia " + buena + ", la última entregada). "
     + "Cada historia nueva copia de aquí sincronizar.py, mezclar.py, subtitulos.py, montar.py, escena.py, rodar.py y la estructura de planos.py.\n");
 }

@@ -453,7 +453,7 @@ function avanzar(sender, id, auto) {
   const s = siguiente(id);
   if (s.terminado || s.espera) { try { sender.send("historias-progreso", { id, tipo: s.terminado ? "terminado" : "espera", etapa: s.espera && s.espera.id }); } catch (e) {} return { ok: true, ...s }; }
   if (auto && !ajustes().avanzarSolo) return { ok: true };
-  if (auto && !esOrigen() && ["escena", "animatic", "render", "montaje"].includes(s.etapa.id) && s.etapa.id === "escena")
+  if (auto && !esOrigen() && s.etapa.id === "escena")
     return { ok: true, espera: "preparada: decide el reparto" };
   correrEtapa(sender, id, s.etapa.id, null, true);
   return { ok: true, etapa: s.etapa.id };
@@ -558,10 +558,16 @@ ipcMain.handle("estudio-relevo-recibir", async (e, id, token, archivo, md5) => {
   try {
     fs.mkdirSync(relevoDir(), { recursive: true });
     await drive.bajar(token, archivo, f, md5 || null);
-    apartar(id);
-    const r = await tar(["-xzf", f, "-C", raiz()]);
+    // (v3.42) se abre en un temporal y solo si va bien se aparta la copia local y se mueve la nueva a su sitio
+    const tmp = path.join(relevoDir(), "tmp-" + id);
+    fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(tmp, { recursive: true });
+    const r = await tar(["-xzf", f, "-C", tmp]);
     try { fs.unlinkSync(f); } catch (x) {}
-    if (!r.ok) return { ok: false, error: "No se pudo abrir la copia: " + r.error };
+    if (!r.ok || !existe(path.join(tmp, "historias", id))) { fs.rmSync(tmp, { recursive: true, force: true }); return { ok: false, error: "No se pudo abrir la copia: " + (r.error || "vacía") }; }
+    apartar(id);
+    fs.renameSync(path.join(tmp, "historias", id), path.join(histDir(), id));
+    try { for (const g of fs.readdirSync(path.join(tmp, "guiones"))) { fs.mkdirSync(path.join(raiz(), "guiones"), { recursive: true }); fs.renameSync(path.join(tmp, "guiones", g), path.join(raiz(), "guiones", g)); } } catch (x) {}
+    fs.rmSync(tmp, { recursive: true, force: true });
     return { ok: true };
   } catch (x) { return { ok: false, error: x.message }; }
 });
@@ -579,53 +585,84 @@ ipcMain.handle("estudio-relevada", async (e, id) => {
 /* v3.41.3 BASE: los recursos del proyecto que no son código (efectos, música, fuentes, texturas, biblioteca 3D; ~45 MB).
  * El portátil (origen) los sube a Drive cuando cambian y publica su huella; los demás equipos los bajan si la suya es otra.
  * Sin ellos, el ordenador no podía mezclar el sonido ni montar, y Claude improvisaba (y se quedaba en bucle). */
-const BASE_PARTES = ["assets/fuentes", "assets/textures", "assets/roblox", "assets/musica", "assets/sfx", "library", "historias/01_bostezo/fuentes",
-  // v3.41.7: KIT VIVO: lo que Claude mejora en el portátil (modelos 3D, cámara, herramientas, instrucciones) llega al
-  // ordenador en minutos, sin esperar a otra versión de RandomStudio
-  "kit", "tools", "historias/_plantilla", "guiones/prompt-produccion.md", "guiones/canal_nuevo.md"];
+/* v3.42 (tanda 2 de la revisión): DOS paquetes, para que un retoque del kit no vuelva a subir 50 MB:
+ *  - «base»: los recursos fijos (efectos, música, fuentes, texturas, biblioteca 3D; ~45 MB). Cambia casi nunca.
+ *  - «kit»: el KIT VIVO (kit, herramientas, plantilla, guías; ~1 MB): lo que Claude mejora en el portátil llega al ordenador
+ *    en minutos sin esperar a otra versión de RandomStudio.
+ * La huella es por CONTENIDO (no por fecha), así que tocar y deshacer no sube nada. */
+const PARTES = {
+  base: ["assets/fuentes", "assets/textures", "assets/roblox", "assets/musica", "assets/sfx", "library", "historias/01_bostezo/fuentes"],
+  kit: ["kit", "tools", "historias/_plantilla", "guiones/prompt-produccion.md", "guiones/canal_nuevo.md"],
+};
 const baseDir = () => path.join(estudioDir(), "_base");
-function huellaBase() {
+function huellaDe(cual) {
   const crypto = require("crypto"), h = crypto.createHash("sha1");
+  const archivo = (f, rel) => { const st = fs.statSync(f);
+    // el kit por contenido (es pequeño); la base por tamaño (son archivos grandes que no se editan)
+    h.update(rel + "|" + (cual === "kit" ? crypto.createHash("sha1").update(fs.readFileSync(f)).digest("hex") : st.size) + "\n"); };
   const ver = (d) => { let ns = []; try { ns = fs.readdirSync(d).sort(); } catch (e) { return; }
-    for (const n of ns) { if (n === "__pycache__") continue; const f = path.join(d, n), st = fs.statSync(f); if (st.isDirectory()) ver(f); else h.update(path.relative(raiz(), f).replace(/\\/g, "/") + "|" + st.size + "|" + Math.round(st.mtimeMs) + "\n"); } };
-  for (const p of BASE_PARTES) { const f = path.join(raiz(), p); if (existe(f) && fs.statSync(f).isFile()) { const st = fs.statSync(f); h.update(p + "|" + st.size + "|" + Math.round(st.mtimeMs) + "\n"); } else ver(f); }
+    for (const n of ns) { if (n === "__pycache__" || n.endsWith(".pyc")) continue; const f = path.join(d, n); if (fs.statSync(f).isDirectory()) ver(f); else archivo(f, path.relative(raiz(), f).replace(/\\/g, "/")); } };
+  for (const p of PARTES[cual]) { const f = path.join(raiz(), p); if (!existe(f)) continue; if (fs.statSync(f).isFile()) archivo(f, p); else ver(f); }
   return h.digest("hex").slice(0, 16);
 }
 const esOrigen = () => existe(path.join(raiz(), ".origen_kit"));
+const jsonDe = (cual, que) => leerJson(path.join(baseDir(), (cual === "kit" ? "kit_" : "") + que + ".json"), null);
 ipcMain.handle("base-estado", async () => {
-  try { return { ok: true, origen: esOrigen(), huella: esOrigen() ? huellaBase() : null,
-    subida: leerJson(path.join(baseDir(), "subida.json"), null), instalada: leerJson(path.join(baseDir(), "instalada.json"), null) }; }
-  catch (e) { return { ok: false, error: e.message }; }
+  try {
+    const o = esOrigen();
+    return { ok: true, origen: o,
+      huella: o ? huellaDe("base") : null, subida: jsonDe("base", "subida"), instalada: jsonDe("base", "instalada"),
+      huellaKit: o ? huellaDe("kit") : null, subidaKit: jsonDe("kit", "subida"), instaladaKit: jsonDe("kit", "instalada") };
+  } catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle("base-subir", async (e, token) => {
+ipcMain.handle("base-subir", async (e, token, cual) => {
+  cual = cual === "kit" ? "kit" : "base";
   if (!esOrigen()) return { ok: false, error: "Solo la sube el portátil" };
   try {
     fs.mkdirSync(baseDir(), { recursive: true });
-    const f = path.join(baseDir(), "base.tgz"), huella = huellaBase();
-    const r = await tar(["-czf", f, "--exclude", "*/__pycache__", "-C", raiz(), ...BASE_PARTES.filter(p => existe(path.join(raiz(), p)))]);
+    const f = path.join(baseDir(), cual + ".tgz"), huella = huellaDe(cual);
+    const r = await tar(["-czf", f, "--exclude", "*/__pycache__", "--exclude", "*.pyc", "-C", raiz(), ...PARTES[cual].filter(p => existe(path.join(raiz(), p)))]);
     if (!r.ok) return r;
     const up = await drive.subir(token, f, ["RandomStudio", "RandomHistorias", "_Base"]);
     const info = { archivo: up.id, md5: up.md5, tam: up.tam, huella, fecha: new Date().toISOString() };
-    escribirJson(path.join(baseDir(), "subida.json"), info);
+    escribirJson(path.join(baseDir(), (cual === "kit" ? "kit_" : "") + "subida.json"), info);
     try { fs.unlinkSync(f); } catch (x) {}
     return { ok: true, ...info };
   } catch (x) { return { ok: false, error: x.message }; }
 });
-ipcMain.handle("base-instalar", async (e, token, info) => {
+ipcMain.handle("base-instalar", async (e, token, info, cual) => {
+  cual = cual === "kit" ? "kit" : "base";
   if (esOrigen()) return { ok: false, error: "El portátil es el origen" };
-  if (!info || !info.archivo) return { ok: false, error: "Sin base" };
+  if (!info || !info.archivo) return { ok: false, error: "Sin paquete" };
   if (tarea || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
   try {
     fs.mkdirSync(baseDir(), { recursive: true });
-    const f = path.join(baseDir(), "base.tgz");
+    const f = path.join(baseDir(), cual + ".tgz");
     await drive.bajar(token, String(info.archivo), f, info.md5 || null);
     const r = await tar(["-xzf", f, "-C", raiz()]);
     try { fs.unlinkSync(f); } catch (x) {}
     if (!r.ok) return r;
-    escribirJson(path.join(baseDir(), "instalada.json"), { huella: info.huella, fecha: new Date().toISOString() });
+    escribirJson(path.join(baseDir(), (cual === "kit" ? "kit_" : "") + "instalada.json"), { huella: info.huella, fecha: new Date().toISOString(), origen: info.fecha });
     return { ok: true };
   } catch (x) { return { ok: false, error: x.message }; }
 });
+// v3.42: la fuente de los subtítulos (Lilita One) instalada para este usuario (sin administrador), por si el equipo no la
+// tiene: los subtítulos la buscan en las fuentes de Windows y sin ella la etapa Animatic fallaba
+function asegurarFuentes() {
+  try {
+    const src = path.join(raiz(), "assets", "fuentes");
+    if (!existe(src)) return;
+    const dest = path.join(process.env.LOCALAPPDATA || "", "Microsoft", "Windows", "Fonts");
+    fs.mkdirSync(dest, { recursive: true });
+    for (const n of fs.readdirSync(src).filter(x => /\.(ttf|otf)$/i.test(x))) {
+      if (existe(path.join(process.env.SystemRoot || "C:\\Windows", "Fonts", n)) || existe(path.join(dest, n))) continue;
+      fs.copyFileSync(path.join(src, n), path.join(dest, n));
+      const nombre = n.replace(/\.(ttf|otf)$/i, "").replace(/-Regular$/, "").replace(/([a-z])([A-Z])/g, "$1 $2") + " (TrueType)";
+      spawn("reg", ["add", "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts", "/v", nombre, "/t", "REG_SZ", "/d", path.join(dest, n), "/f"], { windowsHide: true });
+    }
+  } catch (e) {}
+}
+app.whenReady().then(() => setTimeout(asegurarFuentes, 10000));
 
 // v3.41.7: la gráfica de este equipo (NVIDIA), para saber si Whisper puede ir por ella
 let _gpu;
@@ -739,6 +776,7 @@ ipcMain.handle("estudio-avanzar", async (e, id) => avanzar(e.sender, id, false))
 
 ipcMain.handle("estudio-rehacer", async (e, id, etapaId, nota) => {
   if (tarea) return { ok: false, error: "Ya hay una tarea en marcha" };
+  if (!ETAPAS.some(x => x.id === etapaId)) return { ok: false, error: "Esa etapa no existe: " + etapaId };
   const c = carpetaDe(id), est = estudioDe(c);
   est.revisiones = { ...(est.revisiones || {}) };
   if (est.revisiones[etapaId]) est.revisiones[etapaId] = { estado: "cambios", nota: nota || "", fecha: new Date().toISOString() };
@@ -872,6 +910,9 @@ function sincronizarKit() {
     const estF = path.join(R, ".kit_sync.json");
     const est = leerJson(estF, { archivos: {} });
     if (est.fecha === man.fecha) return { ok: true, al_dia: true };
+    // (v3.42) si el kit vivo bajado de Drive es más nuevo que la copia que trae esta versión, no se pisa
+    const kv = leerJson(path.join(estudioDir(), "_base", "kit_instalada.json"), null);
+    if (kv && kv.origen && kv.origen > man.fecha) { escribirJson(estF, { ...est, fecha: man.fecha, saltado: "kit vivo más nuevo" }); return { ok: true, al_dia: true, kitVivo: true }; }
     const sello = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     let puestos = 0, guardados = 0;
     // v3.41.3: la memoria de las historias (_memoria/) va a la carpeta donde Claude Code la lee para este proyecto
@@ -893,7 +934,7 @@ function sincronizarKit() {
       puestos++;
     }
     escribirJson(estF, { fecha: man.fecha, archivos: man.archivos, aplicado: new Date().toISOString(), puestos, guardados });
-    if (puestos) { try { fs.unlinkSync(path.join(estudioDir(), "_base", "instalada.json")); } catch (x) {} }   // (v3.41.7) que vuelva a bajar el kit vivo
+    if (puestos) { try { fs.unlinkSync(path.join(estudioDir(), "_base", "kit_instalada.json")); } catch (x) {} }   // (v3.41.7) que vuelva a bajar el kit vivo
     return { ok: true, puestos, guardados };
   } catch (e) { return { ok: false, error: e.message }; }
 }
