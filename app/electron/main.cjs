@@ -623,7 +623,7 @@ function createWindow() {
   });
   if (process.env.STUDIO_CAPTURA) { aPortatil(mainWindow); mainWindow.showInactive(); }
   else if (v.max) mainWindow.maximize();
-  mainWindow.on("close", e => { guardarVentana(); if (editorWin && !editorWin.isDestroyed()) { editorWin.close(); if (editorWin && !editorWin.isDestroyed()) e.preventDefault(); } });
+  mainWindow.on("close", e => { guardarVentana(); if (chatWin && !chatWin.isDestroyed()) chatWin.close(); if (editorWin && !editorWin.isDestroyed()) { editorWin.close(); if (editorWin && !editorWin.isDestroyed()) e.preventDefault(); } });
   mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   // Los enlaces externos (YouTube Studio, etc.) se abren en el navegador normal
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -649,6 +649,11 @@ function createWindow() {
         mainWindow0 = abrirEditor(process.env.STUDIO_EDITOR_RECOP ? { recopilacion: process.env.STUDIO_EDITOR_RECOP } : carpeta ? { carpeta, archivo } : null);
         await new Promise(r => mainWindow0.webContents.once("did-finish-load", r));
         await esperar(Number(process.env.STUDIO_ESPERA_EDITOR || 8000));
+      }
+      if (process.env.STUDIO_CHAT) {        // (pruebas de la ventana del RandomChat)
+        mainWindow0 = abrirChat();
+        await new Promise(r => mainWindow0.webContents.once("did-finish-load", r));
+        await esperar(Number(process.env.STUDIO_ESPERA_EDITOR || 4000));
       }
       const mainWindow = mainWindow0;
       for (const p of pestanas) {
@@ -729,10 +734,10 @@ function chatKey() {
 }
 
 // Petición al servidor del chat con la clave de Studio. { status, data } o { apagado: true }
-function chatPeticion(method, ruta, body) {
+function chatPeticion(method, ruta, body, espera = 3000) {
   return new Promise(resolve => {
     const txt = body ? JSON.stringify(body) : null;
-    const req = http.request({ host: "127.0.0.1", port: CHAT_PORT, path: ruta, method, timeout: 3000,
+    const req = http.request({ host: "127.0.0.1", port: CHAT_PORT, path: ruta, method, timeout: espera,
       headers: { "x-studio-key": chatKey(), ...(txt ? { "content-type": "application/json", "content-length": Buffer.byteLength(txt) } : {}) } }, res => {
       let d = ""; res.on("data", c => d += c);
       res.on("end", () => { let data = null; try { data = JSON.parse(d); } catch (e) {} resolve({ status: res.statusCode, data }); });
@@ -837,6 +842,60 @@ ipcMain.handle("chat-abrir", async (e, que) => {
   if (que === "panel") await shell.openExternal(`http://localhost:${CHAT_PORT}/panel`);
   else if (que === "carpeta" && fs.existsSync(CHAT_DIR)) await shell.openPath(CHAT_DIR);
   return { ok: true };
+});
+
+// 2/11, él: "que el apartado de RandomChat se haga ventana como RandomEditor y poder ponerme el chat en directo en la
+// parte que yo quiera de la pantalla", y "borrar mensajes, silenciar y banear desde el apartado". La ventana recuerda
+// su sitio, su tamaño, si va siempre encima y su opacidad. La moderación pasa por aquí (con la clave de Studio).
+let chatWin = null;
+const ventanaChatFile = () => path.join(dataDir(), "ventana_chat.json");
+function leerVentanaChat() { try { return JSON.parse(fs.readFileSync(ventanaChatFile(), "utf8")); } catch (e) { return {}; } }
+function guardarVentanaChat(patch) {
+  try { fs.writeFileSync(ventanaChatFile(), JSON.stringify({ ...leerVentanaChat(), ...patch })); } catch (e) {}
+}
+function abrirChat() {
+  if (chatWin && !chatWin.isDestroyed()) {
+    if (chatWin.isMinimized()) chatWin.restore();
+    if (process.env.STUDIO_CAPTURA) chatWin.showInactive(); else { chatWin.show(); chatWin.focus(); }
+    return chatWin;
+  }
+  const v = leerVentanaChat();
+  chatWin = new BrowserWindow({
+    width: v.width || 1100, height: v.height || 860, x: v.x, y: v.y, minWidth: 300, minHeight: 260,
+    backgroundColor: "#0e0e0e", title: "RandomChat", show: false, autoHideMenuBar: true, icon: ICONO,
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
+  });
+  if (v.encima) chatWin.setAlwaysOnTop(true, "screen-saver");
+  if (v.opacidad && v.opacidad < 1) chatWin.setOpacity(Math.max(0.3, v.opacidad));
+  if (v.max && !process.env.STUDIO_CAPTURA) chatWin.maximize();
+  chatWin.once("ready-to-show", () => { try { if (process.env.STUDIO_CAPTURA) { aPortatil(chatWin); chatWin.showInactive(); } else chatWin.show(); } catch (x) {} });
+  let perfil = "rderandom"; try { perfil = perfilC().perfilActivo() || perfil; } catch (x) {}
+  chatWin.loadFile(path.join(__dirname, "..", "dist", "index.html"), { hash: "randomchat", search: "perfil=" + encodeURIComponent(perfil) });
+  chatWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: "deny" }; });
+  chatWin.webContents.on("will-navigate", (e, u) => { if (!u.startsWith("file:")) e.preventDefault(); });
+  chatWin.on("close", () => { try { if (!process.env.STUDIO_CAPTURA) guardarVentanaChat({ ...chatWin.getNormalBounds(), max: chatWin.isMaximized() }); } catch (x) {} });
+  chatWin.on("closed", () => { chatWin = null; });
+  return chatWin;
+}
+ipcMain.handle("chatwin-abrir", async () => { abrirChat(); return true; });
+ipcMain.handle("chatwin-estado", async () => { const v = leerVentanaChat(); return { encima: !!v.encima, opacidad: v.opacidad || 1 }; });
+ipcMain.handle("chatwin-ajustes", async (e, op) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w || w !== chatWin) return { error: "No es la ventana del chat" };
+  const patch = {};
+  if (typeof op.encima === "boolean") { w.setAlwaysOnTop(op.encima, "screen-saver"); patch.encima = op.encima; }
+  if (Number.isFinite(op.opacidad)) { patch.opacidad = Math.min(1, Math.max(0.3, op.opacidad)); w.setOpacity(patch.opacidad); }
+  guardarVentanaChat(patch);
+  return { ok: true, ...patch };
+});
+ipcMain.handle("chat-moderacion", async () => {
+  const r = await chatPeticion("GET", "/studio/moderacion");
+  return r.apagado ? { error: "El chat está apagado" } : (r.data || { error: r.error || "Sin respuesta" });
+});
+ipcMain.handle("chat-moderar", async (e, op) => {
+  if (!op || typeof op !== "object") return { error: "Petición no válida" };
+  const r = await chatPeticion("POST", "/studio/moderar", { accion: op.accion, id: op.id, autor: op.autor, platform: op.platform, segundos: op.segundos, banId: op.banId }, 60000);
+  return r.apagado ? { error: "El chat está apagado" } : (r.data || { error: r.error || "Sin respuesta" });
 });
 
 // RandomHistorias dentro de Studio (v3.21): sus llamadas viven en historias.cjs

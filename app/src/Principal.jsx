@@ -65,9 +65,11 @@ export function App() {
   // Objetivos (dinero → visitas), RPM real e historial diario de visitas/ingresos (se sincroniza)
   const [goals, setGoals] = useState(()=> (_initial && _initial.goals && typeof _initial.goals==="object") ? _initial.goals : null);
   // v3.11: se abre donde lo dejaste
-  const [view, setView0] = useState(()=>{ try { const v = localStorage.getItem("rds_vista")||"calendar"; return v==="editor" ? "clips" : v; } catch(e){ return "calendar"; } });
+  const chatEnVentana = !!(window.studioFS && window.studioFS.chatVentana);
+  const [view, setView0] = useState(()=>{ try { const v = localStorage.getItem("rds_vista")||"calendar"; return v==="editor" ? "clips" : v==="randomchat" && chatEnVentana ? "calendar" : v; } catch(e){ return "calendar"; } });
   // v3.14: el RandomEditor es su propia ventana: «RandomEditor» la abre (o la trae delante) y no cambia de apartado
-  const setView = v => { if(v==="editor"){ abrirEnEditor(); return; } setView0(v); };
+  // 2/11: el RandomChat igual (su ventana se mueve y se encoge donde él quiera)
+  const setView = v => { if(v==="editor"){ abrirEnEditor(); return; } if(v==="randomchat" && chatEnVentana){ window.studioFS.chatVentana(); return; } setView0(v); };
   useEffect(()=>{ try { localStorage.setItem("rds_vista", view); } catch(e){} },[view]);
   const [plegada, setPlegada] = useState(()=>{ try { return localStorage.getItem("rds_barra_plegada")==="1"; } catch(e){ return false; } });
   useEffect(()=>{ try { localStorage.setItem("rds_barra_plegada", plegada?"1":"0"); } catch(e){} },[plegada]);
@@ -799,7 +801,7 @@ export function App() {
     {id:"ranking", desc:"Qué Short subir primero", label:"Ranking de Shorts", icon:Icons.chart, primary:true, grupo:"produccion", pc:true},
     {id:"historias", desc:"De la idea al Short, con Claude", label:"RandomHistorias", icon:Icons.camera, primary:true, grupo:"produccion", pc:true},
     {id:"convertidor", desc:"YouTube a MP4 o MP3", label:"Convertidor", icon:Icons.download, primary:true, grupo:"produccion", pc:true},
-    {id:"randomchat", desc:"El chat de los directos", label:"RandomChat", icon:Icons.chat, grupo:"produccion", pc:true},
+    {id:"randomchat", desc:"El chat de los directos, en su propia ventana", label:"RandomChat", icon:Icons.chat, grupo:"produccion", pc:true},
     {id:"agent", desc:"Plantillas para Claude", label:"Agente", icon:Icons.sparkles, grupo:"asistente"},
     ...(esAdmin(rolEquipo) ? [{id:"admin", desc:"Equipos, cuentas y accesos", label:"Administración", icon:Icons.shield, grupo:"abajo", badge:solicitudes}] : []),
     {id:"config", desc:"Cuenta, apartados y ajustes", label:"Configuración", icon:Icons.gear, grupo:"abajo"},

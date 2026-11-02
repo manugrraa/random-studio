@@ -77,6 +77,12 @@ contextBridge.exposeInMainWorld("studioFS", {
   chatOlvidar: () => ipcRenderer.invoke("chat-olvidar"),
   chatRegistro: () => ipcRenderer.invoke("chat-registro"),
   chatAbrir: (que) => ipcRenderer.invoke("chat-abrir", que),
+  // 2/11: el RandomChat en su propia ventana (como el RandomEditor) y la moderación del chat de YouTube
+  chatVentana: () => ipcRenderer.invoke("chatwin-abrir"),
+  chatVentanaEstado: () => ipcRenderer.invoke("chatwin-estado"),
+  chatVentanaAjustes: (op) => ipcRenderer.invoke("chatwin-ajustes", op || {}),
+  chatModeracion: () => ipcRenderer.invoke("chat-moderacion"),
+  chatModerar: (op) => ipcRenderer.invoke("chat-moderar", op || {}),
   onUploadProgress: (cb) => {
     const h = (e, d) => cb(d);
     ipcRenderer.on("studio-upload-progress", h);

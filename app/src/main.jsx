@@ -3,7 +3,8 @@ import ReactDOM from "react-dom/client";
 import "./styles.css";
 import { App } from "./Principal";
 import { EditorApp } from "./editor/EditorApp";
-import { PantallaBloqueo, PantallaPerfiles, comprobarAcceso, entrarEnPerfil } from "./perfiles";
+import { ChatApp } from "./chatventana";
+import { PantallaBloqueo, PantallaPerfiles, comprobarAcceso, entrarEnPerfil, usarPerfilPuesto } from "./perfiles";
 import { AvisoActualizacion, publicarSiToca } from "./actualizar";
 import { iniciarRemotoEscritorio, iniciarTrabajador } from "./remoto";
 
@@ -11,7 +12,10 @@ import { iniciarRemotoEscritorio, iniciarTrabajador } from "./remoto";
 // v3.21: antes de la app, la pantalla para elegir perfil (canal)
 // v3.30: el servidor decide qué cuentas puede abrir este equipo (las pendientes salen con candado)
 const esEditor = location.hash === "#editor";
+// 2/11: el RandomChat también en su propia ventana (#randomchat)
+const esChat = location.hash === "#randomchat";
 const q = new URLSearchParams(location.search);
+if (esChat) usarPerfilPuesto(q.get("perfil"));     // (el perfil de la ventana principal: su sesión de YouTube)
 // vuelta de Google al pedir entrar con una cuenta (pantalla de perfiles)
 const codigoEntrar = q.get("state") === "rs_entrar" ? q.get("code") : null;
 if (codigoEntrar) history.replaceState(null, "", location.pathname);
@@ -27,7 +31,7 @@ function Inicio() {
     comprobarAcceso().then(r => {
       // v3.40.1: las historias siguen en marcha en cualquier perfil (y en esta pantalla): el escritorio publica su estado,
       // recoge órdenes y coge pedidos desde que se abre, con la sesión de RandomHistorias
-      if (!r.bloqueado && window.studioFS && !esEditor) { iniciarRemotoEscritorio(); iniciarTrabajador(); }
+      if (!r.bloqueado && window.studioFS && !esEditor && !esChat) { iniciarRemotoEscritorio(); iniciarTrabajador(); }
       const auto = r.auto || (vueltaGoogle && (r.lista || []).find(p => p.activo && p.id === localStorage.getItem("rs_perfil")) || {}).id;
       if (!r.bloqueado && auto && !codigoEntrar) entrarEnPerfil(auto).then(() => { setPerfil(auto); setEstado(r); });
       else setEstado(r);
@@ -52,4 +56,4 @@ document.addEventListener("pointerdown", (e) => {
 }, { passive: true });
 document.addEventListener("touchstart", () => {}, { passive: true });   // iOS: sin esto no aplica :active
 
-ReactDOM.createRoot(document.getElementById("root")).render(esEditor ? <EditorApp/> : <Inicio/>);
+ReactDOM.createRoot(document.getElementById("root")).render(esEditor ? <EditorApp/> : esChat ? <ChatApp/> : <Inicio/>);

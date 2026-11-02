@@ -71,6 +71,15 @@ function separarAlmacen(id) {
   proto.removeItem = function (key) { return quitar.call(this, k(this, key)); };
 }
 
+/** 2/11: las ventanas de Studio que no son la principal (la del RandomChat) usan el perfil que ya está puesto,
+ *  sin volver a ponerlo: solo su almacén (sesión de Google, ajustes). */
+export function usarPerfilPuesto(id) {
+  if (!id) return;
+  _sesion = id;
+  fijarPerfilEnUso(id);
+  separarAlmacen(id);
+}
+
 /** Prepara el perfil ANTES de montar la app: almacén aparte y, en el escritorio, datos y carpetas del perfil. */
 export async function entrarEnPerfil(id) {
   _sesion = id;
