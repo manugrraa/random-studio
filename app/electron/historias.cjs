@@ -640,12 +640,27 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
     const f = path.join(baseDir(), cual + ".tgz");
     await drive.bajar(token, String(info.archivo), f, info.md5 || null);
     const r = await tar(["-xzf", f, "-C", raiz()]);
+    if (r.ok && cual === "kit") limpiarRestos(f);
     try { fs.unlinkSync(f); } catch (x) {}
     if (!r.ok) return r;
     escribirJson(path.join(baseDir(), (cual === "kit" ? "kit_" : "") + "instalada.json"), { huella: info.huella, fecha: new Date().toISOString(), origen: info.fecha });
     return { ok: true };
   } catch (x) { return { ok: false, error: x.message }; }
 });
+// v3.42.3: al instalar el kit vivo se borran los archivos del kit que ya no existen en el portátil (un módulo renombrado o
+// una herramienta quitada se quedaban aquí para siempre y Claude podía seguir usándolos). Solo dentro de las carpetas del kit.
+function limpiarRestos(tgz) {
+  try {
+    const dentro = new Set(require("child_process").execFileSync(tarExe(), ["-tzf", tgz], { encoding: "utf8", windowsHide: true, maxBuffer: 64 << 20 })
+      .split(/\r?\n/).map(x => x.replace(/^\.\//, "").replace(/\/$/, "")).filter(Boolean));
+    const ver = (d) => { let ns = []; try { ns = fs.readdirSync(d); } catch (e) { return; }
+      for (const n of ns) { if (n === "__pycache__" || n.endsWith(".pyc")) continue; const f = path.join(d, n);
+        const rel = path.relative(raiz(), f).split(path.sep).join("/");
+        if (fs.statSync(f).isDirectory()) { ver(f); continue; }
+        if (!dentro.has(rel)) { try { fs.unlinkSync(f); } catch (e) {} } } };
+    for (const p of PARTES.kit) { const f = path.join(raiz(), p); if (existe(f) && fs.statSync(f).isDirectory()) ver(f); }
+  } catch (e) {}
+}
 // v3.42: la fuente de los subtítulos (Lilita One) instalada para este usuario (sin administrador), por si el equipo no la
 // tiene: los subtítulos la buscan en las fuentes de Windows y sin ella la etapa Animatic fallaba
 function asegurarFuentes() {
