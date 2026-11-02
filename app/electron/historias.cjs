@@ -289,6 +289,11 @@ async function probarEleven(forzar) {
   } catch (e) { return (elevenPrueba = { ok: false, error: "No se pudo conectar con ElevenLabs: " + e.message, cuando: Date.now() }); }
 }
 app.whenReady().then(() => setTimeout(() => probarEleven(false), 12000));
+// v3.43.4: clave de fish.audio (voz del narrador «esqueleto», tools/voz_fish.py), cifrada igual que la de ElevenLabs
+const claveFishArchivo = () => path.join(app.getPath("userData"), "fishaudio.key");
+function claveFish() {
+  try { const b = fs.readFileSync(claveFishArchivo()); return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(b).replace(/\s+/g, "") : ""; } catch (e) { return ""; }
+}
 
 // ------------------------------------------------------------------ etapas
 const todasFotos = (c) => { const ps = planos(c); return ps.length > 0 && ps.every(p => existe(path.join(c, "planos_fotos", p.id + ".png"))); };
@@ -365,7 +370,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   // (Claude lo elegía igual y las instrucciones están escritas para Bash): trabaja exactamente como en el portátil
   if (!claude.rutaBash()) args.push("--append-system-prompt", claude.GUIA_POWERSHELL);
   else { args.splice(args.indexOf("PowerShell"), 1); args.push("--disallowedTools", "PowerShell"); }
-  const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), BLENDER: blenderExe() || "" });
+  const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), FISH_API_KEY: claveFish(), BLENDER: blenderExe() || "" });
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
   tarea = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0 };
   let resto = "", final = "", fallo = false;
@@ -838,7 +843,7 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
     escribirJson(path.join(estudioDir(), "ajustes.json"), a);
   }
   const cl = claude.estadoClaude();
-  return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
+  return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), fish: !!claveFish(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
     claudeOk: cl.ok, claudeError: cl.error, blender: !!blenderExe(), proyecto: existe(histDir()),
     elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "", origen: esOrigen(),
     gpu: gpuNombre(), whisper: leerJson(path.join(estudioDir(), "_whisper.json"), null),
@@ -853,6 +858,32 @@ ipcMain.handle("estudio-clave-eleven", async (e, clave) => {
   fs.writeFileSync(claveArchivo(), safeStorage.encryptString(k));
   const p = await probarEleven(true);
   return { ok: true, eleven: true, probada: p.ok, error: p.error };
+});
+
+ipcMain.handle("estudio-clave-fish", async (e, clave) => {
+  const k = String(clave || "").replace(/\s+/g, "");
+  if (!k) { try { fs.unlinkSync(claveFishArchivo()); } catch (x) {} return { ok: true, fish: false }; }
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows no deja cifrar la clave en este equipo");
+  fs.writeFileSync(claveFishArchivo(), safeStorage.encryptString(k));
+  return { ok: true, fish: true };
+});
+
+/* Prueba del narrador de fish.audio: el primer párrafo de la última historia a x1,0 / x1,2 / x1,4
+ * -> historias/<última>/audio_eleven/prueba_fish_x*.mp3 (la clave no sale de la app: va en el entorno de voz_fish.py). */
+ipcMain.handle("estudio-prueba-fish", async () => {
+  const k = claveFish();
+  if (!k) throw new Error("Falta la clave de fish.audio");
+  const ultima = fs.readdirSync(histDir()).filter(n => /^\d+_/.test(n) && existe(path.join(histDir(), n, "narracion.txt"))).sort().pop();
+  if (!ultima) throw new Error("No hay ninguna historia con narración");
+  const correr = (v) => new Promise((ok, ko) => {
+    const p = spawn("python", [path.join(raiz(), "tools", "voz_fish.py"), path.join("historias", ultima), "--prueba", "--velocidad=" + v],
+      { cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8", FISH_API_KEY: k }, windowsHide: true });
+    let out = "";
+    p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
+    p.on("close", code => code === 0 ? ok(out) : ko(new Error(out.split("\n").filter(Boolean).slice(-2).join(" | ") || ("código " + code))));
+  });
+  for (const v of ["1.0", "1.2", "1.4"]) await correr(v);
+  return { ok: true, historia: ultima };
 });
 
 /** Lo que se revisa/ve de cada etapa: el texto del guion, el audio, el animatic y el Short final. */

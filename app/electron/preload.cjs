@@ -119,6 +119,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   estudioNotaFinal: (id, texto) => ipcRenderer.invoke("estudio-nota-final", id, texto),
   estudioAjustes: (nuevos) => ipcRenderer.invoke("estudio-ajustes", nuevos),
   estudioClaveEleven: (clave) => ipcRenderer.invoke("estudio-clave-eleven", clave),
+  estudioClaveFish: (clave) => ipcRenderer.invoke("estudio-clave-fish", clave),
+  estudioPruebaFish: () => ipcRenderer.invoke("estudio-prueba-fish"),
   estudioMaterial: (id) => ipcRenderer.invoke("estudio-material", id),
   estudioDriveSubir: (id, token, perfil, que) => ipcRenderer.invoke("estudio-drive-subir", id, token, perfil, que),
   estudioEntregaBajar: (token, drive) => ipcRenderer.invoke("estudio-entrega-bajar", token, drive),

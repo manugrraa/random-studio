@@ -375,6 +375,8 @@ function ClaudeEstado({ a, toast, recargar }) {
 function AjustesEstudio({ toast }) {
   const [a, setA] = useState(null);
   const [clave, setClave] = useState("");
+  const [claveFish, setClaveFish] = useState("");
+  const [probandoFish, setProbandoFish] = useState(false);
   const [drive, setDrive] = useState(null);
   const cargar = useCallback(async () => setA(await SF().estudioAjustes()), []);
   const mirarDrive = useCallback(() => {
@@ -414,6 +416,15 @@ function AjustesEstudio({ toast }) {
           <button onClick={async () => { const x = await SF().estudioClaveEleven(clave); setClave(""); toast(x.eleven ? "Clave guardada" : "Clave borrada"); cargar(); }} className="grad-gold" style={botonOro}>{clave ? "Guardar" : a.eleven ? "Borrar" : "Guardar"}</button>
         </div>
         <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 6 }}>La sacas de elevenlabs.io → Developers → API Keys. Se guarda cifrada en este equipo y no sale de él (cada equipo necesita la suya).</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginTop: 14, color: a.fish ? "var(--green)" : "var(--text-3)" }}>{a.fish ? "● Clave de fish.audio guardada (cifrada en este equipo)" : "● Sin clave de fish.audio (solo hace falta para el narrador «esqueleto»)"}</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <input type="password" value={claveFish} onChange={e => setClaveFish(e.target.value)} placeholder={a.fish ? "Cambiar la clave…" : "Pega aquí tu clave de fish.audio"} autoComplete="off"
+            style={{ flex: 1, fontSize: 13, padding: "9px 11px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)" }} />
+          <button onClick={async () => { const x = await SF().estudioClaveFish(claveFish); setClaveFish(""); toast(x.fish ? "Clave guardada" : "Clave borrada"); cargar(); }} className="grad-gold" style={botonOro}>{claveFish ? "Guardar" : a.fish ? "Borrar" : "Guardar"}</button>
+          {a.fish && !claveFish && <button disabled={probandoFish} onClick={async () => { setProbandoFish(true); try { const x = await SF().estudioPruebaFish(); toast("Prueba lista en " + x.historia + "/audio_eleven"); } catch (e) { toast(String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); } setProbandoFish(false); }}
+            className="grad-gold" style={botonOro}>{probandoFish ? "Generando…" : "Probar la voz"}</button>}
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 6 }}>La sacas de fish.audio → Desarrollador → API Keys. Se guarda cifrada en este equipo y no sale de él.</div>
       </div>
       <div style={{ ...tarjeta }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8 }}>Google Drive</div>
