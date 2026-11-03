@@ -408,12 +408,22 @@ function claveFish() {
 }
 
 // ------------------------------------------------------------------ etapas
+/** El guion de la historia pide cifras sobre la cabeza y no hay contadores.py. */
+function faltanCifras(c) {
+  if (existe(path.join(c, "contadores.py"))) return false;
+  try {
+    const nn = path.basename(c).slice(0, 2);
+    const g = fs.readdirSync(path.join(raiz(), "guiones")).find(n => n.startsWith("historia-" + nn + "-") && n.endsWith(".md"));
+    return !!g && /contadores\.py|cifras? sobre la cabeza/i.test(leer(path.join(raiz(), "guiones", g), ""));
+  } catch (e) { return false; }
+}
 const todasFotos = (c) => { const ps = planos(c); return ps.length > 0 && ps.every(p => existe(path.join(c, "planos_fotos", p.id + ".png"))); };
 const todosFinal = (c) => { const ps = planos(c); return ps.length > 0 && ps.every(p => existe(path.join(c, "planos_final", p.id + ".mp4"))); };
 const ETAPAS = [
   { id: "guion", nombre: "Guion", tipo: "agente", hecho: c => ["titulo.txt", "narracion.txt", "planos.py"].every(f => existe(path.join(c, f))) },
   { id: "voces", nombre: "Voces y efectos", tipo: "agente", hecho: c => ["duraciones.json", "audio/voz_final.wav", "audio/mezcla.wav"].every(f => existe(path.join(c, f))) },
-  { id: "escena", nombre: "Escena (Roblox)", tipo: "agente", hecho: c => existe(path.join(c, "rodar.py")) && !/^\s*import bpy/m.test(leer(path.join(c, "rodar.py"), "")) && todasFotos(c) },
+  // (v3.48.2) y si el guion lleva cifras, con su contadores.py (la 21 se entregó sin ellas: la escena lo olvidó)
+  { id: "escena", nombre: "Escena (Roblox)", tipo: "agente", hecho: c => existe(path.join(c, "rodar.py")) && !/^\s*import bpy/m.test(leer(path.join(c, "rodar.py"), "")) && todasFotos(c) && !faltanCifras(c) },
   { id: "animatic", nombre: "Animatic", tipo: "cadena", args: ["--desde", "subtitulos", "--hasta", "animatic"], hecho: c => existe(path.join(c, "animatic.mp4")) },
   { id: "render", nombre: "Render", tipo: "cadena", args: ["--solo", "render"], hecho: todosFinal },
   { id: "montaje", nombre: "Montaje y entrega", tipo: "cadena", args: ["--desde", "montar", "--sin-parar"],
@@ -535,10 +545,15 @@ function promptEtapa(id, etapa, nota) {
   const rel = path.relative(raiz(), c).replace(/\\/g, "/");
   const base = etapa === "animatic" ? "escena" : etapa;   // los cambios del animatic se hacen en la escena
   if (base === "escena") apartarBlender(c);                // v3.47.0: lo empezado en Blender se rehace en Roblox
+  // (v3.48.2) escena hecha salvo las cifras: solo se pide eso, sin rehacer nada
+  const soloCifras = etapa === "escena" && !nota && existe(path.join(c, "rodar.py")) && todasFotos(c) && faltanCifras(c);
   // v3.41.1: las REGLAS (todo lo que el usuario ha pedido) van delante de cada etapa, también en el ordenador, sin memoria
   let p = instrucciones("reglas") + "\n\n---\n\n" + instrucciones(base) + `\n\n---\nHISTORIA: ${rel} (número ${id.slice(0, 2)}).\n`;
   if (est.idea) p += "IDEA ELEGIDA:\n" + JSON.stringify(est.idea, null, 1) + "\n";
   if (nota) p += `\nNOTA DEL USUARIO (aplícala por encima de todo):\n${nota}\n`;
+  if (soloCifras) p += `\nESTA ESCENA YA ESTÁ HECHA (rodar.py y todas las fotos): SOLO FALTA contadores.py, que el guion pide. Escríbelo
+según el guion (una función por plano con cifras; los nombres de los personajes los dice python tools/contadores.py ${rel}),
+comprueba dos o tres planos con python tools/contadores.py ${rel} sXX y no rehagas ni cambies nada más.\n`;
   return p;
 }
 

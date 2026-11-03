@@ -96,6 +96,9 @@ if (buena) {
 
 // v3.41.7: referencia rápida del kit (una página con cada función pública y su uso): Claude ya no lee el kit entero.
 // (v3.47.1) es la del kit de ROBLOX (roblox/pueblo y tools/roblox/rodaje.py), la escribe tools/roblox/referencia.py
+// (3-11) las pruebas del kit sin Studio (tools/pruebas_kit.py): avisan antes de que un fallo llegue a un render
+try { execFileSync("python", [path.join(ORIGEN, "tools", "pruebas_kit.py")], { stdio: "inherit" }); }
+catch (e) { console.log("proyecto: ¡LAS PRUEBAS DEL KIT HAN FALLADO! Mira la lista de arriba antes de publicar."); }
 try { execFileSync("python", [path.join(ORIGEN, "tools", "roblox", "referencia.py")], { stdio: "inherit" }); }
 catch (e) { console.log("proyecto: no se pudo rehacer la referencia del kit de Roblox (" + e.message + ")"); }
 
