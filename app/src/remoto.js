@@ -667,10 +667,12 @@ export function iniciarTrabajador(t) {
         // v3.48: con Studio grabando de fondo, las que necesitan Studio esperan y este equipo sigue con guiones y voces
         if (sig && t && t.fondo && ["escena", "animatic", "render"].includes(sig.id)) continue;
         if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2) {
-          // v3.47.1 (Manu, 3-11: «el ordenador también quiero que renderice cuando acabe de hacer los guiones y el audio»):
-          // el equipo que la preparó la sigue él (escena, animatic, render y montaje en Roblox Studio). Solo la ofrece al
-          // otro si este no tiene Studio («blender» = puede rodar) o mientras está ocupado con otra (eso va más abajo)
-          if (BLENDER.includes(sig.id) && !aj.blender) blender.push({ pid, x, h, sig });
+          // v3.49.2 — PRIORIDADES (Manu, 1-11): 1) las historias empezadas antes que nada nuevo; 2) el portátil anima y
+          // renderiza; 3) el ordenador PREPARA TODO (guion y voces) y, «cuando acabe de preparar todo», se pone también a
+          // animar y renderizar. La 3.47.1 hacía que el ordenador rodara cada historia nada más prepararla aunque quedaran
+          // otras por preparar: ahora la escena, el animatic y el render del ordenador esperan (y se ofrecen al portátil)
+          // hasta que no haya nada que preparar (más abajo, «nada nuevo que preparar»). Sin Studio, siempre se ofrecen.
+          if (BLENDER.includes(sig.id) && (!aj.blender || (!_soyDueno && !x.faseOk))) blender.push({ pid, x, h, sig });
           else if (!empezada) empezada = { pid, x, h, sig };
         }
       }
@@ -712,12 +714,13 @@ export function iniciarTrabajador(t) {
     ocupadoCogiendo = true;
     try {
       // v3.41: solo se ofrece a seguir relevos si puede bajar la copia de Drive
-      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: !!aj.blender, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) });
+      // (v3.49.2) con Studio grabando de fondo, no coge historias para animar (esperarían a Studio): que las coja el otro
+      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: !!aj.blender && !(t && t.fondo), relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) });
       const p = r.pedido;
       if (!p) {
         // v3.41.7: nada nuevo que preparar ni que animar del portátil: el ordenador anima lo suyo que ya está preparado
         const b = blender[0];
-        if (b && !_soyDueno && aj.blender) {
+        if (b && !_soyDueno && aj.blender && !(t && t.fondo)) {
           b.x.faseOk = true; b.x.quieta = 0; guardarMios(m);
           try { await s.estudioAvanzar(b.h.id); toast("🎬 Ya está todo preparado: animo aquí la historia " + b.h.id.slice(0, 2)); } catch (e) {}
         }
