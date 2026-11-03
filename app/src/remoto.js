@@ -151,7 +151,7 @@ export function iniciarRemotoEscritorio(t) {
         // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
         bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", gpu: aj.gpu || null, whisper: aj.whisper || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, rescateKit: aj.rescateKit || null, esperandoLimite: Object.keys(esperas()).length },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
-      tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8) } : null,
+      tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8), ultimas: (t.lineas || []).slice(-8).map(x => String(x).slice(0, 220)) } : null,
       ajustes: aj.ajustes,
       ideas: (id.ideas || []).filter(i => i.estado !== "descartada").slice(0, 30).map(i => ({ id: i.id, titulo: i.titulo, regla: i.regla, resumen: i.resumen, estado: i.estado, temporada: i.temporada, historia: i.historia })),
       generandoIdeas: !!id.generando,
@@ -564,6 +564,14 @@ export function iniciarTrabajador(t) {
           if (BLENDER.includes(sig.id) && !_soyDueno && !x.faseOk) blender.push({ pid, x, h, sig });
           else if (!empezada) empezada = { pid, x, h, sig };
         }
+      }
+      // v3.45.9: mientras este equipo está con OTRA historia, las suyas que esperan escena, animatic o render se ofrecen
+      // al otro equipo aunque ya se animaran aquí: la sigue el primero que quede libre (él, 3/11: "que no se fijen para
+      // siempre las historias para un dispositivo, que la haga el que esté disponible"). El montaje no: necesita los
+      // planos renderizados, que no viajan en la copia, y son 4 minutos.
+      else if (t && t.activa && t.id !== h.id && !_soyDueno && !x.parada && !x.pausada && !w["h:" + h.id]) {
+        const sig = et.find(e => e.estado === "pendiente");
+        if (sig && ["escena", "animatic", "render"].includes(sig.id)) blender.push({ pid, x, h, sig });
       }
     }
     guardarMios(m);

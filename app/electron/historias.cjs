@@ -90,6 +90,7 @@ function emitir(ev) {
 function analizarLinea(l) {
   const t = tarea;
   if (!t) return;
+  t.actividad = Date.now();
   t.lineas.push(l);
   if (t.lineas.length > 400) t.lineas.shift();
   let m = l.match(/== PASO (\d+)\/(\d+): (\w+) ==/);
@@ -586,6 +587,16 @@ function huellaCarpeta(id) {
     return m;
   } catch (e) { return 0; }
 }
+// v3.45.9: un render que pasa 30 min sin dar NINGUNA señal (cada plano escribe al empezar y al terminar; uno normal tarda
+// 1-5 min) se ha colgado: se corta y se reintenta solo a los 2 min, y los planos ya hechos se guardan
+setInterval(() => {
+  if (!tarea || tarea.tipo !== "cadena" || !tarea.proc || tarea.atascada || tarea.etapa !== "render") return;
+  const quieto = Date.now() - (tarea.actividad || tarea.inicio);
+  if (quieto < 30 * 60000) return;
+  tarea.atascada = Math.round(quieto / 60000);
+  tarea.lineas.push("!! Colgado: " + tarea.atascada + " min sin avanzar en el render (último plano: " + ((tarea.render || {}).plano || "ninguno") + "). Se corta y se reintenta.");
+  try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (e) {}
+}, 60000);
 setInterval(() => {
   if (!tarea || tarea.tipo !== "agente" || !tarea.proc || tarea.atascada) return;
   const h = huellaCarpeta(tarea.id);
