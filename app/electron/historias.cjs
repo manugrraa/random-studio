@@ -562,17 +562,18 @@ function kitPropioDe(id) {
 }
 async function instantanea(sender, id, etapa) {
   try {
-    if (!existe(path.join(histDir(), id))) return;
+    if (!existe(path.join(histDir(), id))) return { ok: false, error: "no existe la historia" };
     fs.mkdirSync(relevoDir(), { recursive: true });
     const out = path.join(relevoDir(), id + ".tgz");
     let guion = null; try { guion = fs.readdirSync(path.join(raiz(), "guiones")).find(n => n.startsWith("historia-" + id.slice(0, 2) + "-")); } catch (x) {}
     const fuera = ["__pycache__", "planos_final", "planos_revisar", "_animatic", "historia*_final*.mp4"].flatMap(x => ["--exclude", "*/" + x]);
     empaquetando = id;
     const r = await tar(["-czf", out + ".tmp", ...fuera, "-C", raiz(), "historias/" + id, ...(guion ? ["guiones/" + guion] : []), ...kitPropioDe(id)]);
-    if (!r.ok) { try { fs.unlinkSync(out + ".tmp"); } catch (x) {} return; }
+    if (!r.ok) { try { fs.unlinkSync(out + ".tmp"); } catch (x) {} return { ok: false, error: "tar: " + r.error }; }
     fs.renameSync(out + ".tmp", out);
     try { if (sender && !sender.isDestroyed()) sender.send("historias-progreso", { id, tipo: "relevo", etapa }); } catch (x) {}
-  } catch (e) {} finally { empaquetando = null; }
+    return { ok: true };
+  } catch (e) { return { ok: false, error: e.message }; } finally { empaquetando = null; }
 }
 /** Tras una etapa: la copia de relevo (si toca) y luego lo de siempre (la siguiente etapa y la cola). */
 /* v3.41.8 VIGILANTE: una etapa de Claude que pasa mucho rato sin dar ninguna señal (p. ej. esperando en un bucle a un
@@ -651,9 +652,9 @@ ipcMain.handle("estudio-cambiado-desde", async (e, id, fecha) => {
 ipcMain.handle("estudio-relevo-preparar", async (e, id) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id))) return { ok: false, error: "historia no válida" };
   // v3.41.8: se puede con otra historia en marcha (la copia es solo leer y comprimir); con esta misma, no
-  if ((tarea && tarea.id === id) || empaquetando) return { ok: false, error: "Esa historia está en marcha" };
-  await instantanea(null, id, "voces");
-  return existe(path.join(relevoDir(), id + ".tgz")) ? { ok: true } : { ok: false, error: "No se pudo preparar la copia" };
+  if ((tarea && tarea.id === id) || empaquetando) return { ok: false, error: tarea && tarea.id === id ? "Esa historia está en marcha" : "Ya se está empaquetando otra copia (" + empaquetando + ")" };
+  const r = await instantanea(null, id, "voces");
+  return existe(path.join(relevoDir(), id + ".tgz")) ? { ok: true } : { ok: false, error: "No se pudo preparar la copia" + (r && r.error ? ": " + r.error : "") };
 });
 ipcMain.handle("estudio-relevo-subir", async (e, id, token) => {
   const f = path.join(relevoDir(), String(id) + ".tgz");
