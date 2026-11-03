@@ -13,19 +13,22 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const APP = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const ORIGEN = process.env.RH_ORIGEN || "E:\\A RdeRandom\\RandomHistorias";
 const DEST = path.join(APP, "proyecto");
-const QUE = [["kit", /\.py$/], ["tools", /\.py$/], [path.join("tools", "estudio"), /\.md$/],
+// (v3.47.1) sin kit/ de Blender (Manu, 3-11: solo Roblox Studio); con el kit de Roblox (pueblo en Luau y sus herramientas)
+const QUE = [["tools", /\.py$/], [path.join("tools", "estudio"), /\.md$/], [path.join("tools", "roblox"), /\.(py|md)$/],
+  [path.join("roblox", "pueblo"), /\.luau$/],
   ["guiones", /^(prompt-produccion|prompt-para-amigo|canal_nuevo|ideas_aprobadas|ideas_cifras|ideas_temporada)\.md$/],
   [path.join("historias", "_plantilla"), /\.(py|md|json)$/], ["_memoria", /\.md$/]];
 // la memoria que es de las historias (la del portátil —disco, AppData, versiones— no le sirve al ordenador)
 const MEMORIA = path.join(os.homedir(), ".claude", "projects", "E--A-RdeRandom-RandomHistorias", "memory");
 const MEM_NO = /^(randomstudio-integracion|publicar-version-equipos|entorno-appdata-desviado|disco-c-lleno|optimizar-tokens|sesiones-coordinar-compilados)\.md$/;
 
-if (!fs.existsSync(path.join(ORIGEN, "kit"))) {
+if (!fs.existsSync(path.join(ORIGEN, "tools"))) {
   console.log("proyecto: no encuentro " + ORIGEN + " (se deja la copia que hubiera)");
   process.exit(0);
 }
@@ -46,6 +49,8 @@ function normalizarPlantilla(dir) {
       t = t.replace("        out = os.path.join(tmp, f\"{sid}.mp4\")\n        vf = ",
         "        out = os.path.join(tmp, f\"{sid}.mp4\")\n        # contadores de contadores.py encima del plano limpio (corregir un número = editar y volver a montar)\n        con = os.path.join(tmp, f\"{sid}_contadores.mp4\")\n        if contadores.componer(HERE, sid, clip, con):\n            clip = con\n        vf = ");
     }
+    // (v3.47.1) el retoque de color de un plano concreto es de esa historia, no de la plantilla
+    t = t.replace(/^EXTRA = \{[^}\n]*\}/m, "EXTRA = {}");
     return t;
   });
   fix("sincronizar.py", s => s.replace(/intro_t = float\(sys\.argv\[3\]\) if len\(sys\.argv\) > 3 else INTRO_TEMPO/, "intro_t = float(sys.argv[3]) if len(sys.argv) > 3 else tempo   # sin arranque acelerado: velocidad constante"));
@@ -61,7 +66,9 @@ const tituloArch = (t) => t.trim().replace(/!+$/, "!");
 const buena = hist.find(n => {
   try {
     const t = tituloArch(fs.readFileSync(path.join(ORIGEN, "historias", n, "titulo.txt"), "utf8"));
-    return ["sincronizar.py", "mezclar.py", "montar.py", "rodar.py", "escena.py"].every(f => fs.existsSync(path.join(ORIGEN, "historias", n, f)))
+    // (v3.47.1) solo una historia rodada en Roblox con el motor común (rodar.py que usa tools/roblox/historia.py)
+    return ["sincronizar.py", "mezclar.py", "montar.py", "rodar.py"].every(f => fs.existsSync(path.join(ORIGEN, "historias", n, f)))
+      && /tools\.roblox\.historia/.test(fs.readFileSync(path.join(ORIGEN, "historias", n, "rodar.py"), "utf8"))
       && fs.existsSync(path.join(listas, t, t + ".mp4"));
   } catch (e) { return false; }
 });
@@ -69,31 +76,22 @@ if (buena) {
   fs.rmSync(plantilla, { recursive: true, force: true });
   fs.mkdirSync(plantilla, { recursive: true });
   const src = path.join(ORIGEN, "historias", buena);
-  for (const f of fs.readdirSync(src)) if (/\.(py|json)$/.test(f) && !/^(cadena_estado|estudio)\.json$/.test(f) && fs.statSync(path.join(src, f)).isFile())
+  for (const f of fs.readdirSync(src)) if (/\.(py|json)$/.test(f) && !/^(cadena_estado|estudio|estilos?_contadores)\.json$/.test(f) && !/^(roblox_\d+|bocetos_\w+)\.py$/.test(f) && fs.statSync(path.join(src, f)).isFile())
     fs.copyFileSync(path.join(src, f), path.join(plantilla, f));
   for (const f of ["titulo.txt", "narracion.txt"]) if (fs.existsSync(path.join(src, f))) fs.copyFileSync(path.join(src, f), path.join(plantilla, f.replace(".txt", "_ejemplo.md")));
   const g = fs.readdirSync(path.join(ORIGEN, "guiones")).find(n => n.startsWith("historia-" + buena.slice(0, 2) + "-"));
   if (g) fs.copyFileSync(path.join(ORIGEN, "guiones", g), path.join(plantilla, "guion_ejemplo.md"));
   normalizarPlantilla(plantilla);
-  fs.writeFileSync(path.join(plantilla, "LEEME.md"), "Plantilla buena (scripts de la historia " + buena + ", la última entregada). "
-    + "Cada historia nueva copia de aquí sincronizar.py, mezclar.py, subtitulos.py, montar.py, escena.py, rodar.py y la estructura de planos.py.\n");
+  fs.writeFileSync(path.join(plantilla, "LEEME.md"), "Plantilla de RandomHistorias: todo en ROBLOX STUDIO, nada de Blender (scripts de la historia " + buena + ", la última entregada).\n\n"
+    + "Cada historia nueva copia de aquí sincronizar.py, mezclar.py, subtitulos.py, montar.py, rodar.py y la estructura de planos.py.\n"
+    + "- rodar.py solo describe la historia; el motor común está en tools/roblox/historia.py. Uso: python rodar.py fotos|revisar|final all\n"
+    + "- Lo que hay en el pueblo y la API de rodaje: tools/estudio/kit_referencia.md (python tools/roblox/referencia.py la rehace).\n");
 }
 
-// v3.41.7: referencia rápida del kit (una página con cada función pública y su uso): Claude ya no lee el kit entero
-{
-  const lineas = ["# Referencia rápida del kit (se genera sola al compilar RandomStudio; no la edites a mano)", "",
-    "Cada función pública de `kit/*.py` con su primera línea de explicación. Para el detalle, Grep de esa función.", ""];
-  for (const n of fs.readdirSync(path.join(ORIGEN, "kit")).filter(x => x.endsWith(".py") && !x.startsWith("_")).sort()) {
-    const src = fs.readFileSync(path.join(ORIGEN, "kit", n), "utf8");
-    const doc = (src.match(/^\s*"""([^\n]*)/) || [])[1] || "";
-    lineas.push("## kit/" + n + (doc.trim() ? " — " + doc.trim() : ""));
-    const re = /^def ([a-zA-Z]\w*)\(([^)]*)\)[^:]*:\s*\n(?:\s*"""([^\n]*))?/gm;
-    let m;
-    while ((m = re.exec(src))) lineas.push("- `" + m[1] + "(" + m[2].replace(/\s+/g, " ").slice(0, 120) + ")`" + (m[3] ? " — " + m[3].trim().replace(/"""$/, "") : ""));
-    lineas.push("");
-  }
-  fs.writeFileSync(path.join(ORIGEN, "tools", "estudio", "kit_referencia.md"), lineas.join("\n"));
-}
+// v3.41.7: referencia rápida del kit (una página con cada función pública y su uso): Claude ya no lee el kit entero.
+// (v3.47.1) es la del kit de ROBLOX (roblox/pueblo y tools/roblox/rodaje.py), la escribe tools/roblox/referencia.py
+try { execFileSync("python", [path.join(ORIGEN, "tools", "roblox", "referencia.py")], { stdio: "inherit" }); }
+catch (e) { console.log("proyecto: no se pudo rehacer la referencia del kit de Roblox (" + e.message + ")"); }
 
 fs.rmSync(DEST, { recursive: true, force: true });
 const archivos = {};
@@ -118,5 +116,5 @@ if (fs.existsSync(path.join(MEMORIA, "MEMORY.md"))) {
   meter(path.join("_memoria", "MEMORY.md"), Buffer.from(idx, "utf8"));
 }
 fs.writeFileSync(path.join(DEST, "manifiesto.json"), JSON.stringify({ fecha: new Date().toISOString(), archivos }, null, 1));
-fs.writeFileSync(path.join(ORIGEN, ".origen_kit"), "Este equipo es el ORIGEN del kit: RandomStudio nunca sobrescribe aquí kit/ ni tools/.\n");
-console.log(`proyecto: ${Object.keys(archivos).length} archivos (kit, guías, plantilla de ${buena || "—"} y memoria) copiados dentro de RandomStudio`);
+fs.writeFileSync(path.join(ORIGEN, ".origen_kit"), "Este equipo es el ORIGEN del kit: RandomStudio nunca sobrescribe aquí tools/ ni roblox/.\n");
+console.log(`proyecto: ${Object.keys(archivos).length} archivos (kit de Roblox, guías, plantilla de ${buena || "la que hay"} y memoria) copiados dentro de RandomStudio`);

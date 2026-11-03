@@ -662,9 +662,10 @@ export function iniciarTrabajador(t) {
         // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
         if (sig && sig.id === "voces" && aj.elevenError) continue;
         if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2) {
-          // v3.47.0: escena, animatic y render se ruedan en Roblox Studio; un equipo sin Studio («blender» = puede rodar)
-          // las ofrece siempre al que lo tenga, nunca las intenta él
-          if (BLENDER.includes(sig.id) && (!aj.blender || (!_soyDueno && !x.faseOk))) blender.push({ pid, x, h, sig });
+          // v3.47.1 (Manu, 3-11: «el ordenador también quiero que renderice cuando acabe de hacer los guiones y el audio»):
+          // el equipo que la preparó la sigue él (escena, animatic, render y montaje en Roblox Studio). Solo la ofrece al
+          // otro si este no tiene Studio («blender» = puede rodar) o mientras está ocupado con otra (eso va más abajo)
+          if (BLENDER.includes(sig.id) && !aj.blender) blender.push({ pid, x, h, sig });
           else if (!empezada) empezada = { pid, x, h, sig };
         }
       }
@@ -680,8 +681,8 @@ export function iniciarTrabajador(t) {
     guardarMios(m);
     // v3.41.8: el pedido dice el estado real de las que esperan aquí (antes se quedaba «voces» aunque estuviera parada)
     for (const b of blender) avisarDetalle(b.pid, "preparada · espera para animarse");
-    // 2) seguir la empezada antes de coger nada nuevo. Lo de rodar (escena, animatic, render, montaje; Roblox Studio) es del portátil:
-    // el ordenador, al terminar de prepararla, se la pasa si el portátil puede animarla (y si no, la anima él)
+    // 2) seguir la empezada antes de coger nada nuevo (v3.47.1: el que la preparó la rueda; solo se pasa al otro si este no
+    // tiene Roblox Studio o está ocupado con otra)
     // v3.41.7: en el ordenador, cada historia preparada se ofrece al portátil (cada 5 min como mucho, de una en una)
     if (_disponible && revisadoRelevo) {
       const of = blender.find(b => Date.now() - (b.x.ofrecida || 0) > 5 * 60000 && !(t && t.activa && t.id === b.h.id));

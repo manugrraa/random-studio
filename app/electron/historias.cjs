@@ -744,8 +744,8 @@ const PARTES = {
   // (v3.47.0) sin texturas ni biblioteca de Blender: ya no se usa (archivadas en E:/A RdeRandom/_archivo_blender)
   base: ["assets/fuentes", "assets/roblox", "assets/musica", "assets/sfx", "historias/01_bostezo/fuentes"],
   // roblox: el pueblo por código (Luau) y el sombrero, para grabar en Roblox Studio desde cualquier equipo
-  // («kit» de Blender ya no existe: sigue en la lista para que su borrado llegue a todos los equipos)
-  kit: ["kit", "tools", "roblox", "historias/_plantilla", "guiones/prompt-produccion.md", "guiones/canal_nuevo.md"],
+  // (v3.47.1) sin kit/ de Blender: con él en la lista, un equipo con la 3.46 lo devolvía al otro (cada equipo lo archiva al arrancar)
+  kit: ["tools", "roblox", "historias/_plantilla", "guiones/prompt-produccion.md", "guiones/canal_nuevo.md"],
 };
 const baseDir = () => path.join(estudioDir(), "_base");
 function huellaDe(cual) {
@@ -1189,7 +1189,7 @@ function sincronizarKit() {
   const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
   try {
     const R = raiz();
-    if (!R || !existe(path.join(R, "kit")) || existe(path.join(R, ".origen_kit"))) return { ok: true, nada: true };
+    if (!R || !existe(path.join(R, "tools")) || existe(path.join(R, ".origen_kit"))) return { ok: true, nada: true };
     const src = path.join(__dirname, "..", "proyecto");
     const man = JSON.parse(fs.readFileSync(path.join(src, "manifiesto.json"), "utf8"));
     const estF = path.join(R, ".kit_sync.json");
@@ -1223,11 +1223,35 @@ function sincronizarKit() {
     return { ok: true, puestos, guardados };
   } catch (e) { return { ok: false, error: e.message }; }
 }
-app.whenReady().then(() => setTimeout(() => { const r = sincronizarKit(); if (r.puestos) { console.log("kit actualizado:", r); registro.anotar("kit", "kit de esta versión instalado: " + r.puestos + " archivos puestos, " + r.guardados + " apartados"); } rescatarKit(); vigilarKit(); }, 8000));
+/* v3.47.1 (Manu, 3-11: «borra todo lo que se usa por Blender, solo quiero que usemos Roblox Studio»): al arrancar, cada
+ * equipo aparta lo de Blender que tenga en el proyecto a <carpeta del proyecto>/../_archivo_blender (no se borra, por si
+ * acaso). Las historias ya hechas conservan sus archivos; las que estaban a medias con Blender se rehacen al volver a la
+ * escena (apartarBlender). */
+const BLENDER_ARCHIVAR = ["kit", "library", "assets/textures", "tools/banner.py", "tools/banner_fondo.py", "tools/build_library.py",
+  "tools/demo_planos.py", "tools/make_outfits.py", "tools/make_textures.py", "tools/resolver_poses.py", "tools/calavera.py",
+  "tools/caras_cansadas.py", "tools/carteles.py", "tools/dibujos_tiza.py", "tools/figura2d.py", "tools/roblox/exportar_sombrero.py",
+  "historias/_plantilla/escena.py"];
+function archivarBlender() {
+  const R = raiz(); if (!R || !existe(R)) return;
+  const dest = path.join(path.dirname(R), "_archivo_blender"), sello = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+  let lista = BLENDER_ARCHIVAR.slice();
+  try { lista = lista.concat(fs.readdirSync(path.join(R, "tools")).filter(n => /^test_\w+\.py$/.test(n)).map(n => "tools/" + n)); } catch (e) {}
+  const movidos = [];
+  for (const rel of lista) {
+    const o = path.join(R, rel);
+    if (!existe(o)) continue;
+    let d = path.join(dest, rel); if (existe(d)) d = path.join(dest, sello, rel);
+    try { fs.mkdirSync(path.dirname(d), { recursive: true }); fs.renameSync(o, d); movidos.push(rel); } catch (e) {}
+  }
+  if (movidos.length) registro.anotar("kit", "lo de Blender archivado en " + dest + ": " + movidos.join(", "));
+}
+app.whenReady().then(() => setTimeout(() => { try { archivarBlender(); } catch (e) {} const r = sincronizarKit(); if (r.puestos) { console.log("kit actualizado:", r); registro.anotar("kit", "kit de esta versión instalado: " + r.puestos + " archivos puestos, " + r.guardados + " apartados"); } rescatarKit(); vigilarKit(); }, 8000));
 /* v3.45.3: recupera los módulos del kit que usan las historias de este equipo y faltan (ver rescatekit.cjs). El resultado
  * sale en «Equipos» (capacidad.rescateKit). v3.45.4: también en el portátil (solo pone lo que falta). */
 let rescateKit = null;
 function rescatarKit() {
+  // (v3.47.1) el rescate recuperaba módulos kit/*.py de Blender del historial de Claude: ya no hay kit de Blender
+  if (true) { rescateKit = null; return null; }
   try {
     if (!existe(path.join(raiz(), "kit"))) return null;
     const r = require("./rescatekit.cjs").rescatar(raiz());
