@@ -87,6 +87,7 @@ let tarea = null;     // { proc, id, args, inicio, lineas[], paso, planos{hechos
  * historia. Lo que usa Studio (escena, animatic con sus pistas y otro render) espera a que acabe; montaje, guion, voces e
  * ideas no. El kit no se cambia con ninguno de los dos en marcha. Se apaga en Ajustes (solapar: false). */
 let fondo = null;
+let kitEsperando = false;      // (v3.49.1) hay kit de otro equipo sin instalar: Claude no repara hasta tenerlo (editaría archivos viejos)
 const USAN_STUDIO = ["escena", "animatic", "render"];
 const solapar = () => ajustes().solapar !== false;
 const ocupado = () => !!(tarea || fondo);
@@ -152,6 +153,7 @@ function repararEtapa(t, id) {
   try {
     if (!t || !ETAPAS_REPARABLES.includes(t.etapa)) return false;
     if (tarea && tarea !== t) return false;            // con otra tarea delante (render de fondo): falla y se reintenta
+    if (kitEsperando) { registro.anotar("historias", "no se repara " + t.etapa + " de " + id + " todavía: primero hay que instalar el kit nuevo (se reintenta)"); return false; }
     const c = carpetaDe(id);
     const { paso, log } = logDelFallo(t, c);
     const texto = log + "\n" + (t.lineas || []).slice(-20).join("\n");
@@ -868,7 +870,9 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
   cual = cual === "kit" ? "kit" : "base";
   if (esOrigen()) return { ok: false, error: "El portátil es el origen" };
   if (!info || !info.archivo) return { ok: false, error: "Sin paquete" };
-  if (ocupado() || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
+  // (v3.49.1) también con un render de fondo (cada acto carga el kit al empezar); nunca con Claude u otra cadena en marcha:
+  // si no, el Claude de un equipo ocupado editaba archivos VIEJOS del kit y al mandarlos pisaba los nuevos (3-11)
+  if (tarea || empaquetando) { kitEsperando = true; return { ok: false, error: "Hay una tarea en marcha" }; }
   try {
     fs.mkdirSync(baseDir(), { recursive: true });
     const f = path.join(baseDir(), cual + ".tgz");
@@ -877,6 +881,7 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
     const r = cual === "kit" ? await instalarKitVivo(f) : await tar(["-xzf", f, "-C", raiz()]);
     if (r.ok && cual === "kit") { limpiarRestos(f, listaAntes); kitc.trasKitVivo(raiz()); rescatarKit(); }
     try { fs.unlinkSync(f); } catch (x) {}
+    if (r.ok && cual === "kit") kitEsperando = false;
     registro.anotar("kit", (r.ok ? "instalado" : "NO se pudo instalar") + " el paquete «" + cual + "» del portátil" + (r.ok && cual === "kit" && r.guardados && r.guardados.length ? " (se quedan los cambiados aquí: " + r.guardados.join(", ") + ")" : "") + (r.ok ? "" : ": " + r.error), { huella: info.huella });
     if (!r.ok) return r;
     escribirJson(path.join(baseDir(), (cual === "kit" ? "kit_" : "") + "instalada.json"), { huella: info.huella, fecha: new Date().toISOString(), origen: info.fecha });
@@ -1365,8 +1370,8 @@ ipcMain.handle("kit-propio-subir", async (e, token, anterior) => {
 });
 ipcMain.handle("kit-propio-recibir", async (e, token, info) => {
   if (!info || !info.archivo) return { ok: false, error: "Sin paquete" };
-  // (3-11) nunca mientras se trabaja: un módulo en uso no se cambia a mitad de un render; la interfaz lo repite en el primer hueco
-  if (ocupado() || empaquetando) return { ok: false, pendiente: true, error: "Hay una tarea en marcha" };
+  // (3-11) nunca con Claude u otra cadena en marcha (la interfaz lo repite en el primer hueco); sí con un render de fondo
+  if (tarea || empaquetando) { kitEsperando = true; return { ok: false, pendiente: true, error: "Hay una tarea en marcha" }; }
   const tmp = path.join(baseDir(), "kit_cambios_recibidos");
   try {
     fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(tmp, { recursive: true });
@@ -1379,6 +1384,7 @@ ipcMain.handle("kit-propio-recibir", async (e, token, info) => {
     }
     const r = kitc.aplicar(raiz(), PARTES.kit, tmp, { ...info, rutas });
     if (r.puestos.length || r.apartados.length) rescatarKit();
+    kitEsperando = false;
     registro.anotar("kit", "recibidos los cambios de " + (info.equipo || "otro equipo") + ": puestos " + (r.puestos.join(", ") || "ninguno") + (r.apartados.length ? "; apartados " + r.apartados.join(", ") : "") + (r.conflictos.length ? "; CONFLICTOS: " + r.conflictos.map(c => c.rel + " (gana " + c.gana + (c.apartado ? ", el de aquí en " + c.apartado : "") + ")").join(", ") : ""), { huella: info.huella });
     return { ok: true, puestos: r.puestos, apartados: r.apartados, conflictos: r.conflictos };
   } catch (x) { registro.anotar("kit", "no se pudieron recibir los cambios del kit: " + x.message); return { ok: false, error: x.message }; }

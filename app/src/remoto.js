@@ -277,7 +277,7 @@ export function iniciarRemotoEscritorio(t) {
       if (ok && !(b.instaladaKit && b.instaladaKit.huella === ok.kitVivo.huella)) pend.push({ cual: "kit", o: ok });
       if (!pend.length) { _basePendiente = null; return; }
       // ocupado ahora: se instala en el primer hueco entre etapas (la vuelta del trabajador)
-      if (t && (t.activa || t.fondo)) { _basePendiente = pend; return; }     // (v3.48) ni con un render de fondo
+      if (t && t.activa) { _basePendiente = pend; return; }     // (v3.49.1) con un render de fondo SÍ se instala: cada acto carga el kit al empezar
       await instalarPaquetes(pend);
     } finally { baseOcupada = false; }
   };
@@ -615,7 +615,7 @@ export function iniciarTrabajador(t) {
     let aj, t, l;
     try { [aj, t, l] = await Promise.all([s.estudioAjustes(), s.historiasTareaEstado(), s.historiasLista()]); } catch (e) { return; }
     // v3.41.8: kit y recursos nuevos del portátil esperando: se instalan en este hueco, antes de empezar nada
-    if ((_basePendiente || _kitPendiente) && _instalarBase && !(t && (t.activa || t.fondo))) { await _instalarBase(); return; }
+    if ((_basePendiente || _kitPendiente) && _instalarBase && !(t && t.activa)) { await _instalarBase(); return; }
     const m = mios(), w = esperas();
     // 0) lo que esperaba al límite de Claude: a su hora, sigue (de uno en uno, y solo si estoy disponible y libre)
     const vencida = Object.keys(w).find(k => w[k] <= Date.now());
