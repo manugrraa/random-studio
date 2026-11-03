@@ -52,6 +52,7 @@ async function ejecutar(o) {
     case "ajustes": return s.estudioAjustes(a.nuevos || {});
     case "instalar_git": return s.instalarGit ? s.instalarGit() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
     case "instalar_cuda": return s.instalarCuda ? s.instalarCuda() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
+    case "pasar": return pasarHistoria(String(a.id || ""), String(a.a || ""));
   }
   throw new Error("Orden desconocida");
 }
@@ -391,13 +392,13 @@ let _soyDueno = false;
 const BLENDER = ["escena", "animatic", "render", "montaje"];
 const ETAPA_TXT = { guion: "guion", voces: "voces y efectos", escena: "escena 3D", animatic: "animatic", render: "render", montaje: "montaje" };
 /** Historia preparada en este equipo: si el servidor dice que el portátil puede animarla, se sube su copia y se le pasa. */
-async function pasarAlPortatil(pid, id) {
+async function pasarAlPortatil(pid, id, para) {
   const s = SF();
   // v3.45.11: cada paso queda escrito en el pedido (se ve en la cola y desde el otro equipo): antes, si algo fallaba, la
   // historia se quedaba «esperando» sin que nadie supiera por qué
   const nota = (det) => pedidosApi("POST", { accion: "estado", id: Number(pid), estado: "trabajando", detalle: "➡️ pasar al otro equipo: " + det }).catch(() => {});
-  const c = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), consulta: true });
-  if (!c.pasar) return { traspasado: false };
+  const c = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), consulta: true, ...(para ? { para } : {}) });
+  if (!c.pasar) { if (para) await nota("el otro equipo no está en línea o no tiene Blender/Drive"); return { traspasado: false }; }
   if (!s.estudioRelevoPreparar || !driveConectadoTrabajo()) { await nota("este equipo no tiene Drive conectado"); return { traspasado: false }; }
   // v3.45.10: la copia que ya está en Drive (se sube tras cada etapa) sirve si la historia no ha cambiado desde entonces:
   // el otro equipo la coge AL MOMENTO, sin volver a empaquetar y subir ~120 MB (él: "¿por qué no detectan los dos equipos
@@ -406,21 +407,46 @@ async function pasarAlPortatil(pid, id) {
     const g = await pedidosApi("GET");
     const ped = (g.pedidos || []).find(x => Number(x.id) === Number(pid));
     const rv = ped && ped.args && ped.args.relevo;
-    if (rv && rv.archivo && rv.fecha && s.estudioCambiadoDesde && ["escena", "animatic"].includes(rv.etapa)) {
+    if (!para && rv && rv.archivo && rv.fecha && s.estudioCambiadoDesde && ["escena", "animatic"].includes(rv.etapa)) {
       const ch = await s.estudioCambiadoDesde(id, rv.fecha);
       if (ch && ch.ok && !ch.cambiado) { await nota("uso la copia que ya está en Drive"); return pedidosApi("POST", { accion: "fase_blender", id: Number(pid), relevo: { archivo: rv.archivo, md5: rv.md5, tam: rv.tam } }); }
       if (ch && ch.ok) await nota("la copia de Drive es anterior a " + (ch.archivo || "un cambio") + ": preparo otra");
     }
   } catch (e) {}
   await nota("empaquetando la copia…");
-  const pr = await s.estudioRelevoPreparar(id);
+  const pr = await s.estudioRelevoPreparar(id, !!para);
   if (!pr || !pr.ok) { await nota("no se pudo empaquetar: " + ((pr && pr.error) || "?")); return { traspasado: false }; }
   await nota("subiendo la copia a Drive…");
   const up = await s.estudioRelevoSubir(id, await driveTokenTrabajo());
   if (!up || !up.ok) { await nota("no se pudo subir a Drive: " + ((up && up.error) || "?")); return { traspasado: false }; }
-  const f = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), relevo: { archivo: up.archivo, md5: up.md5, tam: up.tam } });
+  const f = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), relevo: { archivo: up.archivo, md5: up.md5, tam: up.tam }, ...(para ? { para } : {}) });
   if (!f || !f.traspasado) await nota("el servidor no la dejó pasar: " + ((f && (f.error || (f.pasar === false ? "el otro equipo ya no está disponible" : ""))) || "?"));
   return f;
+}
+
+/* (3/11) «Seguir en…»: él elige en qué equipo sigue una historia (p. ej. el render de la 17 en el portátil). Lo ejecuta el
+ * equipo que la lleva: para lo que esté haciendo con ella, sube su copia (con los planos ya renderizados) y la deja para
+ * ese equipo, que la coge en cuanto quede libre. */
+export async function pasarHistoria(hid, destino) {
+  const s = SF(), m = mios();
+  if (!/^\d{2}_[\w-]+$/.test(hid) || !destino) return { ok: false, error: "Faltan datos" };
+  const pid = Object.keys(m).find(k => m[k].historia === hid && !m[k].fin && !m[k].traspasada);
+  if (!pid) return { ok: false, error: "Esa historia no la lleva este equipo" };
+  const t = s.historiasTareaEstado ? await s.historiasTareaEstado() : null;
+  if (t && t.activa && t.id === hid) {
+    _parando = Date.now();                 // (no cuenta como fallo)
+    await s.historiasCancelar(hid);
+    for (let i = 0; i < 30; i++) { await new Promise(r => setTimeout(r, 1000)); const t2 = await s.historiasTareaEstado(); if (!(t2 && t2.activa)) break; }
+  }
+  m[pid].ofrecida = Date.now(); m[pid].pausada = Date.now(); guardarMios(m);
+  const r = await pasarAlPortatil(pid, hid, destino).catch(e => ({ error: e.message || String(e) }));
+  if (r && r.traspasado) {
+    const m2 = mios(); if (m2[pid]) { m2[pid].traspasada = true; guardarMios(m2); }
+    toast("➡️ Historia " + hid.slice(0, 2) + ": pasa al otro equipo");
+    return { ok: true };
+  }
+  const m3 = mios(); if (m3[pid]) { delete m3[pid].pausada; guardarMios(m3); }     // (no se pudo: sigue aquí)
+  return { ok: false, error: (r && r.error) || "No se pudo pasar: mira el detalle del pedido" };
 }
 
 let _trabajador = false;

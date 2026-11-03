@@ -752,7 +752,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
     let estado, color;
     if (it.tipo === "pedido") {
       estado = it.grupo === "paradas" ? "No se pudo empezar" + (it.p.detalle ? ": " + it.p.detalle : "")
-        : it.p.estado === "por_animar" ? "Preparada: espera al portátil para animarla"
+        : it.p.estado === "por_animar" ? (it.p.detalle || "Preparada: espera al portátil para animarla")
         : it.grupo === "marcha_pausa" ? "Cambiando de equipo… (" + (it.p.detalle || it.p.estado) + ")"
         : it.p.estado === "asignado" ? "Empezando en " + (it.p.equipo_nombre || "un equipo") + "…" : it.pos === 0 ? "La siguiente en empezar" : "Esperando · puesto " + (it.pos + 1);
       color = it.grupo === "paradas" ? "var(--red)" : it.p.estado === "por_animar" ? "#60A5FA" : "var(--text-3)";
@@ -796,6 +796,15 @@ export function HistoriasRemoto({ toast, incrustado }) {
               <button disabled={!e.en_linea || !!e.datos.tarea} onClick={() => ordenA(e, "avanzar", { id: h.id }, "▶ En marcha")} className="grad-gold"
                 style={{ ...botonOro, alignSelf: "flex-start", opacity: (!e.en_linea || e.datos.tarea) ? .5 : 1 }}>
                 ▶ Seguir: {ETAPA_NOMBRE[siguiente.id]}{e.datos.tarea ? " (cuando " + e.nombre + " acabe lo que hace)" : !e.en_linea ? " (" + e.nombre + " apagado)" : ""}</button>)}
+            {/* (3/11) elegir en qué equipo sigue: escena, animatic o render (el montaje necesita los planos y son 4 min) */}
+            {!it.rev && !h.entregada && e.en_linea && ["escena", "animatic", "render"].includes((it.t && it.t.etapa) || (siguiente && siguiente.id)) && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {equipos.filter(o => o.id !== e.id && o.en_linea && o.datos.capacidad && o.datos.capacidad.blender && o.datos.capacidad.proyecto).map(o => (
+                  <button key={o.id} onClick={() => {
+                    if (!confirm("¿Seguir «" + (h.titulo || h.id) + "» en " + o.nombre + "?\n\n" + (it.t ? e.nombre + " para lo que está haciendo con ella (" + (ETAPA_NOMBRE[it.t.etapa] || "") + ") y " : e.nombre + " ") + "sube su copia a Drive, con los planos ya hechos. " + o.nombre + " la coge en cuanto quede libre.")) return;
+                    ordenA(e, "pasar", { id: h.id, a: o.id }, "➡️ Pasando a " + o.nombre + "…");
+                  }} style={{ ...botonSec, padding: "6px 12px" }}>➡️ Seguir en {corto(o.nombre)}</button>))}
+              </div>)}
             {it.rev && <RevisionRemota h={h} etapa={it.rev.id} onOrden={(q, a, ok) => ordenA(e, q, a, ok)} />}
             {!(it.rev && it.rev.id === "animatic") && (h.driveRevision || {}).animatic && <AnimaticRemoto link={h.driveRevision.animatic} />}
             {h.drive && (
