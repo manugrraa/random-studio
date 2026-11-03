@@ -16,7 +16,7 @@ import { VideoDrive } from "./drive_video";
  *   Montaje y entrega → miniatura (sugerida y elegible) → nota final opcional.
  * Guion, voces y escena los hace Claude Code en el portátil; el resto, la cadena de siempre (electron/historias.cjs).
  * Revisión manual de guion, voces y animatic con un interruptor cada una (Ajustes) y nota de cambios.
- * Se ve en todo momento qué se está haciendo: lo que Claude escribe, Blender, el render plano a plano con su barra.
+ * Se ve en todo momento qué se está haciendo: lo que Claude escribe, Roblox Studio, el render plano a plano con su barra.
  */
 
 const PASOS = {
@@ -504,7 +504,7 @@ function AjustesEstudio({ toast }) {
       <div style={{ ...tarjeta }}>
         <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8 }}>Herramientas</div>
         <ClaudeEstado a={a} toast={toast} recargar={cargar} />
-        <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, color: a.blender ? "var(--green)" : "var(--red)" }}>{a.blender ? "● Blender 4.5 está listo" : "● Falta Blender 4.5 (sin él no se hacen escenas ni render)"}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, color: a.blender ? "var(--green)" : "var(--red)" }}>{a.blender ? "● Roblox Studio está listo" : "● Falta Roblox Studio con su conector (sin él no se hacen escenas ni render)"}</div>
         <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, color: a.proyecto ? "var(--green)" : "var(--red)" }}>{a.proyecto ? "● El proyecto de historias está en este equipo" : "● Falta el proyecto de historias (Configuración → Carpetas)"}</div>
         <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8, color: a.eleven ? "var(--green)" : "#F59E0B" }}>{a.eleven ? "● Clave de ElevenLabs guardada (cifrada en este equipo)" : "● Falta la clave de ElevenLabs para las voces"}</div>
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -1058,7 +1058,7 @@ function SaludEquipo({ e, ultima, onGit, onCuda }) {
   if (cap.claude === false) p.push([cap.claudeError || "Claude no funciona", "Pega el permiso de larga duración en RandomHistorias → Ajustes de ese equipo."]);
   if (cap.eleven === false) p.push(["Sin clave de ElevenLabs", "No podrá hacer voces: ponla en RandomHistorias → Ajustes de ese equipo."]);
   else if (cap.elevenError) p.push(["La voz no funciona: " + cap.elevenError, null]);
-  if (cap.blender === false) p.push(["Sin Blender", "No podrá hacer la escena ni el render: instala Blender 4.5."]);
+  if (cap.blender === false) p.push(["Sin Roblox Studio", "No podrá hacer la escena ni el render: instala Roblox Studio y activa su conector (Asistente › Servidores)."]);
   if (cap.bash === false) p.push(["Sin Git Bash: Claude trabaja con PowerShell (mucho más lento)", null, "git"]);
   if (cap.drive === false) p.push(["Sin Drive conectado", "No sube los Shorts ni puede hacer relevos: conéctalo en RandomHistorias → Ajustes."]);
   if (typeof cap.disco === "number" && cap.disco < 25) p.push(["Queda poco disco: " + cap.disco + " GB libres", "Las historias necesitan unos 0,5 GB cada una."]);

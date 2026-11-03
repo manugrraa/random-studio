@@ -450,7 +450,7 @@ async function pasarAlPortatil(pid, id, para) {
   // historia se quedaba «esperando» sin que nadie supiera por qué
   const nota = (det) => pedidosApi("POST", { accion: "estado", id: Number(pid), estado: "trabajando", detalle: "➡️ pasar al otro equipo: " + det }).catch(() => {});
   const c = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), consulta: true, ...(para ? { para } : {}) });
-  if (!c.pasar) { if (para) await nota("el otro equipo no está en línea o no tiene Blender/Drive"); return { traspasado: false }; }
+  if (!c.pasar) { if (para) await nota("el otro equipo no está en línea o no tiene Roblox Studio/Drive"); return { traspasado: false }; }
   if (!s.estudioRelevoPreparar || !driveConectadoTrabajo()) { await nota("este equipo no tiene Drive conectado"); return { traspasado: false }; }
   // v3.45.10: la copia que ya está en Drive (se sube tras cada etapa) sirve si la historia no ha cambiado desde entonces:
   // el otro equipo la coge AL MOMENTO, sin volver a empaquetar y subir ~120 MB (él: "¿por qué no detectan los dos equipos
@@ -662,7 +662,9 @@ export function iniciarTrabajador(t) {
         // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
         if (sig && sig.id === "voces" && aj.elevenError) continue;
         if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2) {
-          if (BLENDER.includes(sig.id) && !_soyDueno && !x.faseOk) blender.push({ pid, x, h, sig });
+          // v3.47.0: escena, animatic y render se ruedan en Roblox Studio; un equipo sin Studio («blender» = puede rodar)
+          // las ofrece siempre al que lo tenga, nunca las intenta él
+          if (BLENDER.includes(sig.id) && (!aj.blender || (!_soyDueno && !x.faseOk))) blender.push({ pid, x, h, sig });
           else if (!empezada) empezada = { pid, x, h, sig };
         }
       }
@@ -678,7 +680,7 @@ export function iniciarTrabajador(t) {
     guardarMios(m);
     // v3.41.8: el pedido dice el estado real de las que esperan aquí (antes se quedaba «voces» aunque estuviera parada)
     for (const b of blender) avisarDetalle(b.pid, "preparada · espera para animarse");
-    // 2) seguir la empezada antes de coger nada nuevo. Lo de Blender (escena, animatic, render, montaje) es del portátil:
+    // 2) seguir la empezada antes de coger nada nuevo. Lo de rodar (escena, animatic, render, montaje; Roblox Studio) es del portátil:
     // el ordenador, al terminar de prepararla, se la pasa si el portátil puede animarla (y si no, la anima él)
     // v3.41.7: en el ordenador, cada historia preparada se ofrece al portátil (cada 5 min como mucho, de una en una)
     if (_disponible && revisadoRelevo) {
@@ -699,16 +701,17 @@ export function iniciarTrabajador(t) {
     }
     // 3) coger trabajo nuevo: solo si estoy disponible, libre y preparado
     if (!_disponible || (t && t.activa) || !aj.proyecto || !aj.claude) return;
-    const tipos = aj.blender ? ["historia", "ideas"] : ["ideas"];
+    // v3.47.0: preparar (guion y voces) lo puede hacer cualquier equipo; rodar, solo el que tiene Roblox Studio
+    const tipos = ["historia", "ideas"];
     ocupadoCogiendo = true;
     try {
       // v3.41: solo se ofrece a seguir relevos si puede bajar la copia de Drive
-      const r = await pedidosApi("POST", { accion: "reclamar", tipos, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) });
+      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: !!aj.blender, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) });
       const p = r.pedido;
       if (!p) {
         // v3.41.7: nada nuevo que preparar ni que animar del portátil: el ordenador anima lo suyo que ya está preparado
         const b = blender[0];
-        if (b && !_soyDueno) {
+        if (b && !_soyDueno && aj.blender) {
           b.x.faseOk = true; b.x.quieta = 0; guardarMios(m);
           try { await s.estudioAvanzar(b.h.id); toast("🎬 Ya está todo preparado: animo aquí la historia " + b.h.id.slice(0, 2)); } catch (e) {}
         }

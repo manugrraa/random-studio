@@ -139,18 +139,18 @@ function repararRender(t, id) {
     const rk = leerJson(path.join(estudioDir(), "_rescate_kit.json"), null);
     const prompt = instrucciones("reglas") + `\n\n---\nREPARAR EL RENDER de la historia ${rel} (intento ${est.reparaciones} de 2).
 
-El guion, las voces, la escena y el animatic ya están APROBADOS. El render final (rodar.py final) ha fallado en algunos planos
-porque el código no se puede ejecutar. Lo más probable: un módulo del kit (kit/*.py) creado en este equipo se perdió y se
-recuperó del historial de Claude sin sus últimos cambios${rk && rk.restaurados && rk.restaurados.length ? " (recuperados: " + rk.restaurados.map(r => "kit/" + r.nombre + ".py" + (r.aviso ? " — " + r.aviso : "")).join(", ") + ")" : ""}.
+El guion, las voces, la escena y el animatic ya están APROBADOS. El rodaje en Roblox Studio (rodar.py final) ha fallado en
+algunos planos porque el código no se puede ejecutar (p. ej. un objeto o una función de roblox/pueblo que falta en este
+equipo, o Studio sin abrir)${rk && rk.restaurados && rk.restaurados.length ? " (recuperados del historial: " + rk.restaurados.map(r => r.nombre + (r.aviso ? " — " + r.aviso : "")).join(", ") + ")" : ""}.
 
 QUÉ HACER
-1. Lee los errores de abajo y el código que falla (rodar.py, escena.py y los módulos del kit que usan).
+1. Lee los errores de abajo y el código que falla (rodar.py y los módulos de roblox/pueblo que usa).
 2. Arréglalo con el cambio MÍNIMO para que esos planos se monten como en las fotos aprobadas (planos_fotos/sNN.png): añade
    el parámetro, la función o el objeto que falte, con el comportamiento que se deduce de cómo se usa. NO cambies encuadres,
    personajes, textos ni la historia, y no toques los planos que ya funcionan.
-3. Comprueba los planos que fallaban: "$BLENDER" -b --factory-startup -P ${rel}/rodar.py -- revisar <planos separados por comas>
+3. Comprueba los planos que fallaban: cd ${rel} && python rodar.py fotos <planos separados por comas>
    Repite hasta que ninguno dé ERROR ni Traceback.
-4. NO renderices el vídeo final: en cuanto termines, la cadena lo repite sola.
+4. NO ruedes el vídeo final: en cuanto termines, la cadena rueda la historia entera sola.
 
 ERRORES DEL RENDER (de ${rel}/cadena_log/render.log):
 ${erroresDelRender(log)}
@@ -321,11 +321,33 @@ const estudioDe = (c) => leerJson(path.join(c, "estudio.json"), {});
 const guardarEstudio = (c, e) => escribirJson(path.join(c, "estudio.json"), e);
 const urlArchivo = (p) => { try { return "file:///" + encodeURI(p.replace(/\\/g, "/")) + "?t=" + Math.round(fs.statSync(p).mtimeMs); } catch (e) { return null; } };
 
-function blenderExe() {
-  if (process.env.BLENDER && existe(process.env.BLENDER)) return process.env.BLENDER;
-  const base = "C:\\Program Files\\Blender Foundation";
-  try { const d = fs.readdirSync(base).filter(n => /^Blender 4\.5/.test(n)).sort().pop(); if (d && existe(path.join(base, d, "blender.exe"))) return path.join(base, d, "blender.exe"); } catch (e) {}
+/* v3.47.0 (3-11-2026, Manu: «solo quiero que usemos Roblox Studio»): Blender ya no se usa. La escena, las fotos y el render
+ * se hacen en Roblox Studio (rodar.py de la historia + tools/roblox/historia.py), así que lo que cuenta es si este equipo
+ * tiene Studio y su conector (mcp.bat). La capacidad se sigue llamando «blender» hacia fuera (servidor y reparto de
+ * etapas la usan con ese nombre): significa «puede rodar». */
+function studioExe() {
+  const la = process.env.LOCALAPPDATA || path.join(require("os").homedir(), "AppData", "Local");
+  if (!existe(path.join(la, "Roblox", "mcp.bat"))) return null;
+  try {
+    const v = path.join(la, "Roblox", "Versions");
+    for (const d of fs.readdirSync(v)) if (existe(path.join(v, d, "RobloxStudioBeta.exe"))) return path.join(v, d, "RobloxStudioBeta.exe");
+  } catch (e) {}
   return null;
+}
+/** Una historia empezada con Blender (escena.py / rodar.py que importan bpy o el kit de Blender) vuelve a empezar la
+ * escena en Roblox: lo de Blender se aparta a _blender_viejo/ (no se borra). */
+function apartarBlender(c) {
+  const viejo = path.join(c, "_blender_viejo"), movidos = [];
+  const deBlender = (f) => /^\s*(import bpy|from kit\b|import kit\b)/m.test(leer(path.join(c, f), ""));
+  if (!deBlender("rodar.py") && !deBlender("escena.py")) return movidos;
+  const mover = ["escena.py", "rodar.py", "planos_fotos", "planos_final", "_pruebas", "cadena_estado.json"];
+  if (existe(path.join(c, "montar.py")) && !/rodar\.py/.test(leer(path.join(c, "montar.py"), ""))) mover.push("montar.py");
+  for (const n of mover) {
+    if (!existe(path.join(c, n))) continue;
+    try { fs.mkdirSync(viejo, { recursive: true }); fs.renameSync(path.join(c, n), path.join(viejo, n + (existe(path.join(viejo, n)) ? "_" + Date.now() : ""))); movidos.push(n); } catch (e) {}
+  }
+  if (movidos.length) registro.anotar("historias", "escena de Blender apartada a _blender_viejo (se rehace en Roblox): " + path.basename(c), { movidos });
+  return movidos;
 }
 
 // ------------------------------------------------------------------ clave de ElevenLabs (cifrada en este equipo)
@@ -370,7 +392,7 @@ const todosFinal = (c) => { const ps = planos(c); return ps.length > 0 && ps.eve
 const ETAPAS = [
   { id: "guion", nombre: "Guion", tipo: "agente", hecho: c => ["titulo.txt", "narracion.txt", "planos.py"].every(f => existe(path.join(c, f))) },
   { id: "voces", nombre: "Voces y efectos", tipo: "agente", hecho: c => ["duraciones.json", "audio/voz_final.wav", "audio/mezcla.wav"].every(f => existe(path.join(c, f))) },
-  { id: "escena", nombre: "Escena 3D", tipo: "agente", hecho: c => existe(path.join(c, "escena.py")) && existe(path.join(c, "rodar.py")) && todasFotos(c) },
+  { id: "escena", nombre: "Escena (Roblox)", tipo: "agente", hecho: c => existe(path.join(c, "rodar.py")) && !/^\s*import bpy/m.test(leer(path.join(c, "rodar.py"), "")) && todasFotos(c) },
   { id: "animatic", nombre: "Animatic", tipo: "cadena", args: ["--desde", "subtitulos", "--hasta", "animatic"], hecho: c => existe(path.join(c, "animatic.mp4")) },
   { id: "render", nombre: "Render", tipo: "cadena", args: ["--solo", "render"], hecho: todosFinal },
   { id: "montaje", nombre: "Montaje y entrega", tipo: "cadena", args: ["--desde", "montar", "--sin-parar"],
@@ -414,10 +436,10 @@ function describir(nombre, input) {
   if (nombre === "TodoWrite") return "Organizando el trabajo";
   if (nombre === "Bash" || nombre === "PowerShell") {
     const cmd = String((input || {}).command || "");
-    if (/rodar\.py.*fotos/.test(cmd)) return "Blender: haciendo las fotos de los planos (Animatic)";
-    if (/rodar\.py.*revisar/.test(cmd)) return "Blender: revisando la escena 3D";
-    if (/rodar\.py.*final/.test(cmd)) return "Blender: renderizando";
-    if (/blender(\.exe)?["']?\s+-b|%BLENDER%|\$BLENDER|-P\s+\S*test_\S*\.py/i.test(cmd)) return "Blender: probando modelos nuevos";
+    if (/rodar\.py.*fotos/.test(cmd)) return "Roblox: haciendo las fotos de los planos (Animatic)";
+    if (/rodar\.py.*revisar/.test(cmd)) return "Roblox: revisando choques y tapados";
+    if (/rodar\.py.*final/.test(cmd)) return "Roblox: rodando la historia";
+    if (/tools[\\/]roblox[\\/](medir|choques|hoja|construir)/.test(cmd)) return "Roblox: comprobando el pueblo";
     if (/voz_eleven/.test(cmd)) return "ElevenLabs: generando las voces";
     if (/transcribir/.test(cmd)) return "Whisper: comprobando la voz";
     if (/insertar_voces/.test(cmd)) return "Metiendo las voces de los personajes";
@@ -439,7 +461,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   // (Claude lo elegía igual y las instrucciones están escritas para Bash): trabaja exactamente como en el portátil
   if (!claude.rutaBash()) args.push("--append-system-prompt", claude.GUIA_POWERSHELL);
   else { args.splice(args.indexOf("PowerShell"), 1); args.push("--disallowedTools", "PowerShell"); }
-  const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), FISH_API_KEY: claveFish(), BLENDER: blenderExe() || "" });
+  const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), FISH_API_KEY: claveFish() });
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
   tarea = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0 };
   registro.anotar("claude", "empieza " + etapa + " de " + id + " (Claude)", { bash: !!claude.rutaBash() });
@@ -490,6 +512,7 @@ function promptEtapa(id, etapa, nota) {
   const c = carpetaDe(id), est = estudioDe(c);
   const rel = path.relative(raiz(), c).replace(/\\/g, "/");
   const base = etapa === "animatic" ? "escena" : etapa;   // los cambios del animatic se hacen en la escena
+  if (base === "escena") apartarBlender(c);                // v3.47.0: lo empezado en Blender se rehace en Roblox
   // v3.41.1: las REGLAS (todo lo que el usuario ha pedido) van delante de cada etapa, también en el ordenador, sin memoria
   let p = instrucciones("reglas") + "\n\n---\n\n" + instrucciones(base) + `\n\n---\nHISTORIA: ${rel} (número ${id.slice(0, 2)}).\n`;
   if (est.idea) p += "IDEA ELEGIDA:\n" + JSON.stringify(est.idea, null, 1) + "\n";
@@ -591,8 +614,8 @@ async function instantanea(sender, id, etapa, conRender) {
 }
 /** Tras una etapa: la copia de relevo (si toca) y luego lo de siempre (la siguiente etapa y la cola). */
 /* v3.41.8 VIGILANTE: una etapa de Claude que pasa mucho rato sin dar ninguna señal (p. ej. esperando en un bucle a un
- * archivo que no llega) se corta y se reintenta sola a los 2 min, como cualquier fallo. Lo de Blender puede tardar
- * de verdad (fotos de 60 planos), así que con Blender se le dan 45 min; con lo demás, 15. */
+ * archivo que no llega) se corta y se reintenta sola a los 2 min, como cualquier fallo. Lo de Roblox puede tardar
+ * de verdad (fotos de 60 planos), así que con Roblox se le dan 45 min; con lo demás, 30. */
 function huellaCarpeta(id) {
   // (v3.41.9) algo cambia en la carpeta de la historia = la herramienta sigue trabajando aunque Claude no escriba nada
   try {
@@ -617,7 +640,7 @@ setInterval(() => {
   const h = huellaCarpeta(tarea.id);
   if (h !== tarea.huellaCarpeta) { tarea.huellaCarpeta = h; tarea.actividad = Date.now(); }
   const quieto = Date.now() - (tarea.actividad || tarea.inicio);
-  if (quieto < (/^Blender/.test(tarea.accion || "") ? 45 : 30) * 60000) return;
+  if (quieto < (/^Roblox/.test(tarea.accion || "") ? 45 : 30) * 60000) return;
   tarea.atascada = Math.round(quieto / 60000);
   try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (e) {}
 }, 60000);
@@ -718,8 +741,10 @@ ipcMain.handle("estudio-relevada", async (e, id) => {
  *    en minutos sin esperar a otra versión de RandomStudio.
  * La huella es por CONTENIDO (no por fecha), así que tocar y deshacer no sube nada. */
 const PARTES = {
-  base: ["assets/fuentes", "assets/textures", "assets/roblox", "assets/musica", "assets/sfx", "library", "historias/01_bostezo/fuentes"],
+  // (v3.47.0) sin texturas ni biblioteca de Blender: ya no se usa (archivadas en E:/A RdeRandom/_archivo_blender)
+  base: ["assets/fuentes", "assets/roblox", "assets/musica", "assets/sfx", "historias/01_bostezo/fuentes"],
   // roblox: el pueblo por código (Luau) y el sombrero, para grabar en Roblox Studio desde cualquier equipo
+  // («kit» de Blender ya no existe: sigue en la lista para que su borrado llegue a todos los equipos)
   kit: ["kit", "tools", "roblox", "historias/_plantilla", "guiones/prompt-produccion.md", "guiones/canal_nuevo.md"],
 };
 const baseDir = () => path.join(estudioDir(), "_base");
@@ -1028,7 +1053,7 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
   }
   const cl = claude.estadoClaude();
   return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), fish: !!claveFish(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
-    claudeOk: cl.ok, claudeError: cl.error, blender: !!blenderExe(), proyecto: existe(histDir()),
+    claudeOk: cl.ok, claudeError: cl.error, blender: !!studioExe(), roblox: !!studioExe(), proyecto: existe(histDir()),
     elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "", origen: esOrigen(),
     gpu: gpuNombre(), whisper: leerJson(path.join(estudioDir(), "_whisper.json"), null),
     // v3.41: la salud del equipo (Git Bash, espacio libre en el disco del proyecto y fecha del kit)
