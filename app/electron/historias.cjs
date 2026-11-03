@@ -715,7 +715,8 @@ ipcMain.handle("estudio-relevo-recibir", async (e, id, token, archivo, md5) => {
     apartar(id);
     fs.renameSync(path.join(tmp, "historias", id), path.join(histDir(), id));
     registro.anotar("relevo", "recibida la copia de " + id + " de otro equipo (la local, si la había, queda en _relevadas)");
-    try { for (const k of fs.readdirSync(path.join(tmp, "kit"))) { const d = path.join(raiz(), "kit", k); if (k.endsWith(".py") && !existe(d)) fs.renameSync(path.join(tmp, "kit", k), d); } } catch (x) {}
+    // (v3.47.3) los módulos kit/*.py de Blender que traiga el relevo de una historia antigua ya no se ponen
+    if (false) try { for (const k of fs.readdirSync(path.join(tmp, "kit"))) { const d = path.join(raiz(), "kit", k); if (k.endsWith(".py") && !existe(d)) fs.renameSync(path.join(tmp, "kit", k), d); } } catch (x) {}
     try { for (const g of fs.readdirSync(path.join(tmp, "guiones"))) { fs.mkdirSync(path.join(raiz(), "guiones"), { recursive: true }); fs.renameSync(path.join(tmp, "guiones", g), path.join(raiz(), "guiones", g)); } } catch (x) {}
     fs.rmSync(tmp, { recursive: true, force: true });
     return { ok: true };
@@ -1315,7 +1316,8 @@ let pararVigilante = null;
 function vigilarKit() {
   try {
     if (pararVigilante) pararVigilante();
-    if (!existe(path.join(raiz(), "kit"))) return;
+    // (v3.47.3) se miraba kit/ (el de Blender): al archivarlo, el vigilante no arrancaba y los cambios tardaban 3 min en viajar
+    if (!existe(path.join(raiz(), "tools"))) return;
     pararVigilante = kitc.vigilar(raiz(), PARTES.kit, () => {
       for (const w of require("electron").BrowserWindow.getAllWindows()) { try { w.webContents.send("kit-cambio", { cuando: Date.now() }); } catch (e) {} }
     });
