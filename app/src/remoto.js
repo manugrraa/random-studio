@@ -45,7 +45,7 @@ async function ejecutar(o) {
     case "ideas_generar": return s.estudioIdeasGenerar(Number(a.n) || 5, String(a.pista || ""));
     case "idea_poner": return s.estudioIdeaPoner(a.id, { estado: a.estado });
     // (v3.38.1: ya no hay orden «crear»: toda historia nueva pasa por la cola, que es la que impide repetirlas)
-    case "borrar": return borrarHistoria(a.id);
+    case "borrar": return Array.isArray(a.ids) ? borrarVarias(a.ids.map(String).filter(x => /^\d{2}_[\w-]+$/.test(x)).slice(0, 200)) : borrarHistoria(a.id);
     case "parar_todo": return pararTodo();
     case "reanudar_todo": return reanudarTodo();
     case "drive_subir": return s.estudioDriveSubir(a.id, await driveTokenTrabajo(), perfilDrive(), a.que || "short");
@@ -396,9 +396,26 @@ export async function enTodosLosEquipos(que) {
 
 /** Borra una historia de ESTE equipo (a su papelera) y la quita de la cola compartida para que se pueda volver a pedir. */
 export async function borrarHistoria(id) {
+  // 3-11: una TERMINADA (su Short ya está en Editados o en Drive) se borra del todo para liberar espacio, y SIN renumerar
+  // las demás (su número ya se usó); las que están a medias van a la papelera y se renumeran, como siempre
+  try {
+    const l = await SF().historiasLista();
+    const h = l && (l.historias || []).find(x => x.id === id);
+    if (h && h.entregada && SF().estudioBorrarTerminada) return await SF().estudioBorrarTerminada(id);
+  } catch (e) {}
   const r = await SF().estudioBorrar(id);
   if (r && r.ok) await pedidosApi("POST", { accion: "borrada", historia_id: id }).catch(() => {});
+  anotar("historias", (r && r.ok ? "borrada (a la papelera) " : "NO se pudo borrar ") + id + (r && r.error ? ": " + r.error : ""));
   return r;
+}
+/** Varias de una vez (la orden «borrar» con ids: una sola orden por equipo, sin llegar al límite de órdenes por minuto). */
+export async function borrarVarias(ids) {
+  let hechas = 0, liberado = 0; const fallos = [];
+  for (const id of ids) {
+    const r = await borrarHistoria(id).catch(e => ({ ok: false, error: e.message }));
+    if (r && r.ok) { hechas++; liberado += r.liberado || 0; } else fallos.push(id + ": " + ((r && r.error) || "?"));
+  }
+  return { ok: !fallos.length, hechas, liberado, error: fallos.join(" · ") };
 }
 
 /* Disponible para trabajar: al abrir RandomStudio empieza en «disponible», salvo que se dejara PARADO (v3.43.1). */

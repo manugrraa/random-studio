@@ -1,7 +1,7 @@
 import React from "react";
 const { useState, useEffect, useCallback, useRef } = React;
 import { Icons } from "./base";
-import { borrarHistoria, pedidosApi, remotoApi } from "./remoto";
+import { borrarHistoria, borrarVarias, pedidosApi, remotoApi } from "./remoto";
 import { BotonDisponible, BotonPararTodo, ColaTrabajo, NuevaPeticion } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 import { esAdmin, useRolEquipo } from "./admin";
@@ -123,7 +123,7 @@ function TareaEnMarcha({ tarea, ahora, onCancelar, titulo }) {
 }
 
 // ------------------------------------------------------------------ revisar una etapa
-function Revision({ etapa, mat, onAprobar, onCambios, ocupado, cambiosOcupado }) {
+function Revision({ id, etapa, mat, onAprobar, onCambios, ocupado, cambiosOcupado }) {
   const [nota, setNota] = useState("");
   const [verGuion, setVerGuion] = useState(false);
   const textos = { guion: "Lee el guion. Si está bien, apruébalo y Claude sigue con las voces.",
@@ -146,6 +146,7 @@ function Revision({ etapa, mat, onAprobar, onCambios, ocupado, cambiosOcupado })
         ? <video controls src={mat.animatic} style={{ width: "100%", maxWidth: 340, borderRadius: 12, border: "1px solid var(--border)", display: "block", background: "#000" }} />
         : (mat.driveRevision || {}).animatic ? <VideoDrive link={mat.driveRevision.animatic} />
         : <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Aún no hay animatic.</div>)}
+      {etapa === "animatic" && id && <EstiloCifras id={id} />}
       {inf && inf.texto && <details style={{ marginTop: 10 }}><summary style={{ fontSize: 12, color: "var(--text-3)", cursor: "pointer" }}>Lo que dice Claude de su trabajo</summary>
         <div style={{ fontSize: 12.5, color: "var(--text-2)", whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{inf.texto}</div></details>}
       <textarea value={nota} onChange={e => setNota(e.target.value)} rows={3} placeholder="Si quieres cambios, escríbelos aquí (qué cambiar y cómo). Si está bien, deja esto vacío y aprueba."
@@ -153,6 +154,28 @@ function Revision({ etapa, mat, onAprobar, onCambios, ocupado, cambiosOcupado })
       <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
         <button disabled={ocupado || !!nota.trim()} onClick={onAprobar} className="grad-gold" style={{ ...botonOro, opacity: (ocupado || nota.trim()) ? 0.5 : 1 }}>✓ Está bien, seguir</button>
         <button disabled={ocupado || cambiosOcupado || !nota.trim()} title={cambiosOcupado ? "Espera a que termine lo que está en marcha" : ""} onClick={() => onCambios(nota.trim())} style={{ ...botonSec, color: "#F59E0B", borderColor: "rgba(245,158,11,.45)", opacity: (ocupado || cambiosOcupado || !nota.trim()) ? 0.5 : 1 }}>Pedir estos cambios</button>
+      </div>
+    </div>);
+}
+
+/* 3-11 PASO 8: si la historia lleva cifras (contadores.py), sus 4 estilos sobre el mismo plano para elegir; si no lleva,
+ * no sale nada. La elección la aplica el montaje a todas las cifras (sin volver a rodar). */
+function EstiloCifras({ id }) {
+  const [h, setH] = useState(null);
+  const [puesto, setPuesto] = useState(null);
+  useEffect(() => { let vivo = true; if (SF().estudioEstilosCifras) SF().estudioEstilosCifras(id).then(r => vivo && setH(r)).catch(() => {}); return () => { vivo = false; }; }, [id]);
+  if (!h || !h.cifras) return null;
+  if (!h.ok || !h.imagen) return <div style={{ fontSize: 12.5, color: "var(--text-3)", marginTop: 10 }}>Cifras: {h.error || "no pude preparar la hoja de estilos"}</div>;
+  const elegido = puesto || (h.elegido && h.elegido.forma);
+  return (
+    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+      <b style={{ fontSize: 13.5 }}>Estilo de las cifras</b>
+      <div style={{ fontSize: 12, color: "var(--text-3)" }}>El mismo plano ({h.plano}) con los cuatro estilos. Elige uno: el montaje lo pone en todas las cifras.{!elegido ? " Si no eliges, se queda el de contadores.py." : ""}</div>
+      <img src={h.imagen} style={{ width: "100%", borderRadius: 10, border: "1px solid var(--border)" }} />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {h.opciones.map(o => (
+          <button key={o.letra} onClick={async () => { const r = await SF().estudioEstiloCifrasPoner(id, o); if (r && r.ok) setPuesto(o.forma); }}
+            className={elegido === o.forma ? "grad-gold" : ""} style={elegido === o.forma ? botonOro : botonSec}>{o.letra} · {o.nombre}{elegido === o.forma ? " ✓" : ""}</button>))}
       </div>
     </div>);
 }
@@ -228,6 +251,55 @@ function ElegirMiniatura({ det, toast, onHecha }) {
             </div>)}
         </div>
       </div>
+    </div>);
+}
+
+// ------------------------------------------------------------------ terminadas (3-11): aparte, plegadas, y borrar varias
+function Terminadas({ lista, selId, setSelId, toast, alBorrar }) {
+  const [abierta, setAbierta] = useState(false);
+  const [elegir, setElegir] = useState(false);
+  const [sel, setSel] = useState(() => new Set());
+  const [borrando, setBorrando] = useState(false);
+  if (!lista.length) return null;
+  const quitar = async (ids) => {
+    if (!ids.length) return;
+    if (!confirm("¿Borrar " + (ids.length === 1 ? "esta historia terminada" : "estas " + ids.length + " historias terminadas") + " para liberar espacio?\n\nSe borra DEL TODO su carpeta de trabajo (planos, renders, audio). Los Shorts entregados, sus miniaturas y las copias de Drive no se tocan.")) return;
+    setBorrando(true);
+    const r = await borrarVarias(ids);
+    setBorrando(false); setSel(new Set()); setElegir(false);
+    toast((r.hechas ? "🗑 " + r.hechas + " borrada(s): " + ((r.liberado || 0) / 1e9).toFixed(2) + " GB liberados" : "") + (r.error ? (r.hechas ? " · " : "❌ ") + r.error : ""));
+    alBorrar();
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+      <button onClick={() => setAbierta(a => !a)} style={{ ...botonSec, display: "flex", justifyContent: "space-between", color: "var(--green)" }}>
+        <span>✅ Terminadas · {lista.length}</span><span>{abierta ? "▲" : "▼"}</span></button>
+      {abierta && <>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {!elegir ? <button onClick={() => setElegir(true)} style={{ ...botonSec, padding: "6px 10px" }}>Elegir para borrar</button>
+            : <>
+              <button disabled={!sel.size || borrando} onClick={() => quitar([...sel])} style={{ ...botonSec, padding: "6px 10px", color: "var(--red)", opacity: sel.size ? 1 : .5 }}>🗑 Borrar {sel.size || ""}</button>
+              <button onClick={() => setSel(sel.size === lista.length ? new Set() : new Set(lista.map(h => h.id)))} style={{ ...botonSec, padding: "6px 10px" }}>{sel.size === lista.length ? "Ninguna" : "Todas"}</button>
+              <button onClick={() => { setElegir(false); setSel(new Set()); }} style={{ ...botonSec, padding: "6px 10px" }}>Cancelar</button>
+            </>}
+          {!elegir && <button disabled={borrando} onClick={() => quitar(lista.map(h => h.id))} style={{ ...botonSec, padding: "6px 10px", color: "var(--red)" }}>🗑 Borrar todas</button>}
+        </div>
+        {borrando && <div style={{ fontSize: 12, color: "var(--text-3)" }}>Borrando…</div>}
+        {lista.map(h => {
+          const on = sel.has(h.id), activa = h.id === selId;
+          return (
+            <button key={h.id} onClick={() => { if (elegir) setSel(s => { const n = new Set(s); n.has(h.id) ? n.delete(h.id) : n.add(h.id); return n; }); else setSelId(h.id); }}
+              style={{ display: "flex", gap: 8, alignItems: "center", textAlign: "left", padding: "6px 8px", borderRadius: 10,
+                border: "1px solid " + (on ? "var(--red)" : activa ? "var(--border-gold)" : "var(--border)"), background: on ? "rgba(239,68,68,.08)" : "var(--card)" }}>
+              {elegir && <span style={{ width: 16, height: 16, borderRadius: 4, border: "2px solid " + (on ? "var(--red)" : "var(--border)"), background: on ? "var(--red)" : "transparent", flexShrink: 0 }} />}
+              <div style={{ width: 26, height: 46, borderRadius: 6, overflow: "hidden", flexShrink: 0, background: "var(--card-2)" }}>{h.miniatura && <img src={h.miniatura} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>HISTORIA {h.id.slice(0, 2)}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.titulo}</div>
+              </div>
+            </button>);
+        })}
+      </>}
     </div>);
 }
 
@@ -588,7 +660,7 @@ export function HistoriasView({ toast }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button onClick={() => setPestana("ideas")} style={{ ...botonSec, borderStyle: "dashed", padding: 12, color: "var(--gold)" }}>+ Nueva historia desde una idea</button>
             {!lista && !error && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Cargando…</div>}
-            {(lista || []).map(h => {
+            {(lista || []).filter(h => !h.entregada).map(h => {
               const activa = h.id === selId, et = h.etapas || [];
               const hechas = et.filter(x => x.estado === "hecho").length, rev = et.find(x => x.estado === "revisar"), trab = enMarcha && tarea.id === h.id;
               return (
@@ -611,6 +683,8 @@ export function HistoriasView({ toast }) {
                   </div>
                 </button>);
             })}
+            {/* 3-11: las terminadas, solo aquí (plegadas), para elegir y borrar las que quieras y liberar espacio */}
+            <Terminadas lista={(lista || []).filter(h => h.entregada)} selId={selId} setSelId={setSelId} toast={toast} alBorrar={() => { setSelId(null); cargar(); }} />
           </div>
 
           {/* detalle */}
@@ -641,14 +715,16 @@ export function HistoriasView({ toast }) {
                   {det.final && <button onClick={() => SF().historiasAbrir(det.id, "video")} style={botonSec}>Abrir vídeo</button>}
                   {!mat.legado && !(enMarcha && tarea.id === det.id) && (
                     <button onClick={async () => {
-                      if (!confirm("¿Borrar «" + (det.titulo || det.id) + "»?\n\nSe mueve a la papelera de este equipo (se puede recuperar desde ahí). Si ya tiene un Short entregado, ese vídeo no se toca. Las historias de detrás se renumeran solas.")) return;
-                      try { const r = await borrarHistoria(det.id); if (!r.ok) return toast("❌ " + r.error); toast("🗑 Historia borrada (está en la papelera)"); setSelId(null); cargar(); }
+                      if (!confirm(det.entregada
+                        ? "¿Borrar «" + (det.titulo || det.id) + "» para liberar espacio?\n\nSe borra DEL TODO su carpeta de trabajo (planos, renders, audio). El Short, su miniatura y la copia de Drive no se tocan."
+                        : "¿Borrar «" + (det.titulo || det.id) + "»?\n\nSe mueve a la papelera de este equipo (se puede recuperar desde ahí). Las historias de detrás se renumeran solas.")) return;
+                      try { const r = await borrarHistoria(det.id); if (!r.ok) return toast("❌ " + r.error); toast(r.liberado ? "🗑 Borrada: " + (r.liberado / 1e9).toFixed(2) + " GB liberados (el Short sigue a salvo)" : "🗑 Historia borrada (está en la papelera)"); setSelId(null); cargar(); }
                       catch (e) { toast("❌ " + e.message); }
                     }} style={{ ...botonSec, color: "var(--red)" }}>🗑 Borrar</button>)}
                 </div>
               </div>
 
-              {espera && !(enMarcha && tarea.id === det.id) && <Revision key={det.id + espera.id} etapa={espera.id} mat={mat} ocupado={false} cambiosOcupado={!!enMarcha}
+              {espera && !(enMarcha && tarea.id === det.id) && <Revision key={det.id + espera.id} id={det.id} etapa={espera.id} mat={mat} ocupado={false} cambiosOcupado={!!enMarcha}
                 onAprobar={() => accion(() => SF().estudioRevisar(det.id, espera.id, true, ""), "✓ Aprobado: seguimos")}
                 onCambios={(nota) => accion(() => SF().estudioRevisar(det.id, espera.id, false, nota), "Claude está aplicando tus cambios")} />}
 
@@ -691,6 +767,8 @@ export function HistoriasRemoto({ toast, incrustado }) {
   const [cola, setCola] = useState(null);
   const [error, setError] = useState("");
   const [abierta, setAbierta] = useState(null);         // clave de la tarjeta abierta
+  const [elegirH, setElegirH] = useState(false);        // 3-11: elegir terminadas para borrar
+  const [selH, setSelH] = useState(() => new Set());
   const [pestana, setPestana] = useState("historias");
   const [filtro, setFiltro] = useState("todas");
   const [enviandoIdea, setEnviandoIdea] = useState({});
@@ -717,6 +795,15 @@ export function HistoriasRemoto({ toast, incrustado }) {
     catch (e) { toast("❌ " + e.message); }
   };
   const pedido = async (cuerpo, ok) => { try { await pedidosApi("POST", cuerpo); if (ok) toast(ok); cargar(); } catch (e) { toast("❌ " + e.message); } };
+  // 3-11: borrar terminadas de cualquier equipo: UNA orden por equipo con todas las suyas (el Short sigue en Editados y Drive)
+  const borrarHechas = async (lista) => {
+    if (!lista.length) return;
+    if (!confirm("¿Borrar " + (lista.length === 1 ? "esta historia terminada" : "estas " + lista.length + " historias terminadas") + " para liberar espacio?\n\nSe borra DEL TODO su carpeta de trabajo en el equipo que la tiene (planos, renders, audio). Los Shorts entregados, sus miniaturas y las copias de Drive no se tocan.")) return;
+    const porEquipo = new Map();
+    for (const x of lista) if (x.e && x.h) { if (!porEquipo.has(x.e)) porEquipo.set(x.e, []); porEquipo.get(x.e).push(x.h.id); }
+    for (const [e, ids] of porEquipo) await ordenA(e, "borrar", { ids }, "🗑 Borrando " + ids.length + " en " + corto(e.nombre) + "…");
+    setElegirH(false); setSelH(new Set());
+  };
 
   if (!r) return <div style={{ ...tarjeta, margin: "30px auto", maxWidth: 520, fontSize: 13, color: error ? "var(--red)" : "var(--text-3)" }}>{error || "Conectando con los equipos…"}</div>;
 
@@ -761,7 +848,8 @@ export function HistoriasRemoto({ toast, incrustado }) {
   ];
   const FILTROS = [["todas", "Todas"], ["revisar", "📋 Te toca"], ["marcha", "⚡ En marcha"], ["cola", "⏳ En cola"], ["hechas", "✅ Hechas"]];
   const cuenta = (g) => items.filter(x => x.grupo === g).length;
-  const visibles = (g) => filtro === "todas" || filtro === g || (filtro === "marcha" && g === "marcha_pausa");
+  // 3-11: las terminadas solo salen en «Hechas» (en «Todas» ya no: él, para no tener la lista llena de historias acabadas)
+  const visibles = (g) => (filtro === "todas" && g !== "hechas") || filtro === g || (filtro === "marcha" && g === "marcha_pausa");
 
   // ---------------------------------------------------------------- ideas de todos los equipos, juntas
   const ideasVistas = new Set(), ideas = [];
@@ -887,14 +975,27 @@ export function HistoriasRemoto({ toast, incrustado }) {
         <NuevaPeticion toast={toast} alHacer={cargar} />
         <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
           {FILTROS.map(([k, t]) => {
-            const n = k === "todas" ? items.length : k === "marcha" ? cuenta("marcha") + cuenta("marcha_pausa") : cuenta(k);
+            const n = k === "todas" ? items.length - cuenta("hechas") : k === "marcha" ? cuenta("marcha") + cuenta("marcha_pausa") : cuenta(k);
             return <button key={k} onClick={() => setFiltro(k)} className={"rh-tab" + (filtro === k ? " on" : "")} style={{ whiteSpace: "nowrap" }}>{t}{n ? " · " + n : ""}</button>;
           })}
         </div>
         {GRUPOS.filter(([g]) => visibles(g) && cuenta(g)).map(([g, t, c]) => (
           <div key={g} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: c, textTransform: "uppercase", letterSpacing: ".05em" }}>{t} · {cuenta(g)}</div>
-            {items.filter(x => x.grupo === g).map(tarjetaDe)}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: c, textTransform: "uppercase", letterSpacing: ".05em", flex: 1 }}>{t} · {cuenta(g)}</div>
+              {g === "hechas" && (!elegirH
+                ? <><button onClick={() => setElegirH(true)} style={{ ...botonSec, padding: "5px 10px" }}>Elegir para borrar</button>
+                    <button onClick={() => borrarHechas(items.filter(x => x.grupo === "hechas"))} style={{ ...botonSec, padding: "5px 10px", color: "var(--red)" }}>🗑 Borrar todas</button></>
+                : <><button disabled={!selH.size} onClick={() => borrarHechas(items.filter(x => x.grupo === "hechas" && selH.has(x.clave)))} style={{ ...botonSec, padding: "5px 10px", color: "var(--red)", opacity: selH.size ? 1 : .5 }}>🗑 Borrar {selH.size || ""}</button>
+                    <button onClick={() => { const todas = items.filter(x => x.grupo === "hechas"); setSelH(selH.size === todas.length ? new Set() : new Set(todas.map(x => x.clave))); }} style={{ ...botonSec, padding: "5px 10px" }}>Todas</button>
+                    <button onClick={() => { setElegirH(false); setSelH(new Set()); }} style={{ ...botonSec, padding: "5px 10px" }}>Cancelar</button></>)}
+            </div>
+            {items.filter(x => x.grupo === g).map(x => g === "hechas" && elegirH
+              ? <div key={x.clave} onClick={() => setSelH(s => { const n = new Set(s); n.has(x.clave) ? n.delete(x.clave) : n.add(x.clave); return n; })}
+                  style={{ ...tarjeta, padding: 10, display: "flex", gap: 10, alignItems: "center", cursor: "pointer", borderColor: selH.has(x.clave) ? "var(--red)" : "var(--border)" }}>
+                  <span style={{ width: 16, height: 16, borderRadius: 4, border: "2px solid " + (selH.has(x.clave) ? "var(--red)" : "var(--border)"), background: selH.has(x.clave) ? "var(--red)" : "transparent", flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, fontWeight: 800, color: "var(--text-3)" }}>{x.nn}</span><b style={{ fontSize: 13, flex: 1 }}>{x.titulo}</b><EtiquetaEquipo e={x.e} /></div>
+              : tarjetaDe(x))}
           </div>))}
         {!items.length && <div style={{ ...tarjeta, fontSize: 13, color: "var(--text-3)" }}>Aún no hay historias. Pide una arriba o lanza una idea desde 💡 Ideas.</div>}
       </>)}

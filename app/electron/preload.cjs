@@ -122,6 +122,10 @@ contextBridge.exposeInMainWorld("studioFS", {
   registro: (ambito, texto, datos) => ipcRenderer.invoke("registro-anotar", ambito, texto, datos),
   registroLeer: (n, ambito) => ipcRenderer.invoke("registro-leer", n, ambito),
   registroAbrir: () => ipcRenderer.invoke("registro-abrir"),
+  // 3-11: borrar las terminadas (libera espacio; el Short sigue en Editados/Drive) y el estilo de las cifras (paso 8)
+  estudioBorrarTerminada: (id) => ipcRenderer.invoke("estudio-borrar-terminada", id),
+  estudioEstilosCifras: (id) => ipcRenderer.invoke("estudio-estilos-cifras", id),
+  estudioEstiloCifrasPoner: (id, op) => ipcRenderer.invoke("estudio-estilo-cifras-poner", id, op),
   baseInstalar: (token, info, cual) => ipcRenderer.invoke("base-instalar", token, info, cual),
   estudioRelevoBorrar: (id, token, archivo) => ipcRenderer.invoke("estudio-relevo-borrar", id, token, archivo),
   instalarGit: () => ipcRenderer.invoke("instalar-git"),

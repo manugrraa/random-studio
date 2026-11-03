@@ -1290,6 +1290,60 @@ ipcMain.handle("estudio-borrar", async (e, id) => {
   return { ok: true };
 });
 
+/* 3-11 BORRAR TERMINADAS (él: «que las historias terminadas solo salgan en terminadas y que se puedan borrar todas o las
+ * que yo quiera, porque si no vamos a tener muchísimas historias ocupando espacio»). Solo las que ya tienen su Short a
+ * salvo (en Editados de este equipo o subido a Drive y comprobado): se borra DEL TODO la carpeta de trabajo (planos,
+ * renders, audio) y sus copias apartadas de relevos, para liberar espacio de verdad (la papelera no lo libera). El Short
+ * entregado, su miniatura, la copia de Drive y el guion (guiones/) no se tocan. Sin renumerar: su número ya se usó. */
+function tamCarpeta(d) {
+  let t = 0;
+  try { for (const n of fs.readdirSync(d)) { const x = path.join(d, n); const st = fs.statSync(x); t += st.isDirectory() ? tamCarpeta(x) : st.size; } } catch (e) {}
+  return t;
+}
+ipcMain.handle("estudio-borrar-terminada", async (e, id) => {
+  if (!/^\d{2}_[\w-]+$/.test(String(id || ""))) return { ok: false, error: "Historia no válida" };
+  let c; try { c = carpetaDe(id); } catch (x) { return { ok: false, error: x.message }; }
+  if (tarea && tarea.id === id) return { ok: false, error: "Está trabajando: párala primero" };
+  const r = resumen(id), est = estudioDe(c);
+  const enDrive = !!(est.drive && (est.drive.archivos || []).length && est.drive.archivos.every(a => a.verificado));
+  const enDisco = existe(path.join(r.carpetaEntrega, tituloArchivo(titulo(c)) + ".mp4"));
+  if (!enDrive && !enDisco) return { ok: false, error: "No está terminada (su Short no está en Editados ni en Drive): no se borra" };
+  { const i = cola.indexOf(id); if (i >= 0) cola.splice(i, 1); }
+  let liberado = tamCarpeta(c);
+  try { fs.rmSync(c, { recursive: true, force: true }); } catch (x) { return { ok: false, error: "No se pudo borrar: " + x.message }; }
+  // sus copias apartadas de relevos (historias/_relevadas/<id>-<fecha>) y el paquete de relevo local
+  try { const rel = path.join(histDir(), "_relevadas"); for (const n of fs.readdirSync(rel)) if (n.startsWith(id + "-")) { liberado += tamCarpeta(path.join(rel, n)); fs.rmSync(path.join(rel, n), { recursive: true, force: true }); } } catch (x) {}
+  try { const f = path.join(relevoDir(), id + ".tgz"); if (existe(f)) { liberado += fs.statSync(f).size; fs.unlinkSync(f); } } catch (x) {}
+  registro.anotar("historias", "borrada la terminada " + id + " (" + Math.round(liberado / 1e6) + " MB liberados; el Short sigue " + (enDisco ? "en Editados" : "") + (enDisco && enDrive ? " y " : "") + (enDrive ? "en Drive" : "") + ")");
+  return { ok: true, liberado };
+});
+
+/* 3-11 PASO 8: ESTILO DE LAS CIFRAS (solo si la historia lleva contadores.py). La hoja con los 4 estilos sobre el plano con
+ * más cifras (tools/contadores_estilos.py) y la elección, que el montaje aplica a todas sin volver a rodar. */
+ipcMain.handle("estudio-estilos-cifras", async (e, id) => {
+  let c; try { c = carpetaDe(id); } catch (x) { return { ok: false, error: x.message }; }
+  if (!existe(path.join(c, "contadores.py"))) return { ok: true, cifras: false };
+  const r = await new Promise((fin) => {
+    let out = "";
+    const p = spawn("python", [path.join(raiz(), "tools", "contadores_estilos.py"), c], { cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+    const t = setTimeout(() => { try { p.kill(); } catch (x) {} }, 120000);
+    p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
+    p.on("error", (x) => { clearTimeout(t); fin({ ok: false, error: x.message }); });
+    p.on("close", (code) => { clearTimeout(t); try { fin({ ok: code === 0, ...JSON.parse(out.trim().split(/\r?\n/).pop()) }); } catch (x) { fin({ ok: false, error: out.trim().split(/\r?\n/).slice(-1)[0] || "código " + code }); } });
+  });
+  if (r.ok && r.hoja) r.imagen = miniDataUrl(r.hoja, 1400);
+  return r;
+});
+ipcMain.handle("estudio-estilo-cifras-poner", async (e, id, op) => {
+  let c; try { c = carpetaDe(id); } catch (x) { return { ok: false, error: x.message }; }
+  const FORMAS = ["placa", "oscura", "nube", "etiqueta"];
+  if (!op || !FORMAS.includes(op.forma)) return { ok: false, error: "Estilo no válido" };
+  const v = { forma: op.forma, icono: op.forma === "oscura" && /^[a-z]+$/.test(String(op.icono || "")) ? op.icono : null, fija: true, fecha: new Date().toISOString() };
+  escribirJson(path.join(c, "estilo_contadores.json"), v);
+  registro.anotar("historias", "estilo de las cifras de " + id + ": " + v.forma + (v.icono ? " con " + v.icono : ""));
+  return { ok: true, ...v };
+});
+
 /* v3.38.1: renumerar una historia (cuando se borra otra, las de detrás se corren para que no queden huecos).
  * Nunca la que está trabajando (se hace al acabar). Cambia la carpeta, su vídeo historiaNN_final, el guion de guiones/
  * y la referencia de la idea. */
