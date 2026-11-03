@@ -116,6 +116,12 @@ contextBridge.exposeInMainWorld("studioFS", {
   baseSubir: (token, cual) => ipcRenderer.invoke("base-subir", token, cual),
   kitPropioSubir: (token, anterior) => ipcRenderer.invoke("kit-propio-subir", token, anterior),
   kitPropioRecibir: (token, info) => ipcRenderer.invoke("kit-propio-recibir", token, info),
+  // 3-11: el kit compartido al momento (el motor avisa cuando se guarda un archivo del kit) y el registro de todo
+  kitCompartidoEstado: () => ipcRenderer.invoke("kit-compartido-estado"),
+  onKitCambio: (cb) => { const f = (e, d) => cb(d); ipcRenderer.on("kit-cambio", f); return () => ipcRenderer.removeListener("kit-cambio", f); },
+  registro: (ambito, texto, datos) => ipcRenderer.invoke("registro-anotar", ambito, texto, datos),
+  registroLeer: (n, ambito) => ipcRenderer.invoke("registro-leer", n, ambito),
+  registroAbrir: () => ipcRenderer.invoke("registro-abrir"),
   baseInstalar: (token, info, cual) => ipcRenderer.invoke("base-instalar", token, info, cual),
   estudioRelevoBorrar: (id, token, archivo) => ipcRenderer.invoke("estudio-relevo-borrar", id, token, archivo),
   instalarGit: () => ipcRenderer.invoke("instalar-git"),

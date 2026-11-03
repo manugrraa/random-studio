@@ -372,6 +372,31 @@ function ClaudeEstado({ a, toast, recargar }) {
 }
 
 // ------------------------------------------------------------------ ajustes del estudio
+// 3-11: el registro de este equipo (todo lo que hace RandomStudio, por día: electron/registro.cjs)
+function RegistroEquipo({ toast }) {
+  const [r, setR] = useState(null);
+  const [ambito, setAmbito] = useState("");
+  const cargar = useCallback(() => SF().registroLeer && SF().registroLeer(120, ambito || null).then(setR).catch(() => setR(null)), [ambito]);
+  useEffect(() => { cargar(); const t = setInterval(cargar, 10000); return () => clearInterval(t); }, [cargar]);
+  if (!SF().registroLeer) return null;
+  const col = (l) => /FALLA|NO se pud|CONFLICTO|error|excepci/i.test(l) ? "var(--red)" : /empieza|termina|subid|instalad|recibid/i.test(l) ? "var(--text)" : "var(--text-2)";
+  return (
+    <div style={{ ...tarjeta }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".07em", flex: 1 }}>Registro de este equipo</div>
+        <select value={ambito} onChange={e => setAmbito(e.target.value)} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)" }}>
+          <option value="">Todo</option><option value="historias">Historias</option><option value="claude">Claude</option><option value="kit">Kit</option><option value="relevo">Relevos</option><option value="orden">Órdenes</option><option value="version">Versiones</option><option value="error">Errores</option>
+        </select>
+        <button onClick={cargar} style={botonSec}>Actualizar</button>
+        <button onClick={async () => { const x = await SF().registroAbrir(); if (x && !x.ok) toast(x.error); }} style={botonSec}>Abrir la carpeta</button>
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--text-3)", marginBottom: 6 }}>Cada cosa que hace la app (etapas, Claude, kit entre equipos, relevos, órdenes, versiones y errores), con su hora. Se guardan 30 días{r && r.proyecto ? "; lo del estudio también en " + r.proyecto : ""}.</div>
+      <pre style={{ fontSize: 11.5, lineHeight: 1.45, maxHeight: 320, overflow: "auto", background: "var(--bg-2)", borderRadius: 10, padding: 10, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {!r ? "Cargando…" : !(r.lineas || []).length ? "Todavía no hay nada apuntado." : r.lineas.map((l, i) => <div key={i} style={{ color: col(l) }}>{l}</div>)}
+      </pre>
+    </div>);
+}
+
 function AjustesEstudio({ toast }) {
   const [a, setA] = useState(null);
   const [clave, setClave] = useState("");
@@ -441,6 +466,7 @@ function AjustesEstudio({ toast }) {
             {" "}<button onClick={() => { driveDesconectar(); mirarDrive(); toast("Drive desconectado"); }} style={{ fontSize: 11.5, color: "var(--text-3)", textDecoration: "underline" }}>Desconectar</button></div>
         </>)}
       </div>
+      <RegistroEquipo toast={toast} />
     </div>);
 }
 
@@ -943,6 +969,9 @@ function SaludEquipo({ e, ultima, onGit, onCuda }) {
   const rk = cap.rescateKit;
   if (rk && (rk.faltan || []).length) p.push(["Le faltan módulos del kit: " + rk.faltan.map(n => n + ".py").join(", "), "Sus historias no se pueden renderizar: hay que rehacer su escena."]);
   if (rk && (rk.restaurados || []).length) p.push(["Kit recuperado: " + rk.restaurados.map(r => r.nombre + ".py" + (r.aviso ? " (" + r.aviso + ")" : "")).join(", "), null]);
+  // 3-11: el kit compartido: cambios de ese equipo que aún no han salido hacia los demás (salen al momento; si esperan, es que está ocupado o sin Drive)
+  const kc = cap.kitCompartido;
+  if (kc && !kc.origen && kc.pendientes > 0) p.push(["Kit: " + kc.pendientes + " cambio(s) de este equipo esperando a compartirse", kc.ultimaSubida ? "Lo último salió a las " + new Date(kc.ultimaSubida).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) + "." : "Salen solos en cuanto tenga Drive y quede libre."]);
   const uf = e.datos.ultimoFallo;
   if (uf && Date.now() - uf.fecha < 12 * 3600000) p.push(["Último fallo: historia " + String(uf.id).slice(0, 2) + " · " + uf.etapa + " (" + new Date(uf.fecha).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) + ")", uf.texto ? "«" + uf.texto.slice(-260) + "»" : null]);
   if (!p.length) return <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 600 }}>✓ Todo en orden{cap.bash ? " · Bash" : ""}{cap.drive ? " · Drive" : ""}{typeof cap.disco === "number" ? " · " + cap.disco + " GB libres" : ""}</div>;

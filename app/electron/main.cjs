@@ -94,6 +94,7 @@ ipcMain.on("studio-load", (e) => {
 // Los fallos de guardado se apuntan aquí en vez de tragárselos (v3: datos.json
 // llevaba sin actualizarse desde el 23/8 mientras las copias diarias sí se hacían)
 function apuntarError(donde, err) {
+  try { require("./registro.cjs").anotar("error", donde + ": " + (err && (err.stack || err.message) || err)); } catch (e) {}
   try {
     fs.mkdirSync(datosDir(), { recursive: true });
     fs.appendFileSync(path.join(datosDir(), "errores.log"),
@@ -706,6 +707,14 @@ app.on("second-instance", () => {
 
 // v3.14, él: "al pulsar Alt se baja un menú de la ventana del Studio... no quiero que exista"
 app.whenReady().then(() => { Menu.setApplicationMenu(null); createWindow(); });
+// 3-11: el registro de todo lo que hace la app (electron/registro.cjs); lo primero, el arranque con su versión
+app.whenReady().then(() => {
+  try {
+    const registro = require("./registro.cjs");
+    registro.iniciar({ proyecto: () => { try { return require("./carpetas.cjs").carpetasHistorias().historias; } catch (e) { return null; } } });
+    registro.anotar("arranque", "RandomStudio " + app.getVersion() + " (Electron " + process.versions.electron + ", " + process.platform + ")", { empaquetada: app.isPackaged, equipo: require("os").hostname() });
+  } catch (e) {}
+});
 // v3.45.5: en el ordenador (el equipo sin el RandomChat de origen), mientras Studio esté abierto la pantalla no se apaga
 // ni se bloquea por inactividad, y el equipo no se suspende (él: "que el ordenador no se bloquee la pantalla cuando esté
 // abierto el RandomStudio"). Se suelta solo al cerrar la app. En el portátil, Windows sigue como siempre.
@@ -805,6 +814,7 @@ async function encenderEspejo() {
   return { error: "No arranca: mira el registro del servidor" };
 }
 ipcMain.handle("chat-encender", async () => {
+  try { require("./registro.cjs").anotar("chat", "encender el RandomChat" + (chatLocal.espejo ? " (espejo)" : "")); } catch (e) {}
   if ((await chatEstado()).encendido) return { ok: true };
   if (chatLocal.espejo) { try { return await encenderEspejo(); } catch (e) { return { error: e.message }; } }
   const cmd = path.join(CHAT_DIR, "arrancar.cmd");

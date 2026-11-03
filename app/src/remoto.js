@@ -61,6 +61,12 @@ let _iniciado = false;
 /* v3.40.1: arrancan al abrir la app (main.jsx), antes de elegir perfil, y siguen igual al cambiar de perfil. Los avisos en
  * pantalla (toast) llegan cuando la ventana principal se monta y se los pasa. */
 let _toast = null, _base = null, _kitVivo = null, _kitPropio = null, _basePendiente = null, _instalarBase = null;
+// 3-11: el kit compartido al momento (ver kitcompartido.cjs): lo que este equipo tiene del kit, en una huella corta que va
+// en el timbre; los demás, al oírla distinta, se ponen al día en segundos. _kitPendiente: llegaron cambios con una tarea en
+// marcha: se aplican en el primer hueco.
+let _kitPendiente = false, _otros = [], _igualarAhora = null;
+const miKitHuella = () => ((_kitVivo && _kitVivo.huella) || "") + "/" + ((_kitPropio && _kitPropio.huella) || "");
+const anotar = (ambito, texto, datos) => { try { const s = SF(); if (s && s.registro) s.registro(ambito, texto, datos); } catch (e) {} };
 // (v3.42.1) el último fallo se guarda: antes vivía en memoria y se perdía al reiniciar la app
 const K_FALLO = "rs_perfil_ultimo_fallo";
 let _ultimoFallo = (() => { try { return JSON.parse(localStorage.getItem(K_FALLO) || "null"); } catch (e) { return null; } })();
@@ -160,11 +166,11 @@ export function iniciarRemotoEscritorio(t) {
       claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,
       // v3.41.3: la base que sube el portátil (los demás la bajan) y el último fallo de este equipo (se ve en «Equipos»)
       base: _base, kitVivo: _kitVivo, ultimoFallo: _ultimoFallo,
-      // v3.45.4: los módulos del kit creados en este equipo (los demás bajan los que les falten)
-      kitPropio: _kitPropio && _kitPropio.archivo ? _kitPropio : null,
+      // v3.45.4: los módulos del kit creados en este equipo (los demás bajan los que les falten); 3-11: todo el kit compartido
+      kitPropio: _kitPropio && _kitPropio.archivo ? _kitPropio : null, kitHuella: miKitHuella(),
     };
     const r = await remotoApi("POST", { accion: "publicar", datos }).catch(() => null);
-    if (r) { vigilarOtros(r.otros || []); igualarBase(r.otros || [], t).catch(() => {}); }
+    if (r) { _otros = r.otros || []; vigilarOtros(_otros); igualarBase(_otros, t).catch(() => {}); }
     if (aj.origen) bajarEntregas().catch(() => {});
   };
   // v3.43.3: el portátil guarda TODAS las historias terminadas en Vídeos RDR\Editados\RandomHistorias\<TÍTULO>\: las que
@@ -203,9 +209,14 @@ export function iniciarRemotoEscritorio(t) {
     return alguno;
   };
   _instalarBase = async () => {            // (lo llama el trabajador entre etapas)
-    const pb = _basePendiente; if (!pb || baseOcupada) return false;
-    _basePendiente = null; baseOcupada = true;
-    try { return await instalarPaquetes(pb); } catch (e) { return false; } finally { baseOcupada = false; }
+    if (baseOcupada) return false;
+    const pb = _basePendiente; _basePendiente = null; baseOcupada = true;
+    try {
+      let alguno = false;
+      if (_kitPendiente) { _kitPendiente = false; await cambiarKitPropio().catch(() => {}); alguno = true; }   // (3-11) los cambios del kit que esperaban
+      if (pb) alguno = (await instalarPaquetes(pb)) || alguno;
+      return alguno;
+    } catch (e) { return false; } finally { baseOcupada = false; }
   };
   // v3.45.4 KIT PROPIO (ver kit-propio-* en historias.cjs): subir los módulos del kit creados aquí y bajar los de los demás
   const cambiarKitPropio = async () => {
@@ -216,19 +227,35 @@ export function iniciarRemotoEscritorio(t) {
     const g = await remotoApi("GET").catch(() => null);
     if (!g) return;
     let vistos = {}; try { vistos = JSON.parse(localStorage.getItem("rs_perfil_kit_propio_visto") || "{}"); } catch (e) {}
-    const puestos = [];
+    const puestos = [], conflictos = [];
     for (const e of g.equipos || []) {
       const kp = e.id !== g.yo && e.datos && e.datos.kitPropio;
       if (!kp || !kp.archivo || vistos[e.id] === kp.huella) continue;
       const r = await s.kitPropioRecibir(tk, kp).catch(() => null);
-      if (r && r.ok) { vistos[e.id] = kp.huella; puestos.push(...(r.puestos || [])); }
+      if (r && r.ok) { vistos[e.id] = kp.huella; puestos.push(...(r.puestos || [])); conflictos.push(...(r.conflictos || [])); }
+      else if (r && r.pendiente) { _kitPendiente = true; anotar("kit", "cambios del kit de " + e.nombre + " esperando a que este equipo quede libre"); }
     }
     try { localStorage.setItem("rs_perfil_kit_propio_visto", JSON.stringify(vistos)); } catch (e) {}
     if (puestos.length) {
       const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m);
-      toast("🧰 Del otro equipo: " + puestos.join(", ") + ". Las historias paradas siguen solas");
+      toast("🧰 Del otro equipo: " + puestos.map(p => p.split("/").pop()).join(", ") + ". Las historias paradas siguen solas");
+      publicarPronto();            // (3-11) con lo recibido, la huella cambia: que los demás lo sepan ya
     }
+    for (const c of conflictos) if (c.apartado) toast("⚠️ " + c.rel + ": lo cambiaron los dos equipos; se queda el de " + c.gana + " (el de aquí, en " + c.apartado + ")");
   };
+  // (3-11) poner el kit al día AHORA (sin esperar a la vuelta de los 3 min): al guardar un archivo del kit aquí, o al oír en
+  // el timbre que otro equipo cambió el suyo. Como mucho una vez cada 8 s.
+  let igualadoA = 0;
+  _igualarAhora = async (motivo) => {
+    if (Date.now() - igualadoA < 8000) return;
+    igualadoA = Date.now();
+    baseMirada = 0;
+    let t = null; try { t = await s.historiasTareaEstado(); } catch (e) {}
+    anotar("kit", "kit al día ahora (" + motivo + ")");
+    await igualarBase(_otros, t).catch(() => {});
+    publicarPronto();
+  };
+  if (s.onKitCambio) s.onKitCambio(() => _igualarAhora("cambió un archivo del kit en este equipo"));
   const igualarBase = async (otros, t) => {
     if (baseOcupada || !s.baseEstado || !driveConectadoTrabajo() || Date.now() - baseMirada < 3 * 60000) return;
     baseMirada = Date.now(); baseOcupada = true;
@@ -280,6 +307,7 @@ export function iniciarRemotoEscritorio(t) {
       try { const x = await ejecutar(o); if (x && x.ok === false) { ok = false; txt = x.error || ""; } }
       catch (e) { ok = false; txt = e.message || String(e); }
       if (toast) toast(`📱 Orden de ${o.de || "otro equipo"}: ${o.que}${ok ? "" : " (no se pudo: " + txt + ")"}`);
+      anotar("orden", "orden «" + o.que + "» de " + (o.de || "otro equipo") + (ok ? ": hecha" : ": NO se pudo (" + txt + ")"), o.args || null);
       await remotoApi("POST", { accion: "resultado", id: o.id, ok, resultado: txt }).catch(() => {});
       setTimeout(publicar, 500);
     }
@@ -287,7 +315,12 @@ export function iniciarRemotoEscritorio(t) {
 
   publicar(); recoger();
   // v3.41: con el timbre, las órdenes llegan al instante; las vueltas de siempre quedan de respaldo, más espaciadas
-  alTimbre((d) => { if (d.que === "orden") recoger(); });
+  const kitOido = {};
+  alTimbre((d) => {
+    if (d.que === "orden") recoger();
+    // (3-11) otro equipo publica con otra huella del kit: me pongo al día al momento
+    if (d.que === "estado" && d.kit && d.de && kitOido[d.de] !== d.kit) { const primera = !(d.de in kitOido); kitOido[d.de] = d.kit; if (!primera && d.kit !== miKitHuella() && _igualarAhora) _igualarAhora("el timbre dice que " + String(d.de).slice(0, 8) + " cambió su kit"); }
+  });
   setInterval(publicar, 20000);
   setInterval(recoger, 20000);
 }
@@ -333,6 +366,7 @@ const K_PARADO = "rs_perfil_equipo_parado";
 const leerParado = () => { try { return localStorage.getItem(K_PARADO) === "1"; } catch (e) { return false; } };
 export function guardarParado(v) { try { if (v) localStorage.setItem(K_PARADO, "1"); else localStorage.removeItem(K_PARADO); } catch (e) {} }
 export async function pararTodo() {
+  anotar("equipo", "PARADO: este equipo deja de coger trabajo");
   guardarParado(true);
   ponerDisponible(false);
   _parando = Date.now();          // lo que se corte ahora no cuenta como fallo: mañana sigue sola
@@ -340,6 +374,7 @@ export async function pararTodo() {
 }
 /** Reanudar todo en ESTE equipo: vuelve a coger trabajo y sigue las historias por donde se quedaron. */
 export async function reanudarTodo() {
+  anotar("equipo", "REANUDADO: este equipo vuelve a coger trabajo");
   guardarParado(false);
   try { if (SF() && SF().historiasPausarEncadenado) await SF().historiasPausarEncadenado(false); } catch (e) {}
   ponerDisponible(true);
@@ -442,6 +477,7 @@ export async function pasarHistoria(hid, destino) {
   const r = await pasarAlPortatil(pid, hid, destino).catch(e => ({ error: e.message || String(e) }));
   if (r && r.traspasado) {
     const m2 = mios(); if (m2[pid]) { m2[pid].traspasada = true; guardarMios(m2); }
+    anotar("relevo", "historia " + hid + " pasada a mano al equipo " + String(destino).slice(0, 8));
     toast("➡️ Historia " + hid.slice(0, 2) + ": pasa al otro equipo");
     return { ok: true };
   }
@@ -478,6 +514,7 @@ export function iniciarTrabajador(t) {
     if (d.cancelada || Date.now() - _parando < 20000) { if (p) { m[p].pausada = Date.now(); guardarMios(m); } return; }
     // v3.41.3: el porqué del último fallo, a la vista en «Equipos» (antes había que adivinarlo)
     _ultimoFallo = { id: d.id, etapa: d.etapa || "", texto: String(d.informe || "").slice(-1500), fecha: Date.now() };
+    anotar("historias", "fallo apuntado en " + (d.etapa || "") + " de " + d.id + " (se reintenta sola)", { informe: String(d.informe || "").slice(-300) });
     try { localStorage.setItem(K_FALLO, JSON.stringify(_ultimoFallo)); } catch (e) {}
     if (d.limite) {
       const w = esperas(); w["h:" + d.id] = d.limite; guardarEsperas(w);
@@ -560,7 +597,7 @@ export function iniciarTrabajador(t) {
     let aj, t, l;
     try { [aj, t, l] = await Promise.all([s.estudioAjustes(), s.historiasTareaEstado(), s.historiasLista()]); } catch (e) { return; }
     // v3.41.8: kit y recursos nuevos del portátil esperando: se instalan en este hueco, antes de empezar nada
-    if (_basePendiente && _instalarBase && !(t && t.activa)) { await _instalarBase(); return; }
+    if ((_basePendiente || _kitPendiente) && _instalarBase && !(t && t.activa)) { await _instalarBase(); return; }
     const m = mios(), w = esperas();
     // 0) lo que esperaba al límite de Claude: a su hora, sigue (de uno en uno, y solo si estoy disponible y libre)
     const vencida = Object.keys(w).find(k => w[k] <= Date.now());

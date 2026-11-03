@@ -7,6 +7,8 @@
 const { app, ipcMain, nativeImage, shell, safeStorage } = require("electron");
 const claude = require("./claude.cjs");   // v3.30: la IA del Studio (Claude Code)
 const drive = require("./drive.cjs");     // v3.30: Google Drive como almacén (sin perder calidad)
+const registro = require("./registro.cjs"); // 3-11: registro de todo lo que pasa (ver registro.cjs)
+const kitc = require("./kitcompartido.cjs"); // 3-11: el kit compartido entre equipos al momento (ver kitcompartido.cjs)
 require("./actualizar.cjs");
 require("./almacen.cjs");                 // v3.34: almacenamiento: medir, archivar en Drive, recuperar y borrar               // v3.32: actualizar los demás equipos desde el portátil
 const { spawn } = require("child_process");
@@ -156,6 +158,7 @@ ${erroresDelRender(log)}
     tarea = null;
     try {
       emitir2(t, { tipo: "linea", linea: "🔧 Algunos planos no se pueden montar: Claude arregla el kit y se repite el render" });
+      registro.anotar("historias", "REPARAR el render de " + id + " (intento " + est.reparaciones + " de 2): Claude arregla el kit", { planos: erroresDelRender(log).split("\n")[0].slice(0, 200) });
       lanzarAgente(t.sender, id, "render", prompt, (ok, snd) => { if (ok) { try { lanzar(snd, id, t.args, "render", t.alTerminar); } catch (e) {} } else if (t.alTerminar) t.alTerminar(false, snd); });
       return true;
     } catch (e) { tarea = t; return false; }
@@ -171,6 +174,7 @@ function lanzar(sender, id, args, etapa, alTerminar) {
     cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUNBUFFERED: "1", RH_ENTREGAS: listasDir() }, windowsHide: true,
   });
   tarea = { proc, id, args, tipo: "cadena", etapa: etapa || null, inicio: Date.now(), lineas: [], paso: null, render: null, sender, nPlanos: planos(c).length, alTerminar };
+  registro.anotar("historias", "empieza " + (etapa || "cadena") + " de " + id, { args: argsSeguros(args) });
   let resto = "";
   const trozo = (b) => {
     resto += b.toString("utf-8");
@@ -183,6 +187,11 @@ function lanzar(sender, id, args, etapa, alTerminar) {
   proc.on("close", (code) => {
     if (resto.trim()) analizarLinea(resto.trim());
     const t = tarea;
+    const mins = t ? Math.round((Date.now() - t.inicio) / 6000) / 10 : 0;
+    registro.anotar("historias", (code === 0 ? "termina " : (t && t.cancelada ? "cancelada " : "FALLA ")) + (t && t.etapa || "cadena") + " de " + id + " (" + mins + " min)" + (code !== 0 && t ? ": " + t.lineas.slice(-3).join(" | ").slice(0, 400) : ""), { codigo: code });
+    // (3-11) un render que termina bien deja a cero el contador de reparaciones: así una historia reparada hace meses
+    // puede volver a repararse si hace falta
+    if (code === 0 && t && t.etapa === "render") { try { const c2 = carpetaDe(id), e2 = estudioDe(c2); if (e2.reparaciones) { delete e2.reparaciones; guardarEstudio(c2, e2); } } catch (e) {} }
     if (code !== 0 && t && t.etapa === "render" && !t.cancelada && repararRender(t, id)) return;
     // v3.45.2: el final de la salida va en el informe, así «Equipos» dice POR QUÉ falló (el render del ordenador fallaba sin texto)
     const informe = code === 0 || !t ? "" : t.lineas.slice(-30).join("\n").slice(-1500);
@@ -433,6 +442,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), FISH_API_KEY: claveFish(), BLENDER: blenderExe() || "" });
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
   tarea = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0 };
+  registro.anotar("claude", "empieza " + etapa + " de " + id + " (Claude)", { bash: !!claude.rutaBash() });
   let resto = "", final = "", fallo = false;
   const linea = (l) => {
     if (tarea) tarea.actividad = Date.now();          // (v3.41.8) para el vigilante: Claude sigue dando señales
@@ -465,6 +475,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
     // v3.40.4: si se paró por el límite de Claude, se dice a qué hora reintentar (la app la retoma sola entonces)
     const limite = ok ? 0 : claude.limiteDe(final + "\n" + err);
     if (t && t.atascada) final = "Se quedó atascada " + t.atascada + " min sin avanzar (" + (t.accion || "") + "): se cortó y se reintenta sola. " + final;
+    registro.anotar("claude", (ok ? "termina " : (t && t.cancelada ? "cancelada " : "FALLA ")) + etapa + " de " + id + " (" + (t ? Math.round((Date.now() - t.inicio) / 6000) / 10 : 0) + " min, " + (t ? t.acciones.length : 0) + " acciones)" + (ok ? "" : ": " + (final || err).slice(-400)), { codigo: code, limite: limite || 0 });
     emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), cancelada: !!(t && t.cancelada), ...(limite ? { limite } : {}) });
     tarea = null;
     trasEtapa(t, id, ok, etapa);
@@ -573,6 +584,7 @@ async function instantanea(sender, id, etapa, conRender) {
     const r = await tar(["-czf", out + ".tmp", ...fuera, "-C", raiz(), "historias/" + id, ...(guion ? ["guiones/" + guion] : []), ...kitPropioDe(id)]);
     if (!r.ok) { try { fs.unlinkSync(out + ".tmp"); } catch (x) {} return { ok: false, error: "tar: " + r.error }; }
     fs.renameSync(out + ".tmp", out);
+    registro.anotar("relevo", "copia de " + id + " preparada tras " + etapa + (conRender ? " (con los planos renderizados)" : ""), { kit: kitPropioDe(id) });
     try { if (sender && !sender.isDestroyed()) sender.send("historias-progreso", { id, tipo: "relevo", etapa }); } catch (x) {}
     return { ok: true };
   } catch (e) { return { ok: false, error: e.message }; } finally { empaquetando = null; }
@@ -676,9 +688,10 @@ ipcMain.handle("estudio-relevo-recibir", async (e, id, token, archivo, md5) => {
     fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(tmp, { recursive: true });
     const r = await tar(["-xzf", f, "-C", tmp]);
     try { fs.unlinkSync(f); } catch (x) {}
-    if (!r.ok || !existe(path.join(tmp, "historias", id))) { fs.rmSync(tmp, { recursive: true, force: true }); return { ok: false, error: "No se pudo abrir la copia: " + (r.error || "vacía") }; }
+    if (!r.ok || !existe(path.join(tmp, "historias", id))) { fs.rmSync(tmp, { recursive: true, force: true }); registro.anotar("relevo", "no se pudo abrir la copia de " + id + ": " + (r.error || "vacía")); return { ok: false, error: "No se pudo abrir la copia: " + (r.error || "vacía") }; }
     apartar(id);
     fs.renameSync(path.join(tmp, "historias", id), path.join(histDir(), id));
+    registro.anotar("relevo", "recibida la copia de " + id + " de otro equipo (la local, si la había, queda en _relevadas)");
     try { for (const k of fs.readdirSync(path.join(tmp, "kit"))) { const d = path.join(raiz(), "kit", k); if (k.endsWith(".py") && !existe(d)) fs.renameSync(path.join(tmp, "kit", k), d); } } catch (x) {}
     try { for (const g of fs.readdirSync(path.join(tmp, "guiones"))) { fs.mkdirSync(path.join(raiz(), "guiones"), { recursive: true }); fs.renameSync(path.join(tmp, "guiones", g), path.join(raiz(), "guiones", g)); } } catch (x) {}
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -742,6 +755,8 @@ ipcMain.handle("base-subir", async (e, token, cual) => {
     const info = { archivo: up.id, md5: up.md5, tam: up.tam, huella, fecha: new Date().toISOString() };
     escribirJson(path.join(baseDir(), (cual === "kit" ? "kit_" : "") + "subida.json"), info);
     try { fs.unlinkSync(f); } catch (x) {}
+    if (cual === "kit") kitc.trasSubirKitVivo(raiz(), PARTES.kit);     // (3-11) lo que acaba de salir ya es común
+    registro.anotar("kit", "subido a Drive el paquete «" + cual + "» (" + Math.round(up.tam / 1024) + " KB)", { huella });
     return { ok: true, ...info };
   } catch (x) { return { ok: false, error: x.message }; }
 });
@@ -754,9 +769,11 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
     fs.mkdirSync(baseDir(), { recursive: true });
     const f = path.join(baseDir(), cual + ".tgz");
     await drive.bajar(token, String(info.archivo), f, info.md5 || null);
+    const listaAntes = cual === "kit" ? kitLista() : null;     // (3-11) la de antes de instalar: con la nueva no se apartaba nada
     const r = cual === "kit" ? await instalarKitVivo(f) : await tar(["-xzf", f, "-C", raiz()]);
-    if (r.ok && cual === "kit") { limpiarRestos(f); rescatarKit(); }
+    if (r.ok && cual === "kit") { limpiarRestos(f, listaAntes); kitc.trasKitVivo(raiz()); rescatarKit(); }
     try { fs.unlinkSync(f); } catch (x) {}
+    registro.anotar("kit", (r.ok ? "instalado" : "NO se pudo instalar") + " el paquete «" + cual + "» del portátil" + (r.ok && cual === "kit" && r.guardados && r.guardados.length ? " (se quedan los cambiados aquí: " + r.guardados.join(", ") + ")" : "") + (r.ok ? "" : ": " + r.error), { huella: info.huella });
     if (!r.ok) return r;
     escribirJson(path.join(baseDir(), (cual === "kit" ? "kit_" : "") + "instalada.json"), { huella: info.huella, fecha: new Date().toISOString(), origen: info.fecha });
     return { ok: true };
@@ -796,20 +813,22 @@ async function instalarKitVivo(tgz) {
   } catch (x) { return { ok: false, error: x.message }; }
   finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (x) {} }
 }
-function limpiarRestos(tgz) {
+function limpiarRestos(tgz, listaAntes) {
   try {
     const dentro = new Set(require("child_process").execFileSync(tarExe(), ["-tzf", tgz], { encoding: "utf8", windowsHide: true, maxBuffer: 64 << 20 })
       .split(/\r?\n/).map(x => x.replace(/^\.\//, "").replace(/\/$/, "")).filter(Boolean));
-    const antes = new Set(Object.keys(kitLista()));
+    const antes = new Set(Object.keys(listaAntes || kitLista()));
+    const apartados = [];
     const sello = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     const ver = (d) => { let ns = []; try { ns = fs.readdirSync(d); } catch (e) { return; }
       for (const n of ns) { if (n === "__pycache__" || n.endsWith(".pyc")) continue; const f = path.join(d, n);
         const rel = path.relative(raiz(), f).split(path.sep).join("/");
         if (fs.statSync(f).isDirectory()) { ver(f); continue; }
         if (!dentro.has(rel) && antes.has(rel)) {
-          try { const bk = path.join(raiz(), "_kit_local", sello, rel); fs.mkdirSync(path.dirname(bk), { recursive: true }); fs.renameSync(f, bk); } catch (e) {}
+          try { const bk = path.join(raiz(), "_kit_local", sello, rel); fs.mkdirSync(path.dirname(bk), { recursive: true }); fs.renameSync(f, bk); apartados.push(rel); } catch (e) {}
         } } };
     for (const p of PARTES.kit) { const f = path.join(raiz(), p); if (existe(f) && fs.statSync(f).isDirectory()) ver(f); }
+    if (apartados.length) registro.anotar("kit", "apartados a _kit_local/" + sello + " los archivos que el portátil ya no tiene: " + apartados.join(", "));
   } catch (e) {}
 }
 // v3.42: la fuente de los subtítulos (Lilita One) instalada para este usuario (sin administrador), por si el equipo no la
@@ -1013,7 +1032,8 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
     elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "", origen: esOrigen(),
     gpu: gpuNombre(), whisper: leerJson(path.join(estudioDir(), "_whisper.json"), null),
     // v3.41: la salud del equipo (Git Bash, espacio libre en el disco del proyecto y fecha del kit)
-    rescateKit, bash: !!claude.rutaBash(), disco: discoLibre(), kit: (leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {}).fecha || null };
+    rescateKit, bash: !!claude.rutaBash(), disco: discoLibre(), kit: (leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {}).fecha || null,
+    kitCompartido: (() => { try { const c = kitc.cambios(raiz(), PARTES.kit); return { origen: kitc.esOrigen(raiz()), pendientes: c.cambiados.length + c.borrados.length, ultimaSubida: kitSubida && kitSubida.fecha || null }; } catch (e) { return null; } })() };
 });
 
 ipcMain.handle("estudio-clave-eleven", async (e, clave) => {
@@ -1178,7 +1198,7 @@ function sincronizarKit() {
     return { ok: true, puestos, guardados };
   } catch (e) { return { ok: false, error: e.message }; }
 }
-app.whenReady().then(() => setTimeout(() => { const r = sincronizarKit(); if (r.puestos) console.log("kit actualizado:", r); rescatarKit(); }, 8000));
+app.whenReady().then(() => setTimeout(() => { const r = sincronizarKit(); if (r.puestos) { console.log("kit actualizado:", r); registro.anotar("kit", "kit de esta versión instalado: " + r.puestos + " archivos puestos, " + r.guardados + " apartados"); } rescatarKit(); vigilarKit(); }, 8000));
 /* v3.45.3: recupera los módulos del kit que usan las historias de este equipo y faltan (ver rescatekit.cjs). El resultado
  * sale en «Equipos» (capacidad.rescateKit). v3.45.4: también en el portátil (solo pone lo que falta). */
 let rescateKit = null;
@@ -1186,73 +1206,72 @@ function rescatarKit() {
   try {
     if (!existe(path.join(raiz(), "kit"))) return null;
     const r = require("./rescatekit.cjs").rescatar(raiz());
-    if (r.restaurados.length || r.faltan.length) { rescateKit = r; escribirJson(path.join(estudioDir(), "_rescate_kit.json"), r); console.log("rescate del kit:", r); }
+    if (r.restaurados.length || r.faltan.length) { rescateKit = r; escribirJson(path.join(estudioDir(), "_rescate_kit.json"), r); console.log("rescate del kit:", r); registro.anotar("kit", "rescate del kit: recuperados " + r.restaurados.map(x => x.nombre + ".py (" + x.de + ")").join(", ") + (r.faltan.length ? "; FALTAN " + r.faltan.join(", ") : "")); }
     else if (rescateKit && (rescateKit.faltan || []).length) rescateKit = null;      // (ya no falta nada: que «Equipos» deje de avisar)
     return r;
   } catch (e) { rescateKit = { fecha: new Date().toISOString(), error: e.message, restaurados: [], faltan: [] }; return null; }
 }
 ipcMain.handle("kit-sincronizar", async () => sincronizarKit());
 
-/* v3.45.4 KIT PROPIO: los módulos del kit que Claude crea en un equipo para una escena (kit/pasos.py, kit/escuela.py…) se
- * quedaban solo en ese equipo, y la historia no podía rodarse en el otro (la 11 en el portátil). Ahora cada equipo que no
- * es el portátil sube a Drive los suyos (los que no vienen del kit del portátil) y los demás equipos bajan los que les
- * faltan, sin pisar nunca uno que ya tengan. En el portátil pasan a ser parte del kit, y con el kit vivo llegan a todos. */
-function kitPropioNombres() {
-  if (esOrigen()) return [];
-  const man = leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {};
-  const lista = kitLista(), delPortatil = new Set([...Object.keys(man.archivos || {}), ...Object.keys(lista)]);
-  let ns = []; try { ns = fs.readdirSync(path.join(raiz(), "kit")); } catch (e) { return []; }
-  // (v3.45.7) propio = creado aquí, o del kit vivo pero cambiado aquí desde que se instaló (un arreglo de Claude)
-  return ns.filter(n => /^\w+\.py$/.test(n) && !n.startsWith("_") && (!delPortatil.has("kit/" + n)
-    || (lista["kit/" + n] && shaArchivo(path.join(raiz(), "kit", n)) !== lista["kit/" + n]))).sort();
-}
-function kitPropioHuella(ns) {
-  const h = require("crypto").createHash("sha1");
-  for (const n of ns) { h.update(n + "|"); h.update(fs.readFileSync(path.join(raiz(), "kit", n))); }
-  return h.digest("hex").slice(0, 16);
-}
+/* v3.46 KIT COMPARTIDO (sustituye al «kit propio» de la 3.45.4, que solo llevaba los kit/*.py creados en el ordenador y
+ * cada 3 minutos): TODO el árbol del kit (kit, tools, roblox, plantilla y guías) viaja entre los equipos al momento, con
+ * borrados y sin pisar nada (ver kitcompartido.cjs). Mismos nombres de llamada que antes (kit-propio-*), así un equipo
+ * con la 3.45 sigue entendiendo el paquete (lee «nombres»). */
+let kitSubida = null;             // lo último subido: { huella, archivo, ... }
 ipcMain.handle("kit-propio-subir", async (e, token, anterior) => {
   try {
-    const ns = kitPropioNombres();
-    if (!ns.length) return { ok: true, nada: true };
-    const huella = kitPropioHuella(ns);
-    if (anterior && anterior.huella === huella && anterior.archivo) return { ok: true, ...anterior };
+    if (kitc.esOrigen(raiz())) return { ok: true, nada: true };
     fs.mkdirSync(baseDir(), { recursive: true });
-    const f = path.join(baseDir(), "kit_propio.tgz");
-    const r = await tar(["-czf", f, "-C", raiz(), ...ns.map(n => "kit/" + n)]);
-    if (!r.ok) return r;
-    const up = await drive.subir(token, f, ["RandomStudio", "RandomHistorias", "_Base"]);
+    const f = path.join(baseDir(), "kit_cambios.tgz");
+    const paq = await kitc.empaquetar(raiz(), PARTES.kit, tar, f);
+    if (!paq) { kitSubida = null; return { ok: true, nada: true }; }
+    const ant = anterior && anterior.huella ? anterior : kitSubida;
+    if (ant && ant.huella === paq.huella && ant.archivo) return { ok: true, ...ant };
+    let up = { id: null, md5: null, tam: 0 };
+    if (paq.rutas.length) up = await drive.subir(token, f, ["RandomStudio", "RandomHistorias", "_Base"]);
     try { fs.unlinkSync(f); } catch (x) {}
-    return { ok: true, archivo: up.id, md5: up.md5, tam: up.tam, huella, nombres: ns, fecha: new Date().toISOString() };
-  } catch (x) { return { ok: false, error: x.message }; }
+    kitSubida = { ok: true, archivo: up.id || "sin-archivo-solo-borrados", md5: up.md5, tam: up.tam, fecha: new Date().toISOString(), ...paq };
+    registro.anotar("kit", "cambios de este equipo subidos para los demás: " + paq.rutas.map(x => x.rel).join(", ") + (paq.borrados.length ? "; borrados: " + paq.borrados.join(", ") : ""), { huella: paq.huella, kb: Math.round((up.tam || 0) / 1024) });
+    return kitSubida;
+  } catch (x) { registro.anotar("kit", "no se pudieron subir los cambios del kit: " + x.message); return { ok: false, error: x.message }; }
 });
 ipcMain.handle("kit-propio-recibir", async (e, token, info) => {
-  if (!info || !info.archivo || !Array.isArray(info.nombres)) return { ok: false, error: "Sin paquete" };
-  const recF = path.join(baseDir(), "kit_propio_recibido.json"), recibidos = leerJson(recF, {}) || {};
-  const faltan = info.nombres.filter(n => /^\w+\.py$/.test(n));
-  if (!faltan.length) return { ok: true, puestos: [] };
-  const tmp = path.join(baseDir(), "kit_propio_recibido");
+  if (!info || !info.archivo) return { ok: false, error: "Sin paquete" };
+  // (3-11) nunca mientras se trabaja: un módulo en uso no se cambia a mitad de un render; la interfaz lo repite en el primer hueco
+  if (tarea || empaquetando) return { ok: false, pendiente: true, error: "Hay una tarea en marcha" };
+  const tmp = path.join(baseDir(), "kit_cambios_recibidos");
   try {
     fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(tmp, { recursive: true });
-    const f = path.join(tmp, "kit_propio.tgz");
-    await drive.bajar(token, String(info.archivo), f, info.md5 || null);
-    const r = await tar(["-xzf", f, "-C", tmp]);
-    if (!r.ok) return r;
-    const puestos = [];
-    for (const n of faltan) {
-      const de = path.join(tmp, "kit", n), a = path.join(raiz(), "kit", n);
-      if (!existe(de)) continue;
-      const nuevo = shaArchivo(de), local = existe(a) ? shaArchivo(a) : null;
-      // falta aquí, o es la versión que mandó antes el otro equipo y aquí nadie la ha tocado: se pone la nueva
-      if (!local || (local !== nuevo && recibidos["kit/" + n] === local)) { fs.copyFileSync(de, a); puestos.push(n); }
-      if (!local || local === nuevo || recibidos["kit/" + n] === local) recibidos["kit/" + n] = nuevo;
+    const rutas = Array.isArray(info.rutas) ? info.rutas : (info.nombres || []).map(n => ({ rel: "kit/" + n }));
+    if (rutas.length) {
+      const f = path.join(tmp, "kit_cambios.tgz");
+      await drive.bajar(token, String(info.archivo), f, info.md5 || null);
+      const r = await tar(["-xzf", f, "-C", tmp]);
+      if (!r.ok) return r;
     }
-    escribirJson(recF, recibidos);
-    if (puestos.length) rescatarKit();
-    return { ok: true, puestos };
-  } catch (x) { return { ok: false, error: x.message }; }
+    const r = kitc.aplicar(raiz(), PARTES.kit, tmp, { ...info, rutas });
+    if (r.puestos.length || r.apartados.length) rescatarKit();
+    registro.anotar("kit", "recibidos los cambios de " + (info.equipo || "otro equipo") + ": puestos " + (r.puestos.join(", ") || "ninguno") + (r.apartados.length ? "; apartados " + r.apartados.join(", ") : "") + (r.conflictos.length ? "; CONFLICTOS: " + r.conflictos.map(c => c.rel + " (gana " + c.gana + (c.apartado ? ", el de aquí en " + c.apartado : "") + ")").join(", ") : ""), { huella: info.huella });
+    return { ok: true, puestos: r.puestos, apartados: r.apartados, conflictos: r.conflictos };
+  } catch (x) { registro.anotar("kit", "no se pudieron recibir los cambios del kit: " + x.message); return { ok: false, error: x.message }; }
   finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (x) {} }
 });
+/** Lo que se ve en «Equipos»: cuántos cambios de este equipo esperan a salir y cuándo fue lo último. */
+ipcMain.handle("kit-compartido-estado", async () => {
+  try { const c = kitc.cambios(raiz(), PARTES.kit); return { ok: true, origen: kitc.esOrigen(raiz()), pendientes: c.cambiados.length + c.borrados.length, ultimaSubida: kitSubida && kitSubida.fecha || null }; }
+  catch (x) { return { ok: false, error: x.message }; }
+});
+// el vigilante: en cuanto se guarda un archivo del kit, la interfaz pone el kit al día (sube o baja al momento)
+let pararVigilante = null;
+function vigilarKit() {
+  try {
+    if (pararVigilante) pararVigilante();
+    if (!existe(path.join(raiz(), "kit"))) return;
+    pararVigilante = kitc.vigilar(raiz(), PARTES.kit, () => {
+      for (const w of require("electron").BrowserWindow.getAllWindows()) { try { w.webContents.send("kit-cambio", { cuando: Date.now() }); } catch (e) {} }
+    });
+  } catch (e) {}
+}
 
 /* v3.38.1: borrar una historia del estudio. Va a la PAPELERA de este equipo (se puede recuperar), nunca se borra del todo.
  * Solo las hechas con el estudio (las 01-08 hechas a mano no se pueden borrar desde aquí) y nunca la que está trabajando.

@@ -50,6 +50,7 @@ let reiniciando = false;
 async function reiniciar() {
   if (reiniciando) return;
   reiniciando = true;
+  try { require("./registro.cjs").anotar("version", "la app se reinicia para aplicar la versión preparada"); } catch (e) {}
   try { session.defaultSession.flushStorageData(); } catch (e) {}
   try { await session.defaultSession.cookies.flushStore(); } catch (e) {}
   app.relaunch();
@@ -81,6 +82,7 @@ ipcMain.handle("act-instalar", async (e, url, esperado, version) => {
   ofs.mkdirSync(dirVersiones(), { recursive: true });
   ofs.writeFileSync(path.join(dirVersiones(), archivo), b);
   dejarLista(version, archivo, esperado);
+  try { require("./registro.cjs").anotar("version", "bajada y comprobada la versión " + version + " (" + Math.round(b.length / 1e6) + " MB): se instala al reiniciar"); } catch (e) {}
   await reiniciar();
   return { ok: true };
 });
