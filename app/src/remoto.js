@@ -122,18 +122,18 @@ export function iniciarRemotoEscritorio(t) {
     try { localStorage.setItem(K_AV, JSON.stringify(ahora)); } catch (e) {}
     // v3.45.6: con una versión nueva, las historias paradas se vuelven a intentar (una vez): suele traer el arreglo
     try {
-      if (localStorage.getItem("rs_version_paradas") !== APP_VERSION) {
+      if (localStorage.getItem("rs_perfil_version_paradas") !== APP_VERSION) {
         const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m);
-        localStorage.setItem("rs_version_paradas", APP_VERSION);
+        localStorage.setItem("rs_perfil_version_paradas", APP_VERSION);
       }
     } catch (e) {}
     // v3.45.3: si el rescate del kit recuperó algo, las historias paradas se vuelven a intentar (una vez por rescate)
     const rk = aj.rescateKit;
     if (rk && (rk.restaurados || []).length) {
-      let visto = ""; try { visto = localStorage.getItem("rs_rescate_kit_visto") || ""; } catch (e) {}
+      let visto = ""; try { visto = localStorage.getItem("rs_perfil_rescate_kit_visto") || ""; } catch (e) {}
       if (visto !== rk.fecha) {
         const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m);
-        try { localStorage.setItem("rs_rescate_kit_visto", rk.fecha); } catch (e) {}
+        try { localStorage.setItem("rs_perfil_rescate_kit_visto", rk.fecha); } catch (e) {}
         toast("🧰 Recuperado del kit: " + rk.restaurados.map(r => r.nombre + ".py").join(", ") + ". Las historias paradas siguen solas");
       }
     }
@@ -214,7 +214,7 @@ export function iniciarRemotoEscritorio(t) {
     if (up && up.ok) _kitPropio = up.nada ? null : up;
     const g = await remotoApi("GET").catch(() => null);
     if (!g) return;
-    let vistos = {}; try { vistos = JSON.parse(localStorage.getItem("rs_kit_propio_visto") || "{}"); } catch (e) {}
+    let vistos = {}; try { vistos = JSON.parse(localStorage.getItem("rs_perfil_kit_propio_visto") || "{}"); } catch (e) {}
     const puestos = [];
     for (const e of g.equipos || []) {
       const kp = e.id !== g.yo && e.datos && e.datos.kitPropio;
@@ -222,7 +222,7 @@ export function iniciarRemotoEscritorio(t) {
       const r = await s.kitPropioRecibir(tk, kp).catch(() => null);
       if (r && r.ok) { vistos[e.id] = kp.huella; puestos.push(...(r.puestos || [])); }
     }
-    try { localStorage.setItem("rs_kit_propio_visto", JSON.stringify(vistos)); } catch (e) {}
+    try { localStorage.setItem("rs_perfil_kit_propio_visto", JSON.stringify(vistos)); } catch (e) {}
     if (puestos.length) {
       const m = mios(); for (const x of Object.values(m)) if (x.parada) { x.parada = false; x.fallos = 0; x.reintentar = 0; } guardarMios(m);
       toast("🧰 Del otro equipo: " + puestos.join(", ") + ". Las historias paradas siguen solas");
@@ -326,7 +326,9 @@ export async function pedidosApi(metodo, cuerpo) {
  * v3.43.1: la parada se RECUERDA (también si el equipo se reinicia o se actualiza) hasta pulsar «Reanudar todo»: antes, al
  * reabrir RandomStudio volvía a estar disponible solo y seguía gastando tokens por la noche. */
 let _parando = 0;
-const K_PARADO = "rs_equipo_parado";
+// (v3.45.8) con «rs_perfil_» delante es de todo el equipo: sin él se guardaba por perfil pero se leía al arrancar, antes de
+// entrar en el perfil, y el ordenador arrancaba siempre «Parado» tras actualizarse
+const K_PARADO = "rs_perfil_equipo_parado";
 const leerParado = () => { try { return localStorage.getItem(K_PARADO) === "1"; } catch (e) { return false; } };
 export function guardarParado(v) { try { if (v) localStorage.setItem(K_PARADO, "1"); else localStorage.removeItem(K_PARADO); } catch (e) {} }
 export async function pararTodo() {
