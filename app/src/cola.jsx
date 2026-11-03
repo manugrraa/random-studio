@@ -28,7 +28,13 @@ export function useDisponible() {
 export function BotonDisponible() {
   const d = useDisponible();
   if (!window.studioFS) return null;
-  if (!d) return <span className="rs-chip" title="Este equipo no coge trabajo. Pulsa «Reanudar todo» para que siga."><span className="punto" style={{ background: "var(--text-3)" }} />Parado</span>;
+  // v3.45.7: «Parado» también se pulsa (antes era solo un letrero y él no encontraba cómo volver a ponerlo disponible):
+  // este equipo vuelve a coger trabajo, sin tocar los demás
+  if (!d) return (
+    <button onClick={() => { guardarParado(false); ponerDisponible(true); }} className="rs-btn ghost"
+      title="Este equipo no coge trabajo. Pulsa para que vuelva a cogerlo (solo este equipo; «Reanudar todo» los reanuda todos).">
+      <span style={{ width: 8, height: 8, borderRadius: 8, background: "var(--text-3)" }} />Parado · pulsa para seguir
+    </button>);
   return (
     <button onClick={() => { guardarParado(true); ponerDisponible(false); }} className="rs-btn ok"
       title="Este equipo coge trabajo de la cola. Pulsa para que termine lo que está haciendo y no coja más.">

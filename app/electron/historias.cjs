@@ -724,7 +724,7 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
     fs.mkdirSync(baseDir(), { recursive: true });
     const f = path.join(baseDir(), cual + ".tgz");
     await drive.bajar(token, String(info.archivo), f, info.md5 || null);
-    const r = await tar(["-xzf", f, "-C", raiz()]);
+    const r = cual === "kit" ? await instalarKitVivo(f) : await tar(["-xzf", f, "-C", raiz()]);
     if (r.ok && cual === "kit") { limpiarRestos(f); rescatarKit(); }
     try { fs.unlinkSync(f); } catch (x) {}
     if (!r.ok) return r;
@@ -737,12 +737,40 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
 // v3.45.3: borraba TAMBIÉN lo que Claude había creado en este equipo (kit/escuela.py de la historia 13) y el ordenador ya
 // no podía renderizar. Ahora solo se quita lo que vino de un kit anterior del portátil y ya no está en el nuevo, y no se
 // borra: se aparta a _kit_local/<fecha>/ (de ahí lo recupera el rescate si una historia lo usa).
+/* v3.45.7: lo que se instaló del kit vivo del portátil, con la huella de cada archivo: { "kit/x.py": sha256 } (antes era una
+ * lista de nombres, sin huella: esos cuentan como «sin tocar aquí»). */
+const kitListaF = () => path.join(baseDir(), "kit_lista.json");
+function kitLista() { const l = leerJson(kitListaF(), {}) || {}; return Array.isArray(l) ? Object.fromEntries(l.map(n => [n, null])) : l; }
+const shaArchivo = (p) => { try { return require("crypto").createHash("sha256").update(fs.readFileSync(p)).digest("hex"); } catch (e) { return null; } };
+/* v3.45.7: el kit vivo, archivo a archivo. Si un archivo se cambió AQUÍ desde la última vez (p. ej. Claude arregló
+ * kit/escuela.py para un render), no se pisa: se queda el de aquí, que viaja al portátil como kit propio y vuelve después
+ * dentro del kit vivo. Antes «tar -x» lo sobrescribía todo y deshacía el arreglo. */
+async function instalarKitVivo(tgz) {
+  const tmp = path.join(baseDir(), "kit_vivo_tmp");
+  try {
+    fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(tmp, { recursive: true });
+    const r = await tar(["-xzf", tgz, "-C", tmp]);
+    if (!r.ok) return r;
+    const lista = kitLista(), nueva = {}, guardados = [];
+    const ver = (d) => { for (const n of fs.readdirSync(d)) { const x = path.join(d, n); if (fs.statSync(x).isDirectory()) { ver(x); continue; }
+      const rel = path.relative(tmp, x).split(path.sep).join("/"), dst = path.join(raiz(), rel);
+      const nuevo = shaArchivo(x), local = existe(dst) ? shaArchivo(dst) : null;
+      nueva[rel] = nuevo;
+      const cambiadoAqui = local && local !== nuevo && lista[rel] && local !== lista[rel];
+      if (cambiadoAqui) { guardados.push(rel); continue; }
+      if (local !== nuevo) { fs.mkdirSync(path.dirname(dst), { recursive: true }); fs.copyFileSync(x, dst); } } };
+    ver(tmp);
+    escribirJson(kitListaF(), nueva);
+    if (guardados.length) console.log("kit vivo: se quedan los cambiados aquí:", guardados);
+    return { ok: true, guardados };
+  } catch (x) { return { ok: false, error: x.message }; }
+  finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (x) {} }
+}
 function limpiarRestos(tgz) {
   try {
     const dentro = new Set(require("child_process").execFileSync(tarExe(), ["-tzf", tgz], { encoding: "utf8", windowsHide: true, maxBuffer: 64 << 20 })
       .split(/\r?\n/).map(x => x.replace(/^\.\//, "").replace(/\/$/, "")).filter(Boolean));
-    const listaF = path.join(baseDir(), "kit_lista.json");
-    const antes = new Set(leerJson(listaF, []));
+    const antes = new Set(Object.keys(kitLista()));
     const sello = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     const ver = (d) => { let ns = []; try { ns = fs.readdirSync(d); } catch (e) { return; }
       for (const n of ns) { if (n === "__pycache__" || n.endsWith(".pyc")) continue; const f = path.join(d, n);
@@ -752,7 +780,6 @@ function limpiarRestos(tgz) {
           try { const bk = path.join(raiz(), "_kit_local", sello, rel); fs.mkdirSync(path.dirname(bk), { recursive: true }); fs.renameSync(f, bk); } catch (e) {}
         } } };
     for (const p of PARTES.kit) { const f = path.join(raiz(), p); if (existe(f) && fs.statSync(f).isDirectory()) ver(f); }
-    escribirJson(listaF, [...dentro]);
   } catch (e) {}
 }
 // v3.42: la fuente de los subtítulos (Lilita One) instalada para este usuario (sin administrador), por si el equipo no la
@@ -1143,9 +1170,11 @@ ipcMain.handle("kit-sincronizar", async () => sincronizarKit());
 function kitPropioNombres() {
   if (esOrigen()) return [];
   const man = leerJson(path.join(__dirname, "..", "proyecto", "manifiesto.json"), {}) || {};
-  const delPortatil = new Set([...Object.keys(man.archivos || {}), ...(leerJson(path.join(baseDir(), "kit_lista.json"), []) || [])]);
+  const lista = kitLista(), delPortatil = new Set([...Object.keys(man.archivos || {}), ...Object.keys(lista)]);
   let ns = []; try { ns = fs.readdirSync(path.join(raiz(), "kit")); } catch (e) { return []; }
-  return ns.filter(n => /^\w+\.py$/.test(n) && !n.startsWith("_") && !delPortatil.has("kit/" + n)).sort();
+  // (v3.45.7) propio = creado aquí, o del kit vivo pero cambiado aquí desde que se instaló (un arreglo de Claude)
+  return ns.filter(n => /^\w+\.py$/.test(n) && !n.startsWith("_") && (!delPortatil.has("kit/" + n)
+    || (lista["kit/" + n] && shaArchivo(path.join(raiz(), "kit", n)) !== lista["kit/" + n]))).sort();
 }
 function kitPropioHuella(ns) {
   const h = require("crypto").createHash("sha1");
@@ -1169,7 +1198,8 @@ ipcMain.handle("kit-propio-subir", async (e, token, anterior) => {
 });
 ipcMain.handle("kit-propio-recibir", async (e, token, info) => {
   if (!info || !info.archivo || !Array.isArray(info.nombres)) return { ok: false, error: "Sin paquete" };
-  const faltan = info.nombres.filter(n => /^\w+\.py$/.test(n) && !existe(path.join(raiz(), "kit", n)));
+  const recF = path.join(baseDir(), "kit_propio_recibido.json"), recibidos = leerJson(recF, {}) || {};
+  const faltan = info.nombres.filter(n => /^\w+\.py$/.test(n));
   if (!faltan.length) return { ok: true, puestos: [] };
   const tmp = path.join(baseDir(), "kit_propio_recibido");
   try {
@@ -1181,8 +1211,13 @@ ipcMain.handle("kit-propio-recibir", async (e, token, info) => {
     const puestos = [];
     for (const n of faltan) {
       const de = path.join(tmp, "kit", n), a = path.join(raiz(), "kit", n);
-      if (existe(de) && !existe(a)) { fs.copyFileSync(de, a); puestos.push(n); }
+      if (!existe(de)) continue;
+      const nuevo = shaArchivo(de), local = existe(a) ? shaArchivo(a) : null;
+      // falta aquí, o es la versión que mandó antes el otro equipo y aquí nadie la ha tocado: se pone la nueva
+      if (!local || (local !== nuevo && recibidos["kit/" + n] === local)) { fs.copyFileSync(de, a); puestos.push(n); }
+      if (!local || local === nuevo || recibidos["kit/" + n] === local) recibidos["kit/" + n] = nuevo;
     }
+    escribirJson(recF, recibidos);
     if (puestos.length) rescatarKit();
     return { ok: true, puestos };
   } catch (x) { return { ok: false, error: x.message }; }
