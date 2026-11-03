@@ -81,6 +81,12 @@ if (buena) {
   for (const f of ["titulo.txt", "narracion.txt"]) if (fs.existsSync(path.join(src, f))) fs.copyFileSync(path.join(src, f), path.join(plantilla, f.replace(".txt", "_ejemplo.md")));
   const g = fs.readdirSync(path.join(ORIGEN, "guiones")).find(n => n.startsWith("historia-" + buena.slice(0, 2) + "-"));
   if (g) fs.copyFileSync(path.join(ORIGEN, "guiones", g), path.join(plantilla, "guion_ejemplo.md"));
+  // (3-11) el montaje de la plantilla tiene que ser el de Roblox (color suave, la luz de rodar.py, cifras después del color):
+  // si la última entregada trae uno antiguo, se usa el de la última historia que lo tenga
+  if (!/rodar\.py/.test(fs.readFileSync(path.join(plantilla, "montar.py"), "utf8"))) {
+    const conMontar = hist.find(n => { try { return /open\(os\.path\.join\(HERE, "rodar\.py"\)/.test(fs.readFileSync(path.join(ORIGEN, "historias", n, "montar.py"), "utf8")); } catch (e) { return false; } });
+    if (conMontar) fs.copyFileSync(path.join(ORIGEN, "historias", conMontar, "montar.py"), path.join(plantilla, "montar.py"));
+  }
   normalizarPlantilla(plantilla);
   fs.writeFileSync(path.join(plantilla, "LEEME.md"), "Plantilla de RandomHistorias: todo en ROBLOX STUDIO, nada de Blender (scripts de la historia " + buena + ", la última entregada).\n\n"
     + "Cada historia nueva copia de aquí sincronizar.py, mezclar.py, subtitulos.py, montar.py, rodar.py y la estructura de planos.py.\n"
