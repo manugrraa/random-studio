@@ -135,41 +135,64 @@ function erroresDelRender(log) {
   if (!grupos.size) return ls.slice(-45).join("\n");          // (falló antes de ningún plano: p. ej. un import)
   return [...grupos.values()].slice(0, 8).map(g => "Planos " + g.planos.join(", ") + ":\n" + g.bloque).join("\n\n").slice(0, 9000);
 }
-function repararRender(t, id) {
+/* v3.49 (3-11-2026, Manu: «que los fallos se reporten automáticamente y tú los soluciones»): REPARACIÓN AUTOMÁTICA de
+ * cualquier etapa de la cadena (animatic, render y montaje; antes solo el render) cuando falla por un error de CÓDIGO.
+ * Claude busca la causa de raíz (en la historia o en el kit, para que no le pase a ninguna otra), lo arregla con el cambio
+ * mínimo, lo comprueba (pruebas_kit + el paso que falló) y deja un informe en estudio/_reparaciones; la etapa se repite
+ * sola. Como mucho 2 veces por historia y etapa (vuelve a 0 cuando sale bien). No salta con lo que no es código: el
+ * límite de Claude, Roblox Studio sin abrir o una cancelación. */
+const ETAPAS_REPARABLES = ["animatic", "render", "montaje"];
+function logDelFallo(t, c) {
+  const m = (t.lineas || []).join("\n").match(/log completo: (.+\.log)/);
+  const paso = (t.paso && t.paso.nombre) || "";
+  const f = m ? m[1].trim() : path.join(c, "cadena_log", paso + ".log");
+  return { paso, log: leer(f, "") || (t.lineas || []).slice(-60).join("\n") };
+}
+function repararEtapa(t, id) {
   try {
-    if (tarea && tarea !== t) return false;            // (v3.48) render de fondo con otra tarea delante: falla y se reintenta
+    if (!t || !ETAPAS_REPARABLES.includes(t.etapa)) return false;
+    if (tarea && tarea !== t) return false;            // con otra tarea delante (render de fondo): falla y se reintenta
     const c = carpetaDe(id);
-    const log = leer(path.join(c, "cadena_log", "render.log"), "");
-    if (!/Traceback|ERROR montando el plano/.test(log)) return false;
+    const { paso, log } = logDelFallo(t, c);
+    const texto = log + "\n" + (t.lineas || []).slice(-20).join("\n");
+    if (!/Traceback|Error|No such file|can't open file|no se cre[óo]/i.test(texto)) return false;
+    if (/Roblox Studio no est[áa] listo|session limit|5-hour limit|usage limit/i.test(texto)) return false;
     const est = estudioDe(c);
-    if ((est.reparaciones || 0) >= 2) return false;
-    est.reparaciones = (est.reparaciones || 0) + 1; guardarEstudio(c, est);
+    const clave = "reparaciones_" + t.etapa;
+    if ((est[clave] || 0) >= 2) { registro.anotar("historias", "FALLO sin reparar (ya van 2 intentos) en " + t.etapa + " de " + id, { paso }); return false; }
+    est[clave] = (est[clave] || 0) + 1; guardarEstudio(c, est);
     const rel = path.relative(raiz(), c).replace(/\\/g, "/");
-    const rk = leerJson(path.join(estudioDir(), "_rescate_kit.json"), null);
-    const prompt = instrucciones("reglas") + `\n\n---\nREPARAR EL RENDER de la historia ${rel} (intento ${est.reparaciones} de 2).
-
-El guion, las voces, la escena y el animatic ya están APROBADOS. El rodaje en Roblox Studio (rodar.py final) ha fallado en
-algunos planos porque el código no se puede ejecutar (p. ej. un objeto o una función de roblox/pueblo que falta en este
-equipo, o Studio sin abrir)${rk && rk.restaurados && rk.restaurados.length ? " (recuperados del historial: " + rk.restaurados.map(r => r.nombre + (r.aviso ? " — " + r.aviso : "")).join(", ") + ")" : ""}.
+    const sello = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    const informe = `estudio/_reparaciones/${sello}_${id}_${t.etapa}.md`;
+    const comprobar = t.etapa === "render"
+      ? `cd ${rel} && python rodar.py fotos <los planos que fallaban, separados por comas> (NO ruedes el vídeo final)`
+      : `python tools/cadena.py ${rel} --solo ${paso || (t.etapa === "animatic" ? "animatic" : "montar")}`;
+    const errores = t.etapa === "render" ? erroresDelRender(log) : log.split(/\r?\n/).slice(-70).join("\n");
+    const prompt = instrucciones("reglas") + `\n\n---\nREPARAR UN FALLO de la historia ${rel}: la etapa «${t.etapa}» (paso «${paso || "?"}») ha fallado por un
+error de código. Intento ${est[clave]} de 2. Lo que ya está aprobado (guion, voces, escena) NO se cambia.
 
 QUÉ HACER
-1. Lee los errores de abajo y el código que falla (rodar.py y los módulos de roblox/pueblo que usa).
-2. Arréglalo con el cambio MÍNIMO para que esos planos se monten como en las fotos aprobadas (planos_fotos/sNN.png): añade
-   el parámetro, la función o el objeto que falte, con el comportamiento que se deduce de cómo se usa. NO cambies encuadres,
-   personajes, textos ni la historia, y no toques los planos que ya funcionan.
-3. Comprueba los planos que fallaban: cd ${rel} && python rodar.py fotos <planos separados por comas>
-   Repite hasta que ninguno dé ERROR ni Traceback.
-4. NO ruedes el vídeo final: en cuanto termines, la cadena rueda la historia entera sola.
+1. Lee el error de abajo y busca la CAUSA DE RAÍZ: el código que falla (de la historia o del kit: tools/, tools/roblox/,
+   roblox/pueblo/). Si es un fallo del kit, arréglalo en el kit, para que no le pase a ninguna otra historia.
+2. Arréglalo con el cambio MÍNIMO. No cambies encuadres, personajes, textos ni la historia. Nunca borres archivos.
+3. Comprueba: python tools/pruebas_kit.py ${id.slice(0, 2)}   y   ${comprobar}
+   Repite hasta que no salga ningún error.
+4. Escribe el informe en ${informe}: qué falló, la causa, el arreglo y los archivos que has tocado (corto y claro, en
+   español, para Manu).
+5. No relances la etapa entera: en cuanto termines, RandomStudio la repite sola.
 
-ERRORES DEL RENDER (de ${rel}/cadena_log/render.log):
-${erroresDelRender(log)}
+ERROR (de la etapa ${t.etapa}):
+${errores}
 `;
     if (tarea === t) tarea = null;
     if (fondo === t) fondo = null;
     try {
-      emitir2(t, { tipo: "linea", linea: "🔧 Algunos planos no se pueden montar: Claude arregla el kit y se repite el render" });
-      registro.anotar("historias", "REPARAR el render de " + id + " (intento " + est.reparaciones + " de 2): Claude arregla el kit", { planos: erroresDelRender(log).split("\n")[0].slice(0, 200) });
-      lanzarAgente(t.sender, id, "render", prompt, (ok, snd) => { if (ok) { try { lanzar(snd, id, t.args, "render", t.alTerminar); } catch (e) {} } else if (t.alTerminar) t.alTerminar(false, snd); });
+      emitir2(t, { tipo: "linea", linea: "🔧 Fallo de código en " + t.etapa + ": Claude lo arregla y se repite" });
+      registro.anotar("historias", "REPARAR " + t.etapa + " de " + id + " (intento " + est[clave] + " de 2): Claude busca la causa y lo arregla", { paso, error: errores.split("\n").filter(Boolean).slice(-2).join(" | ").slice(0, 300), informe });
+      lanzarAgente(t.sender, id, t.etapa, prompt, (ok, snd) => {
+        registro.anotar("historias", (ok ? "reparado " : "NO se pudo reparar ") + t.etapa + " de " + id + (ok ? ": se repite la etapa" : ""), { informe });
+        if (ok) { try { lanzar(snd, id, t.args, t.etapa, t.alTerminar); } catch (e) {} } else if (t.alTerminar) t.alTerminar(false, snd);
+      });
       return true;
     } catch (e) { return false; }
   } catch (e) { return false; }
@@ -203,8 +226,8 @@ function lanzar(sender, id, args, etapa, alTerminar) {
     registro.anotar("historias", (code === 0 ? "termina " : (t && t.cancelada ? "cancelada " : "FALLA ")) + (t && t.etapa || "cadena") + " de " + id + " (" + mins + " min)" + (code !== 0 && t ? ": " + t.lineas.slice(-3).join(" | ").slice(0, 400) : ""), { codigo: code });
     // (3-11) un render que termina bien deja a cero el contador de reparaciones: así una historia reparada hace meses
     // puede volver a repararse si hace falta
-    if (code === 0 && t && t.etapa === "render") { try { const c2 = carpetaDe(id), e2 = estudioDe(c2); if (e2.reparaciones) { delete e2.reparaciones; guardarEstudio(c2, e2); } } catch (e) {} }
-    if (code !== 0 && t && t.etapa === "render" && !t.cancelada && repararRender(t, id)) return;
+    if (code === 0 && t && t.etapa) { try { const c2 = carpetaDe(id), e2 = estudioDe(c2), k = "reparaciones_" + t.etapa; if (e2[k] || e2.reparaciones) { delete e2[k]; delete e2.reparaciones; guardarEstudio(c2, e2); } } catch (e) {} }
+    if (code !== 0 && t && !t.cancelada && repararEtapa(t, id)) return;
     // v3.45.2: el final de la salida va en el informe, así «Equipos» dice POR QUÉ falló (el render del ordenador fallaba sin texto)
     const informe = code === 0 || !t ? "" : t.lineas.slice(-30).join("\n").slice(-1500);
     emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa, cancelada: !!(t && t.cancelada), ...(informe ? { informe } : {}) }, t);
@@ -418,7 +441,9 @@ function faltanCifras(c) {
   } catch (e) { return false; }
 }
 const todasFotos = (c) => { const ps = planos(c); return ps.length > 0 && ps.every(p => existe(path.join(c, "planos_fotos", p.id + ".png"))); };
-const todosFinal = (c) => { const ps = planos(c); return ps.length > 0 && ps.every(p => existe(path.join(c, "planos_final", p.id + ".mp4"))); };
+// (v3.49) con contenido: un vídeo a medias (261 bytes) hizo pasar al montaje un render roto (la 18)
+const conContenido = (f) => { try { return fs.statSync(f).size >= 20000; } catch (e) { return false; } };
+const todosFinal = (c) => { const ps = planos(c); return ps.length > 0 && ps.every(p => conContenido(path.join(c, "planos_final", p.id + ".mp4"))); };
 const ETAPAS = [
   { id: "guion", nombre: "Guion", tipo: "agente", hecho: c => ["titulo.txt", "narracion.txt", "planos.py"].every(f => existe(path.join(c, f))) },
   { id: "voces", nombre: "Voces y efectos", tipo: "agente", hecho: c => ["duraciones.json", "audio/voz_final.wav", "audio/mezcla.wav"].every(f => existe(path.join(c, f))) },
