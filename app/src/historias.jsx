@@ -586,7 +586,11 @@ export function HistoriasView({ toast }) {
     const off = SF().onHistoriasProgreso((d) => {
       if (d.tipo === "espera") { toast(`📋 ${nombreDe(d.id)}: te toca revisar ${ETAPA_NOMBRE[d.etapa] || ""}`); cargar(); if (d.id === selRef.current) cargarDet(d.id); return; }
       if (d.tipo === "terminado") { toast(`🎉 ${nombreDe(d.id)} terminada`); cargar(); if (d.id === selRef.current) cargarDet(d.id); return; }
+      // (v3.49.3) solo los avisos de trabajo abren tarjeta: uno suelto después de terminar (p. ej. «subido a Drive») dejaba
+      // una tarjeta «Arrancando…» que no se cerraba nunca
+      if (!["paso", "plano", "linea", "agente", "agenteTexto", "fin"].includes(d.tipo)) { if (d.tipo === "driveListo") cargar(); return; }
       setTarea(prev => {
+        if (d.tipo === "fin" && !(prev && prev.id === d.id) && d.ok) return prev;
         const t = prev && prev.id === d.id ? { ...prev } : { id: d.id, inicio: Date.now(), lineas: [], acciones: [] };
         if (d.tipo === "paso") { t.tipo = t.tipo || "cadena"; t.paso = d.paso; t.render = null; }
         else if (d.tipo === "plano") t.render = d.render;
@@ -604,7 +608,14 @@ export function HistoriasView({ toast }) {
       });
     });
     const tic = setInterval(() => setAhora(Date.now()), 1000);
-    return () => { off && off(); clearInterval(tic); };
+    // (v3.49.3) cada 10 s: si de verdad no hay nada en marcha (ni de fondo), fuera la tarjeta que se haya quedado colgada
+    const repaso = setInterval(() => {
+      SF().historiasTareaEstado().then(st => {
+        if (st.activa) return;
+        setTarea(prev => (!prev || prev.terminado || (st.fondo && st.fondo.id === prev.id)) ? prev : null);
+      }).catch(() => {});
+    }, 10000);
+    return () => { off && off(); clearInterval(tic); clearInterval(repaso); };
   }, [escritorio, cargar, cargarDet, toast]);
 
   useEffect(() => { if (escritorio) cargarDet(selId); }, [selId, escritorio, cargarDet]);
