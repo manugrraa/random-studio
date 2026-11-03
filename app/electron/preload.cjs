@@ -109,6 +109,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   estudioRelevoRecibir: (id, token, archivo, md5) => ipcRenderer.invoke("estudio-relevo-recibir", id, token, archivo, md5),
   estudioRelevada: (id) => ipcRenderer.invoke("estudio-relevada", id),
   estudioRelevoPreparar: (id) => ipcRenderer.invoke("estudio-relevo-preparar", id),
+  estudioCambiadoDesde: (id, fecha) => ipcRenderer.invoke("estudio-cambiado-desde", id, fecha),
   // v3.41.3: los recursos del proyecto (efectos, música, fuentes, texturas, biblioteca 3D) iguales en todos los equipos
   baseEstado: () => ipcRenderer.invoke("base-estado"),
   historiasPausarEncadenado: (v) => ipcRenderer.invoke("historias-pausar-encadenado", v),

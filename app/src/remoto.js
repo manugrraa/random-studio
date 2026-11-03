@@ -395,6 +395,18 @@ async function pasarAlPortatil(pid, id) {
   const s = SF();
   const c = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), consulta: true });
   if (!c.pasar || !s.estudioRelevoPreparar || !driveConectadoTrabajo()) return { traspasado: false };
+  // v3.45.10: la copia que ya está en Drive (se sube tras cada etapa) sirve si la historia no ha cambiado desde entonces:
+  // el otro equipo la coge AL MOMENTO, sin volver a empaquetar y subir ~120 MB (él: "¿por qué no detectan los dos equipos
+  // los archivos del Drive?")
+  try {
+    const g = await pedidosApi("GET");
+    const ped = (g.pedidos || []).find(x => Number(x.id) === Number(pid));
+    const rv = ped && ped.args && ped.args.relevo;
+    if (rv && rv.archivo && rv.fecha && s.estudioCambiadoDesde && ["escena", "animatic"].includes(rv.etapa)) {
+      const ch = await s.estudioCambiadoDesde(id, rv.fecha);
+      if (ch && ch.ok && !ch.cambiado) return pedidosApi("POST", { accion: "fase_blender", id: Number(pid), relevo: { archivo: rv.archivo, md5: rv.md5, tam: rv.tam } });
+    }
+  } catch (e) {}
   const pr = await s.estudioRelevoPreparar(id);
   if (!pr || !pr.ok) return { traspasado: false };
   const up = await s.estudioRelevoSubir(id, await driveTokenTrabajo());

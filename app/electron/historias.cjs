@@ -632,6 +632,22 @@ function apartar(id) {
   return { ok: true, a: dest };
 }
 // v3.41.2: copia al momento (al pasar una historia preparada al portátil, con las revisiones ya aprobadas)
+/* v3.45.10: ¿ha cambiado algo de la historia desde «fecha» (la de su copia en Drive)? Lo que no viaja en la copia o se
+ * rehace solo (planos renderizados, registros, estado de la cadena, informes) no cuenta. */
+ipcMain.handle("estudio-cambiado-desde", async (e, id, fecha) => {
+  try {
+    const c = carpetaDe(id), desde = Date.parse(fecha);
+    if (!desde) return { ok: false };
+    const fuera = /^(planos_final|planos_revisar|_animatic|__pycache__|cadena_log)$|^(cadena_estado|estudio)\.json$|^historia\d*_final/;
+    let ultimo = 0, quien = "";
+    const ver = (d, nivel) => { for (const n of fs.readdirSync(d)) { if (nivel === 0 && fuera.test(n)) continue; if (n === "__pycache__") continue;
+      const x = path.join(d, n), st = fs.statSync(x);
+      if (st.isDirectory()) ver(x, nivel + 1); else if (st.mtimeMs > ultimo) { ultimo = st.mtimeMs; quien = path.relative(c, x); } } };
+    ver(c, 0);
+    // (un minuto de margen: la copia se hace justo al acabar la etapa)
+    return { ok: true, cambiado: ultimo > desde + 60000, ultimo: new Date(ultimo).toISOString(), archivo: quien };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
 ipcMain.handle("estudio-relevo-preparar", async (e, id) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id))) return { ok: false, error: "historia no válida" };
   // v3.41.8: se puede con otra historia en marcha (la copia es solo leer y comprimir); con esta misma, no
