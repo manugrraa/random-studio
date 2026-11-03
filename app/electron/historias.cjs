@@ -82,32 +82,40 @@ function resumen(id) {
 
 // ------------------------------------------------------------------ tarea en marcha (una a la vez)
 let tarea = null;     // { proc, id, args, inicio, lineas[], paso, planos{hechos,total,quedan,eta}, sender }
+/* v3.48 (3-11-2026, Manu: «que se tarde menos»): RENDER DE FONDO. El render solo usa Roblox Studio (~20-45 min) y Claude
+ * está parado mientras: se pone en este segundo hueco y el principal queda libre para el guion y las voces de otra
+ * historia. Lo que usa Studio (escena, animatic con sus pistas y otro render) espera a que acabe; montaje, guion, voces e
+ * ideas no. El kit no se cambia con ninguno de los dos en marcha. Se apaga en Ajustes (solapar: false). */
+let fondo = null;
+const USAN_STUDIO = ["escena", "animatic", "render"];
+const solapar = () => ajustes().solapar !== false;
+const ocupado = () => !!(tarea || fondo);
+const enMarcha = (id) => (tarea && tarea.id === id ? tarea : null) || (fondo && fondo.id === id ? fondo : null);
 
-function emitir(ev) {
-  if (!tarea) return;
-  const d = { ...ev, id: tarea.id };
-  try { if (tarea.sender && !tarea.sender.isDestroyed()) tarea.sender.send("historias-progreso", d); } catch (e) {}
+function emitir(ev, t = tarea) {
+  if (!t) return;
+  const d = { ...ev, id: t.id };
+  try { if (t.sender && !t.sender.isDestroyed()) t.sender.send("historias-progreso", d); } catch (e) {}
 }
 
-function analizarLinea(l) {
-  const t = tarea;
+function analizarLinea(l, t = tarea) {
   if (!t) return;
   t.actividad = Date.now();
   t.lineas.push(l);
   if (t.lineas.length > 400) t.lineas.shift();
   let m = l.match(/== PASO (\d+)\/(\d+): (\w+) ==/);
-  if (m) { t.paso = { n: +m[1], de: +m[2], nombre: m[3], inicio: Date.now() }; t.render = null; emitir({ tipo: "paso", paso: t.paso }); return; }
+  if (m) { t.paso = { n: +m[1], de: +m[2], nombre: m[3], inicio: Date.now() }; t.render = null; emitir({ tipo: "paso", paso: t.paso }, t); return; }
   // render / fotos: "[s58] 107 fotogramas en 178.7s, ... — quedan 2 (~1 min) — texto"
   m = l.match(/\[(s\d+)\][^\n]*?quedan (\d+) \(~(\d+) min\)/);
   if (m) {
     const total = t.nPlanos || 0;
     t.render = { plano: m[1], quedan: +m[2], minutos: +m[3], total, hechos: total ? total - +m[2] : null, en: Date.now() };
-    emitir({ tipo: "plano", render: t.render });
+    emitir({ tipo: "plano", render: t.render }, t);
     return;
   }
   m = l.match(/ok en ([\d.]+) s/);
-  if (m) { emitir({ tipo: "pasoOk", segundos: +m[1], paso: t.paso }); return; }
-  emitir({ tipo: "linea", linea: l });
+  if (m) { emitir({ tipo: "pasoOk", segundos: +m[1], paso: t.paso }, t); return; }
+  emitir({ tipo: "linea", linea: l }, t);
 }
 
 /* v3.45.6 REPARAR EL RENDER: si el render falla porque un plano no se puede montar (un error de Python: un módulo del kit
@@ -129,6 +137,7 @@ function erroresDelRender(log) {
 }
 function repararRender(t, id) {
   try {
+    if (tarea && tarea !== t) return false;            // (v3.48) render de fondo con otra tarea delante: falla y se reintenta
     const c = carpetaDe(id);
     const log = leer(path.join(c, "cadena_log", "render.log"), "");
     if (!/Traceback|ERROR montando el plano/.test(log)) return false;
@@ -155,38 +164,41 @@ QUÉ HACER
 ERRORES DEL RENDER (de ${rel}/cadena_log/render.log):
 ${erroresDelRender(log)}
 `;
-    tarea = null;
+    if (tarea === t) tarea = null;
+    if (fondo === t) fondo = null;
     try {
       emitir2(t, { tipo: "linea", linea: "🔧 Algunos planos no se pueden montar: Claude arregla el kit y se repite el render" });
       registro.anotar("historias", "REPARAR el render de " + id + " (intento " + est.reparaciones + " de 2): Claude arregla el kit", { planos: erroresDelRender(log).split("\n")[0].slice(0, 200) });
       lanzarAgente(t.sender, id, "render", prompt, (ok, snd) => { if (ok) { try { lanzar(snd, id, t.args, "render", t.alTerminar); } catch (e) {} } else if (t.alTerminar) t.alTerminar(false, snd); });
       return true;
-    } catch (e) { tarea = t; return false; }
+    } catch (e) { return false; }
   } catch (e) { return false; }
 }
 // (emitir de una tarea que ya no es la actual)
 function emitir2(t, ev) { try { if (t.sender && !t.sender.isDestroyed()) t.sender.send("historias-progreso", { ...ev, id: t.id }); } catch (e) {} }
 
 function lanzar(sender, id, args, etapa, alTerminar) {
-  if (tarea) throw new Error("Ya hay una tarea en marcha (" + tarea.id + ")");
+  const deFondo = etapa === "render" && solapar() && !fondo && !(tarea && tarea.id === id);
+  if (tarea && !deFondo) throw new Error("Ya hay una tarea en marcha (" + tarea.id + ")");
+  if (fondo && (USAN_STUDIO.includes(etapa) || fondo.id === id)) throw new Error("Roblox Studio está grabando " + fondo.id);
   const c = carpetaDe(id);
   const proc = spawn("python", [path.join(raiz(), "tools", "cadena.py"), path.relative(raiz(), c), ...args], {
     cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8", PYTHONUNBUFFERED: "1", RH_ENTREGAS: listasDir() }, windowsHide: true,
   });
-  tarea = { proc, id, args, tipo: "cadena", etapa: etapa || null, inicio: Date.now(), lineas: [], paso: null, render: null, sender, nPlanos: planos(c).length, alTerminar };
-  registro.anotar("historias", "empieza " + (etapa || "cadena") + " de " + id, { args: argsSeguros(args) });
+  const t = { proc, id, args, tipo: "cadena", etapa: etapa || null, inicio: Date.now(), lineas: [], paso: null, render: null, sender, nPlanos: planos(c).length, alTerminar, fondo: deFondo };
+  if (deFondo) fondo = t; else tarea = t;
+  registro.anotar("historias", "empieza " + (etapa || "cadena") + " de " + id + (deFondo ? " (de fondo: el equipo sigue con guiones y voces)" : ""), { args: argsSeguros(args) });
   let resto = "";
   const trozo = (b) => {
     resto += b.toString("utf-8");
     const partes = resto.split(/\r?\n/);
     resto = partes.pop();
-    partes.forEach(p => p.trim() && analizarLinea(p.trimEnd()));
+    partes.forEach(p => p.trim() && analizarLinea(p.trimEnd(), t));
   };
   proc.stdout.on("data", trozo);
   proc.stderr.on("data", trozo);
   proc.on("close", (code) => {
-    if (resto.trim()) analizarLinea(resto.trim());
-    const t = tarea;
+    if (resto.trim()) analizarLinea(resto.trim(), t);
     const mins = t ? Math.round((Date.now() - t.inicio) / 6000) / 10 : 0;
     registro.anotar("historias", (code === 0 ? "termina " : (t && t.cancelada ? "cancelada " : "FALLA ")) + (t && t.etapa || "cadena") + " de " + id + " (" + mins + " min)" + (code !== 0 && t ? ": " + t.lineas.slice(-3).join(" | ").slice(0, 400) : ""), { codigo: code });
     // (3-11) un render que termina bien deja a cero el contador de reparaciones: así una historia reparada hace meses
@@ -195,8 +207,9 @@ function lanzar(sender, id, args, etapa, alTerminar) {
     if (code !== 0 && t && t.etapa === "render" && !t.cancelada && repararRender(t, id)) return;
     // v3.45.2: el final de la salida va en el informe, así «Equipos» dice POR QUÉ falló (el render del ordenador fallaba sin texto)
     const informe = code === 0 || !t ? "" : t.lineas.slice(-30).join("\n").slice(-1500);
-    emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa, cancelada: !!(t && t.cancelada), ...(informe ? { informe } : {}) });
-    tarea = null;
+    emitir({ tipo: "fin", ok: code === 0, codigo: code, etapa: t && t.etapa, cancelada: !!(t && t.cancelada), ...(informe ? { informe } : {}) }, t);
+    if (tarea === t) tarea = null;
+    if (fondo === t) fondo = null;
     trasEtapa(t, id, code === 0, t && t.etapa);
   });
   return { ok: true };
@@ -246,25 +259,30 @@ ipcMain.handle("historias-detalle", async (e, id) => {
 ipcMain.handle("historias-tarea", async (e, id, args) => lanzar(e.sender, id, argsSeguros(args)));
 
 ipcMain.handle("historias-tarea-estado", async (e) => {
-  if (!tarea && empaquetando) return { activa: true, id: empaquetando, tipo: "relevo", etapa: "copia de relevo", inicio: Date.now(), accion: "Guardando la copia de relevo", acciones: [], lineas: [] };
-  if (!tarea) return { activa: false };
+  const f = fondo ? { id: fondo.id, etapa: fondo.etapa, inicio: fondo.inicio, paso: fondo.paso, render: fondo.render, lineas: fondo.lineas.slice(-20) } : null;
+  if (fondo && (!fondo.sender || fondo.sender.isDestroyed())) fondo.sender = e.sender;
+  if (!tarea && empaquetando) return { activa: true, id: empaquetando, tipo: "relevo", etapa: "copia de relevo", inicio: Date.now(), accion: "Guardando la copia de relevo", acciones: [], lineas: [], fondo: f };
+  if (!tarea) return { activa: false, fondo: f };
   if (!tarea.sender || tarea.sender.isDestroyed()) tarea.sender = e.sender;   // (v3.41.9) sin robarle el progreso a la ventana principal
   return { activa: true, id: tarea.id, args: tarea.args, tipo: tarea.tipo, etapa: tarea.etapa, inicio: tarea.inicio, paso: tarea.paso,
-    render: tarea.render, accion: tarea.accion, acciones: (tarea.acciones || []).slice(-30), lineas: tarea.lineas.slice(-60) };
+    render: tarea.render, accion: tarea.accion, acciones: (tarea.acciones || []).slice(-30), lineas: tarea.lineas.slice(-60), fondo: f };
 });
 
 ipcMain.handle("historias-cancelar", async (e, soloId) => {
   // soloId: cancelar solo si lo que está en marcha es esa historia (lo pide la cola compartida); y sacarla de la cola local
-  if (soloId) { const i = cola.indexOf(soloId); if (i >= 0) cola.splice(i, 1); if (!tarea || tarea.id !== soloId) return { ok: true }; }
-  if (tarea) { tarea.alTerminar = null; tarea.cancelada = true; }   // cancelar también para el avance automático (y no se reintenta)
-  if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
+  if (soloId) { const i = cola.indexOf(soloId); if (i >= 0) cola.splice(i, 1); }
+  for (const t of [tarea, fondo]) {
+    if (!t || (soloId && t.id !== soloId)) continue;
+    t.alTerminar = null; t.cancelada = true;   // cancelar también para el avance automático (y no se reintenta)
+    if (t.proc) { try { spawn("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
+  }
   return { ok: true };
 });
 
 // v3.41.9: al cerrar la app (o reiniciarla para actualizar) se mata el árbol de la tarea en marcha: antes Blender o Claude
 // seguían huérfanos y la app nueva, al no verlos, lanzaba otra tarea sobre la misma historia
 app.on("before-quit", () => {
-  if (tarea && tarea.proc) { try { require("child_process").spawnSync("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true, timeout: 8000 }); } catch (e) {} }
+  for (const t of [tarea, fondo]) if (t && t.proc) { try { require("child_process").spawnSync("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true, timeout: 8000 }); } catch (e) {} }
 });
 
 // v3.38.2: PARAR TODO (p. ej. antes de apagar el equipo): vacía la cola local y para lo que esté en marcha.
@@ -272,8 +290,11 @@ app.on("before-quit", () => {
 ipcMain.handle("historias-parar-todo", async () => {
   const habia = (tarea ? 1 : 0) + cola.length;
   cola.length = 0;
-  if (tarea) { tarea.alTerminar = null; tarea.cancelada = true; }
-  if (tarea && tarea.proc) { try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
+  for (const t of [tarea, fondo]) {
+    if (!t) continue;
+    t.alTerminar = null; t.cancelada = true;
+    if (t.proc) { try { spawn("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
+  }
   return { ok: true, parados: habia };
 });
 
@@ -410,7 +431,8 @@ function etapasDe(id) {
     const pideRevision = REVISABLES.includes(e.id) && aj.revisar[e.id] && !!est.creado;
     let estado = hecho ? "hecho" : "pendiente";
     if (hecho && pideRevision && !(rev && rev.estado === "aprobado")) estado = "revisar";
-    if (tarea && tarea.id === id && (tarea.etapa === e.id || (e.id === "animatic" && tarea.etapa === "escena" && hecho))) estado = "trabajando";
+    const tm = enMarcha(id);
+    if (tm && (tm.etapa === e.id || (e.id === "animatic" && tm.etapa === "escena" && hecho))) estado = "trabajando";
     const r = { id: e.id, nombre: e.nombre, estado, revision: rev, pideRevision, bloqueada: !antesHecho };
     antesHecho = antesHecho && hecho && estado !== "revisar";
     return r;
@@ -545,16 +567,30 @@ function correrEtapa(sender, id, etapaId, nota, encadenar) {
 // historias que esperan a que termine lo que está en marcha (un solo trabajo pesado a la vez en cada equipo)
 const cola = [];
 function sacarDeCola(sender) {
-  if (tarea || !cola.length || !sender || sender.isDestroyed()) return;
-  avanzar(sender, cola.shift(), true);
+  if (!cola.length || !sender || sender.isDestroyed()) return;
+  // (v3.48) la primera que pueda empezar ya: con el render de fondo, las que usan Studio esperan y pasan las demás
+  for (let i = 0; i < cola.length; i++) {
+    const id = cola[i];
+    let s = null; try { s = siguiente(id); } catch (e) {}
+    const et = s && s.etapa && s.etapa.id;
+    if (enMarcha(id)) continue;
+    if (fondo && USAN_STUDIO.includes(et)) continue;
+    if (tarea && !(et === "render" && solapar() && !fondo)) continue;
+    cola.splice(i, 1);
+    avanzar(sender, id, true);
+    return;
+  }
 }
 
 function avanzar(sender, id, auto) {
-  if (tarea) {
-    if (tarea.id !== id && !cola.includes(id)) cola.push(id);
-    return { ok: true, cola: true, mensaje: "En cola: empezará cuando termine lo que está en marcha" };
-  }
   const s = siguiente(id);
+  const et = s.etapa && s.etapa.id;
+  // (v3.48) el render puede ir de fondo aunque haya otra tarea; lo que usa Studio espera al render de fondo
+  const libre = !enMarcha(id) && !(fondo && USAN_STUDIO.includes(et)) && (!tarea || (et === "render" && solapar() && !fondo));
+  if (!libre && !s.terminado && !s.espera) {
+    if (!cola.includes(id) && !(tarea && tarea.id === id)) cola.push(id);
+    return { ok: true, cola: true, mensaje: fondo && USAN_STUDIO.includes(et) ? "En cola: Roblox Studio está grabando otra historia" : "En cola: empezará cuando termine lo que está en marcha" };
+  }
   if (s.terminado || s.espera) { try { sender.send("historias-progreso", { id, tipo: s.terminado ? "terminado" : "espera", etapa: s.espera && s.espera.id }); } catch (e) {} return { ok: true, ...s }; }
   if (auto && !ajustes().avanzarSolo) return { ok: true };
   if (auto && !esOrigen() && s.etapa.id === "escena")
@@ -628,12 +664,14 @@ function huellaCarpeta(id) {
 // v3.45.9: un render que pasa 30 min sin dar NINGUNA señal (cada plano escribe al empezar y al terminar; uno normal tarda
 // 1-5 min) se ha colgado: se corta y se reintenta solo a los 2 min, y los planos ya hechos se guardan
 setInterval(() => {
-  if (!tarea || tarea.tipo !== "cadena" || !tarea.proc || tarea.atascada || tarea.etapa !== "render") return;
-  const quieto = Date.now() - (tarea.actividad || tarea.inicio);
-  if (quieto < 30 * 60000) return;
-  tarea.atascada = Math.round(quieto / 60000);
-  tarea.lineas.push("!! Colgado: " + tarea.atascada + " min sin avanzar en el render (último plano: " + ((tarea.render || {}).plano || "ninguno") + "). Se corta y se reintenta.");
-  try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (e) {}
+  for (const t of [tarea, fondo]) {
+    if (!t || t.tipo !== "cadena" || !t.proc || t.atascada || t.etapa !== "render") continue;
+    const quieto = Date.now() - (t.actividad || t.inicio);
+    if (quieto < 30 * 60000) continue;
+    t.atascada = Math.round(quieto / 60000);
+    t.lineas.push("!! Colgado: " + t.atascada + " min sin avanzar en el render (último plano: " + ((t.render || {}).plano || "ninguno") + "). Se corta y se reintenta.");
+    try { spawn("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (e) {}
+  }
 }, 60000);
 setInterval(() => {
   if (!tarea || tarea.tipo !== "agente" || !tarea.proc || tarea.atascada) return;
@@ -689,7 +727,7 @@ ipcMain.handle("estudio-cambiado-desde", async (e, id, fecha) => {
 ipcMain.handle("estudio-relevo-preparar", async (e, id, conRender) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id))) return { ok: false, error: "historia no válida" };
   // v3.41.8: se puede con otra historia en marcha (la copia es solo leer y comprimir); con esta misma, no
-  if ((tarea && tarea.id === id) || empaquetando) return { ok: false, error: tarea && tarea.id === id ? "Esa historia está en marcha" : "Ya se está empaquetando otra copia (" + empaquetando + ")" };
+  if (enMarcha(id) || empaquetando) return { ok: false, error: enMarcha(id) ? "Esa historia está en marcha" : "Ya se está empaquetando otra copia (" + empaquetando + ")" };
   const r = await instantanea(null, id, "voces", !!conRender);
   return existe(path.join(relevoDir(), id + ".tgz")) ? { ok: true } : { ok: false, error: "No se pudo preparar la copia" + (r && r.error ? ": " + r.error : "") };
 });
@@ -701,7 +739,7 @@ ipcMain.handle("estudio-relevo-subir", async (e, id, token) => {
 });
 ipcMain.handle("estudio-relevo-recibir", async (e, id, token, archivo, md5) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id)) || !archivo) return { ok: false, error: "Relevo no válido" };
-  if (tarea || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
+  if (ocupado() || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
   const f = path.join(relevoDir(), "recibido-" + id + ".tgz");
   try {
     fs.mkdirSync(relevoDir(), { recursive: true });
@@ -729,7 +767,7 @@ ipcMain.handle("estudio-relevo-borrar", async (e, id, token, archivo) => {
 });
 ipcMain.handle("estudio-relevada", async (e, id) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id))) return { ok: false, error: "historia no válida" };
-  if (tarea && tarea.id === id) return { ok: false, error: "Está en marcha aquí" };
+  if (enMarcha(id)) return { ok: false, error: "Está en marcha aquí" };
   const i = cola.indexOf(id); if (i >= 0) cola.splice(i, 1);
   try { return apartar(id); } catch (x) { return { ok: false, error: x.message }; }
 });
@@ -790,7 +828,7 @@ ipcMain.handle("base-instalar", async (e, token, info, cual) => {
   cual = cual === "kit" ? "kit" : "base";
   if (esOrigen()) return { ok: false, error: "El portátil es el origen" };
   if (!info || !info.archivo) return { ok: false, error: "Sin paquete" };
-  if (tarea || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
+  if (ocupado() || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
   try {
     fs.mkdirSync(baseDir(), { recursive: true });
     const f = path.join(baseDir(), cual + ".tgz");
@@ -914,7 +952,7 @@ function probarGpu() {
 app.whenReady().then(() => setTimeout(() => {
   try {
     const w = leerJson(path.join(estudioDir(), "_whisper.json"), null);
-    if (tarea || !/nvidia/i.test(gpuNombre() || "") || (w && w.dispositivo === "cuda") || !existe(path.join(raiz(), "tools", "transcribir.py"))) return;
+    if (ocupado() || !/nvidia/i.test(gpuNombre() || "") || (w && w.dispositivo === "cuda") || !existe(path.join(raiz(), "tools", "transcribir.py"))) return;
     probarGpu().then(r => console.log("prueba de la gráfica:", r));
   } catch (e) {}
 }, 45000));
@@ -984,7 +1022,7 @@ function slugDe(t) {
 
 // opts.nn: número que toca contando las historias de TODOS los equipos (trabajo dual); opts.idea: la idea si viene de otro equipo
 ipcMain.handle("estudio-crear", async (e, ideaId, opts) => {
-  if (tarea || empaquetando) return { ok: false, error: "Ya hay una tarea en marcha: espera a que termine" };
+  if (ocupado() || empaquetando) return { ok: false, error: "Ya hay una tarea en marcha: espera a que termine" };
   fs.mkdirSync(histDir(), { recursive: true });
   const ideas = leerIdeas();
   let idea = ideas.find(x => x.id === ideaId);
@@ -1010,7 +1048,7 @@ ipcMain.handle("estudio-etapas", async (e, id) => ({ ok: true, etapas: etapasDe(
 ipcMain.handle("estudio-avanzar", async (e, id) => avanzar(e.sender, id, false));
 
 ipcMain.handle("estudio-rehacer", async (e, id, etapaId, nota) => {
-  if (tarea) return { ok: false, error: "Ya hay una tarea en marcha" };
+  if (ocupado()) return { ok: false, error: "Ya hay una tarea en marcha" };
   if (!ETAPAS.some(x => x.id === etapaId)) return { ok: false, error: "Esa etapa no existe: " + etapaId };
   const c = carpetaDe(id), est = estudioDe(c);
   est.revisiones = { ...(est.revisiones || {}) };
@@ -1288,7 +1326,7 @@ ipcMain.handle("kit-propio-subir", async (e, token, anterior) => {
 ipcMain.handle("kit-propio-recibir", async (e, token, info) => {
   if (!info || !info.archivo) return { ok: false, error: "Sin paquete" };
   // (3-11) nunca mientras se trabaja: un módulo en uso no se cambia a mitad de un render; la interfaz lo repite en el primer hueco
-  if (tarea || empaquetando) return { ok: false, pendiente: true, error: "Hay una tarea en marcha" };
+  if (ocupado() || empaquetando) return { ok: false, pendiente: true, error: "Hay una tarea en marcha" };
   const tmp = path.join(baseDir(), "kit_cambios_recibidos");
   try {
     fs.rmSync(tmp, { recursive: true, force: true }); fs.mkdirSync(tmp, { recursive: true });
@@ -1331,7 +1369,7 @@ ipcMain.handle("estudio-borrar", async (e, id) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id || ""))) return { ok: false, error: "Historia no válida" };
   const c = carpetaDe(id), est = estudioDe(c);
   if (!est.creado) return { ok: false, error: "Esta historia se hizo a mano: no se borra desde el estudio" };
-  if (tarea && tarea.id === id) return { ok: false, error: "Está trabajando: párala primero" };
+  if (enMarcha(id)) return { ok: false, error: "Está trabajando: párala primero" };
   { const i = cola.indexOf(id); if (i >= 0) cola.splice(i, 1); }
   try { await shell.trashItem(c); } catch (x) { return { ok: false, error: "No se pudo mover a la papelera: " + x.message }; }
   try {
@@ -1354,7 +1392,7 @@ function tamCarpeta(d) {
 ipcMain.handle("estudio-borrar-terminada", async (e, id) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id || ""))) return { ok: false, error: "Historia no válida" };
   let c; try { c = carpetaDe(id); } catch (x) { return { ok: false, error: x.message }; }
-  if (tarea && tarea.id === id) return { ok: false, error: "Está trabajando: párala primero" };
+  if (enMarcha(id)) return { ok: false, error: "Está trabajando: párala primero" };
   const r = resumen(id), est = estudioDe(c);
   const enDrive = !!(est.drive && (est.drive.archivos || []).length && est.drive.archivos.every(a => a.verificado));
   const enDisco = existe(path.join(r.carpetaEntrega, tituloArchivo(titulo(c)) + ".mp4"));
@@ -1401,7 +1439,7 @@ ipcMain.handle("estudio-estilo-cifras-poner", async (e, id, op) => {
 ipcMain.handle("estudio-renumerar", async (e, de, a) => {
   const ok = (x) => /^\d{2}_[\w-]+$/.test(String(x || ""));
   if (!ok(de) || !ok(a) || de.slice(2) !== a.slice(2)) return { ok: false, error: "Números no válidos" };
-  if (tarea && tarea.id === de) return { ok: false, espera: true, error: "Está trabajando: se renumera al acabar" };
+  if (enMarcha(de)) return { ok: false, espera: true, error: "Está trabajando: se renumera al acabar" };
   const c = path.join(histDir(), de), nueva = path.join(histDir(), a);
   if (!existe(c)) return { ok: false, error: "No existe " + de };
   if (existe(nueva)) return { ok: false, espera: true, error: "Ya hay una carpeta " + a + " (se reintenta luego)" };

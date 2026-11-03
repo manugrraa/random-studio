@@ -82,7 +82,8 @@ export function AvisoActualizacion() {
   useEffect(() => {
     if (!espera) return;
     const iv = setInterval(async () => {
-      try { const t = await SF().historiasTareaEstado(); if (!t.activa) { clearInterval(iv); setEspera(null); aplicar(); } } catch (e) {}
+      // (v3.48) también espera al render de fondo (Roblox Studio): reiniciar lo cortaría a medias
+      try { const t = await SF().historiasTareaEstado(); if (!t.activa && !t.fondo) { clearInterval(iv); setEspera(null); aplicar(); } } catch (e) {}
     }, 10000);
     return () => clearInterval(iv);
   }, [espera]);
@@ -92,10 +93,10 @@ export function AvisoActualizacion() {
   const instalar = async () => {
     let t = null;
     try { t = SF().historiasTareaEstado ? await SF().historiasTareaEstado() : null; } catch (e) {}
-    if (t && t.activa) {
+    if (t && (t.activa || t.fondo)) {
       if (SF().historiasPausarEncadenado) SF().historiasPausarEncadenado(true);
       ponerDisponible(false);
-      setEspera({ id: t.id || "", etapa: t.etapa || "la tarea" });
+      setEspera({ id: t.id || (t.fondo && t.fondo.id) || "", etapa: t.etapa || (t.fondo && "render") || "la tarea" });
       return;
     }
     aplicar();

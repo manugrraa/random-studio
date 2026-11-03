@@ -158,6 +158,7 @@ export function iniciarRemotoEscritorio(t) {
         // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
         bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", gpu: aj.gpu || null, whisper: aj.whisper || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, rescateKit: aj.rescateKit || null, esperandoLimite: Object.keys(esperas()).length },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
+      fondo: t && t.fondo ? { id: t.fondo.id, titulo: ((l.historias || []).find(h => h.id === t.fondo.id) || {}).titulo || "", etapa: t.fondo.etapa, inicio: t.fondo.inicio, render: t.fondo.render } : null,
       tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8), ultimas: (t.lineas || []).slice(-8).map(x => String(x).slice(0, 220)) } : null,
       ajustes: aj.ajustes,
       ideas: (id.ideas || []).filter(i => i.estado !== "descartada").slice(0, 30).map(i => ({ id: i.id, titulo: i.titulo, regla: i.regla, resumen: i.resumen, estado: i.estado, temporada: i.temporada, historia: i.historia })),
@@ -276,7 +277,7 @@ export function iniciarRemotoEscritorio(t) {
       if (ok && !(b.instaladaKit && b.instaladaKit.huella === ok.kitVivo.huella)) pend.push({ cual: "kit", o: ok });
       if (!pend.length) { _basePendiente = null; return; }
       // ocupado ahora: se instala en el primer hueco entre etapas (la vuelta del trabajador)
-      if (t && t.activa) { _basePendiente = pend; return; }
+      if (t && (t.activa || t.fondo)) { _basePendiente = pend; return; }     // (v3.48) ni con un render de fondo
       await instalarPaquetes(pend);
     } finally { baseOcupada = false; }
   };
@@ -614,7 +615,7 @@ export function iniciarTrabajador(t) {
     let aj, t, l;
     try { [aj, t, l] = await Promise.all([s.estudioAjustes(), s.historiasTareaEstado(), s.historiasLista()]); } catch (e) { return; }
     // v3.41.8: kit y recursos nuevos del portátil esperando: se instalan en este hueco, antes de empezar nada
-    if ((_basePendiente || _kitPendiente) && _instalarBase && !(t && t.activa)) { await _instalarBase(); return; }
+    if ((_basePendiente || _kitPendiente) && _instalarBase && !(t && (t.activa || t.fondo))) { await _instalarBase(); return; }
     const m = mios(), w = esperas();
     // 0) lo que esperaba al límite de Claude: a su hora, sigue (de uno en uno, y solo si estoy disponible y libre)
     const vencida = Object.keys(w).find(k => w[k] <= Date.now());
@@ -655,12 +656,16 @@ export function iniciarTrabajador(t) {
       }
       else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisarPedido(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[(et.find(e => e.estado === "revisar") || {}).id] || "una etapa") }); }
       else if (t && t.activa && t.id === h.id) { x.parada = false; x.pausada = false; x.quieta = 0; delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
+      // v3.48: la que se graba de fondo (Roblox Studio) también está trabajando, aunque el hueco principal haga otra cosa
+      else if (t && t.fondo && t.fondo.id === h.id) { x.parada = false; x.pausada = false; x.quieta = 0; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: "render (de fondo)" }); }
       // a medias (equipo apagado, app actualizada, fallo que se reintenta…): se apunta para seguirla (si lleva quieta dos
       // vueltas, para no pisar el paso de una etapa a la siguiente; nunca la parada a mano ni la que espera al límite)
       else if (!(t && t.activa) && !x.parada && !x.pausada && !w["h:" + h.id] && Date.now() >= (x.reintentar || 0)) {
         const sig = et.find(e => e.estado === "pendiente");
         // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
         if (sig && sig.id === "voces" && aj.elevenError) continue;
+        // v3.48: con Studio grabando de fondo, las que necesitan Studio esperan y este equipo sigue con guiones y voces
+        if (sig && t && t.fondo && ["escena", "animatic", "render"].includes(sig.id)) continue;
         if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2) {
           // v3.47.1 (Manu, 3-11: «el ordenador también quiero que renderice cuando acabe de hacer los guiones y el audio»):
           // el equipo que la preparó la sigue él (escena, animatic, render y montaje en Roblox Studio). Solo la ofrece al

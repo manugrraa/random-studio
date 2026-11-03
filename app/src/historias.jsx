@@ -822,7 +822,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
   }
   for (const e of equipos) for (const h of (e.datos.historias || [])) {
     if (h.legado || quien[h.id].e !== e) continue;
-    const t = e.datos.tarea && e.datos.tarea.id === h.id ? e.datos.tarea : null;
+    const t = (e.datos.tarea && e.datos.tarea.id === h.id ? e.datos.tarea : null) || (e.datos.fondo && e.datos.fondo.id === h.id ? { ...e.datos.fondo, tipo: "cadena" } : null);
     const rev = (h.etapas || []).find(x => x.estado === "revisar");
     const p = pedidoDe(h.id);
     const grupo = rev ? "revisar" : t ? "marcha" : h.entregada ? "hechas" : (p && p.estado === "cancelado") ? "paradas"
@@ -1041,7 +1041,10 @@ export function HistoriasRemoto({ toast, incrustado }) {
                   onGit={() => { if (confirm("¿Instalar Git para Windows en " + corto(e.nombre) + "?\n\nSe instala solo para ese usuario (winget, sin pedir permisos de administrador). Con Git Bash, Claude trabaja allí tan rápido como en el portátil.")) ordenA(e, "instalar_git", {}, "Instalando Git en " + corto(e.nombre) + "… (tarda un par de minutos)"); }} />
                 {t ? <TareaEnMarcha tarea={{ ...t, lineas: [] }} ahora={ahora} titulo={t.titulo}
                   onCancelar={() => { if (confirm("¿Parar la tarea en " + e.nombre + "?")) ordenA(e, "cancelar", {}, "Parando en " + e.nombre + "…"); }} />
-                  : <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>{e.datos.generandoIdeas ? "Pensando ideas…" : "Sin tarea ahora mismo."}</div>}
+                  : <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>{e.datos.generandoIdeas ? "Pensando ideas…" : e.datos.fondo ? "Libre para guiones y voces mientras graba." : "Sin tarea ahora mismo."}</div>}
+                {/* v3.48: el render de fondo (Roblox Studio) mientras el equipo hace otra cosa */}
+                {e.datos.fondo && <TareaEnMarcha tarea={{ ...e.datos.fondo, tipo: "cadena", lineas: [] }} ahora={ahora} titulo={"De fondo · " + (e.datos.fondo.titulo || e.datos.fondo.id)}
+                  onCancelar={() => { if (confirm("¿Parar el render de fondo en " + e.nombre + "?")) ordenA(e, "cancelar", { historia: e.datos.fondo.id }, "Parando en " + e.nombre + "…"); }} />}
               </div>);
           })}
         </div>)}
