@@ -50,6 +50,7 @@ export function BotonPararTodo({ toast }) {
   const [haciendo, setHaciendo] = useState(false);
   if (!window.studioFS || !window.studioFS.historiasPararTodo) return null;
   const hacer = async (que) => {
+    if (que === "reanudar_todo" && !confirm("¿Reanudar TODOS los equipos?\n\nPara reanudar solo uno, hazlo desde su tarjeta en RandomHistorias › Equipos.")) return;
     if (que === "parar_todo" && !confirm("¿Parar todo?\n\nTodos los equipos encendidos dejan de coger trabajo y paran lo que estén haciendo. Lo hecho se queda guardado.\n\nSeguirán parados (aunque se reinicien) hasta que pulses «Reanudar todo».")) return;
     setHaciendo(true);
     try {
@@ -74,6 +75,7 @@ export function EstadoHistoriasLateral({ plegada, toast }) {
   if (!window.studioFS || !window.studioFS.historiasPararTodo) return null;
   const que = d ? "parar_todo" : "reanudar_todo";
   const pulsar = async () => {
+    if (!d && !confirm("¿Reanudar TODOS los equipos?\n\nPara reanudar solo uno, hazlo desde su tarjeta en RandomHistorias › Equipos.")) return;
     if (d && !confirm("¿Parar todo?\n\nTodos los equipos encendidos dejan de coger trabajo y paran lo que estén haciendo. Lo hecho se queda guardado.\n\nSeguirán parados hasta que pulses «Reanudar todo».")) return;
     setHaciendo(true);
     try { const otros = await enTodosLosEquipos(que); if (toast) toast((d ? "⏹ Todo parado" : "▶ Reanudado") + (otros ? " (y " + otros + " equipo" + (otros > 1 ? "s" : "") + " más)" : "")); }

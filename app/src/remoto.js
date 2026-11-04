@@ -620,6 +620,10 @@ export function iniciarTrabajador(t) {
     // v3.41.8: kit y recursos nuevos del portátil esperando: se instalan en este hueco, antes de empezar nada
     if ((_basePendiente || _kitPendiente) && _instalarBase && !(t && t.activa)) { await _instalarBase(); return; }
     const m = mios(), w = esperas();
+    // (v3.51) «trabajar hasta»: lo que va después de esa etapa no se empieza ni se ofrece al otro equipo
+    const ORDEN_ET = ["guion", "voces", "escribir", "escena", "animatic", "render", "montaje"];
+    const hasta = ((aj && aj.ajustes) || {}).hasta || "";
+    const pasaDe = (id) => !!hasta && ORDEN_ET.indexOf(id) > ORDEN_ET.indexOf(hasta);
     // 0) lo que esperaba al límite de Claude: a su hora, sigue (de uno en uno, y solo si estoy disponible y libre)
     const vencida = Object.keys(w).find(k => w[k] <= Date.now());
     // (v3.50) aunque Studio esté ocupado: estudioAvanzar la pone en marcha (guion, voces, escribir) o en la cola
@@ -668,6 +672,7 @@ export function iniciarTrabajador(t) {
       // vueltas, para no pisar el paso de una etapa a la siguiente; nunca la parada a mano ni la que espera al límite)
       else if ((!(t && t.activa) || LIGERAS.includes((et.find(e => e.estado === "pendiente") || {}).id)) && !x.parada && !x.pausada && !w["h:" + h.id] && Date.now() >= (x.reintentar || 0)) {
         const sig = et.find(e => e.estado === "pendiente");
+        if (sig && pasaDe(sig.id)) { avisarDetalle(pid, "en espera: hoy se trabaja solo hasta «" + (ETAPA_TXT[hasta] || hasta) + "»"); continue; }
         // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
         if (sig && sig.id === "voces" && aj.elevenError) continue;
         // v3.48: con Studio grabando de fondo, las que necesitan Studio esperan y este equipo sigue con guiones y voces
@@ -688,7 +693,7 @@ export function iniciarTrabajador(t) {
       // planos renderizados, que no viajan en la copia, y son 4 minutos.
       else if (t && t.activa && t.id !== h.id && !_soyDueno && !x.parada && !x.pausada && !w["h:" + h.id]) {
         const sig = et.find(e => e.estado === "pendiente");
-        if (sig && ["escena", "animatic", "render"].includes(sig.id)) blender.push({ pid, x, h, sig });
+        if (sig && ["escena", "animatic", "render"].includes(sig.id) && !pasaDe(sig.id)) blender.push({ pid, x, h, sig });
       }
     }
     guardarMios(m);
@@ -722,7 +727,7 @@ export function iniciarTrabajador(t) {
     try {
       // v3.41: solo se ofrece a seguir relevos si puede bajar la copia de Drive
       // (v3.49.2) con Studio grabando de fondo, no coge historias para animar (esperarían a Studio): que las coja el otro
-      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: !!aj.blender && !(t && t.fondo) && !ocupadoAqui, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) && !ocupadoAqui });
+      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: !!aj.blender && !(t && t.fondo) && !ocupadoAqui && !pasaDe("escena"), relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) && !ocupadoAqui });
       const p = r.pedido;
       if (!p) {
         // v3.41.7: nada nuevo que preparar ni que animar del portátil: el ordenador anima lo suyo que ya está preparado
@@ -738,8 +743,12 @@ export function iniciarTrabajador(t) {
         const rv = (p.args || {}).relevo || {}, mia = (p.args || {}).de && (l.historias || []).some(h => h.id === p.historia_id) && Object.values(m).some(x => x.historia === p.historia_id);
         if (!mia) {
           let ok = false, err = "";
-          try { const x = await s.estudioRelevoRecibir(p.historia_id, await driveTokenTrabajo(), rv.archivo, rv.md5); ok = !!(x && x.ok); err = (x && x.error) || ""; }
-          catch (e) { err = e.message || String(e); }
+          // (v3.51) lo pasajero (otra copia empaquetándose, un corte de Drive) se reintenta antes de darla por fallida
+          for (let intento = 0; intento < 4 && !ok; intento++) {
+            if (intento) await new Promise(r => setTimeout(r, 20000));
+            try { const x = await s.estudioRelevoRecibir(p.historia_id, await driveTokenTrabajo(), rv.archivo, rv.md5); ok = !!(x && x.ok); err = (x && x.error) || ""; }
+            catch (e) { err = e.message || String(e); }
+          }
           if (!ok) { await pedidosApi("POST", { accion: "estado", id: p.id, estado: "fallido", detalle: "no se pudo bajar la copia: " + err }).catch(() => {}); toast("❌ No pude bajar «" + (p.titulo || p.historia_id) + "»: " + err); return; }
         }
         m[p.id] = { tipo: "historia", historia: p.historia_id, faseOk: true }; guardarMios(m);

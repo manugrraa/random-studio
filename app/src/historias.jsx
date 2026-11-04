@@ -1007,8 +1007,24 @@ export function HistoriasRemoto({ toast, incrustado }) {
           }} style={{ ...botonSec, padding: "6px 10px", fontSize: 12, color: "var(--red)", borderColor: "rgba(248,113,113,.4)" }}>⏹ Parar todo</button>)}
         {/* v3.43.1: y para volver a ponerlos a trabajar (p. ej. por la mañana) */}
         {equipos.some(e => e.en_linea && !e.datos.tarea && e.datos.disponible === false) && (
-          <button onClick={() => equipos.filter(e => e.en_linea && e.datos.disponible === false).forEach(e => ordenA(e, "reanudar_todo", {}, "▶ Reanudando " + corto(e.nombre) + "…"))}
+          <button onClick={() => { const q = equipos.filter(e => e.en_linea && e.datos.disponible === false); if (!confirm("¿Reanudar " + q.map(e => corto(e.nombre)).join(" y ") + "?\n\nPara reanudar solo uno, hazlo desde su tarjeta en «Equipos».")) return; q.forEach(e => ordenA(e, "reanudar_todo", {}, "▶ Reanudando " + corto(e.nombre) + "…")); }}
             style={{ ...botonSec, padding: "6px 10px", fontSize: 12, color: "var(--green)", borderColor: "rgba(74,222,128,.45)" }}>▶ Reanudar todo</button>)}
+        {/* (v3.51) hasta qué etapa se trabaja hoy, en TODOS los equipos (Manu: «para los días que solo quiera hacer hasta las voces») */}
+        {equipos.some(e => e.datos && e.datos.historias) && (() => {
+          const conAj = equipos.filter(e => e.datos && e.datos.historias && e.datos.ajustes);
+          const valor = ((conAj.find(e => e.en_linea) || conAj[0] || { datos: { ajustes: {} } }).datos.ajustes.hasta) || "";
+          return (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
+              Trabajar hasta
+              <select value={valor} onChange={ev => {
+                const v = ev.target.value;
+                equipos.filter(e => e.datos && e.datos.historias).forEach(e => ordenA(e, "ajustes", { nuevos: { hasta: v } }, v ? "Hoy se trabaja hasta «" + (ETAPA_NOMBRE[v] || v) + "»" : "Se trabaja hasta el final"));
+              }} style={{ ...botonSec, padding: "5px 8px", fontSize: 12, appearance: "auto" }}>
+                <option value="">el final (todo)</option>
+                {["guion", "voces", "escribir", "escena", "animatic", "render"].map(k => <option key={k} value={k}>{ETAPA_NOMBRE[k] || k}</option>)}
+              </select>
+            </label>);
+        })()}
         {equipos.length === 0 && <span style={{ fontSize: 12.5, color: "#F59E0B", fontWeight: 600 }}>Ningún equipo conectado: lo que pidas espera en la cola.</span>}
         {equipos.map(e => {
           const t = e.datos.tarea, cap = e.datos.capacidad || {};
@@ -1082,6 +1098,11 @@ export function HistoriasRemoto({ toast, incrustado }) {
                   <span style={{ fontSize: 12, fontWeight: 700, color: e.en_linea ? "var(--green)" : "var(--red)" }}>● {e.en_linea ? "en línea" : "sin conexión desde " + new Date(e.actualizado).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</span>
                   {e.datos.version && <span style={{ fontSize: 11, color: "var(--text-3)" }}>v{e.datos.version}</span>}
                   <span style={{ fontSize: 12, color: e.datos.disponible === false ? "var(--text-3)" : "var(--green)" }}>{e.datos.disponible === false ? "· no disponible" : "· disponible"}</span>
+                  <span style={{ flex: 1 }} />
+                  {/* (v3.51) solo este equipo: «Parar/Reanudar todo» actúa sobre todos */}
+                  {e.en_linea && (e.datos.disponible === false
+                    ? <button onClick={() => ordenA(e, "reanudar_todo", {}, "▶ " + corto(e.nombre) + " vuelve a trabajar")} style={{ ...botonSec, padding: "4px 10px", fontSize: 12, color: "var(--green)" }}>Reanudar este equipo</button>
+                    : <button onClick={() => { if (confirm("¿Pausar solo " + corto(e.nombre) + "?\n\nDeja de coger trabajo y para lo que esté haciendo (lo hecho se queda). Los demás equipos siguen.")) ordenA(e, "parar_todo", {}, "⏸ " + corto(e.nombre) + " en pausa"); }} style={{ ...botonSec, padding: "4px 10px", fontSize: 12 }}>Pausar este equipo</button>)}
                 </div>
                 <SaludEquipo e={e} ultima={equipos.map(x => x.datos.version).filter(Boolean).sort((a, b) => numV(b) - numV(a))[0]}
                   onCuda={() => { if (confirm("¿Instalar en " + corto(e.nombre) + " las librerías de CUDA para que Whisper use su gráfica?\n\nSon ~1 GB (pip, solo para ese usuario). Tarda unos minutos.")) ordenA(e, "instalar_cuda", {}, "Instalando CUDA en " + corto(e.nombre) + "…"); }}

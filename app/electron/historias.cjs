@@ -366,7 +366,8 @@ ipcMain.handle("historias-abrir", async (e, id, que) => {
  * historias/NN/estudio.json (revisiones y nota final).
  */
 const estudioDir = () => path.join(raiz(), "estudio");
-const AJ_DEF = { revisar: { guion: true, voces: true, animatic: true }, avanzarSolo: true, driveAuto: true, equipoDePaso: false };
+// (v3.51) hasta: la última etapa que se trabaja ("" = todas). Manu, 4-11: «para los días que solo quiera hacer hasta las voces»
+const AJ_DEF = { revisar: { guion: true, voces: true, animatic: true }, avanzarSolo: true, driveAuto: true, equipoDePaso: false, hasta: "" };
 const escribirJson = (p, v) => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(v, null, 1)); };
 function ajustes() {
   const a = leerJson(path.join(estudioDir(), "ajustes.json"), {});
@@ -462,7 +463,9 @@ const ETAPAS = [
   // (v3.50) escribir la escena (rodar.py, objetos nuevos y cifras) SIN Studio, en paralelo con lo demás; la marca la pone la
   // app al acabar bien (o vale una escena ya fotografiada, de antes de esta etapa)
   { id: "escribir", nombre: "Escribir escena", tipo: "agente", hecho: c => existe(path.join(c, "rodar.py")) && !/^\s*import bpy/m.test(leer(path.join(c, "rodar.py"), "")) && (existe(path.join(c, ".escena_escrita")) || todasFotos(c)) && !faltanCifras(c) },
-  { id: "escena", nombre: "Escena (Roblox)", tipo: "agente", hecho: c => existe(path.join(c, "rodar.py")) && !/^\s*import bpy/m.test(leer(path.join(c, "rodar.py"), "")) && todasFotos(c) && !faltanCifras(c) },
+  // (v3.51) y con la marca de comprobada: la de la 24 se cortó a media ronda y pasó al animatic porque ya tenía todas las fotos
+  { id: "escena", nombre: "Escena (Roblox)", tipo: "agente", hecho: c => existe(path.join(c, "rodar.py")) && !/^\s*import bpy/m.test(leer(path.join(c, "rodar.py"), "")) && todasFotos(c) && !faltanCifras(c)
+      && (existe(path.join(c, ".escena_comprobada")) || !existe(path.join(c, ".escena_escrita")) || existe(path.join(c, "animatic.mp4"))) },
   { id: "animatic", nombre: "Animatic", tipo: "cadena", args: ["--desde", "subtitulos", "--hasta", "animatic"], hecho: c => existe(path.join(c, "animatic.mp4")) },
   { id: "render", nombre: "Render", tipo: "cadena", args: ["--solo", "render"], hecho: todosFinal },
   { id: "montaje", nombre: "Montaje y entrega", tipo: "cadena", args: ["--desde", "montar", "--sin-parar"],
@@ -489,6 +492,12 @@ function etapasDe(id) {
 }
 
 /** La siguiente etapa que toca, o la que espera revisión. */
+function fueraDeHasta(etapaId) {
+  const h = ajustes().hasta;
+  if (!h) return false;
+  const ih = ETAPAS.findIndex(x => x.id === h), ie = ETAPAS.findIndex(x => x.id === etapaId);
+  return ih >= 0 && ie > ih;
+}
 function siguiente(id) {
   for (const e of etapasDe(id)) {
     if (e.estado === "revisar") return { espera: e };
@@ -507,7 +516,7 @@ function describir(nombre, input) {
   if (nombre === "TodoWrite") return "Organizando el trabajo";
   if (nombre === "Bash" || nombre === "PowerShell") {
     const cmd = String((input || {}).command || "");
-    if (/rodar\.py.*fotos/.test(cmd)) return "Roblox: haciendo las fotos de los planos (Animatic)";
+    if (/rodar\.py.*fotos/.test(cmd)) return "Roblox: fotos de los planos (escena)";
     if (/rodar\.py.*revisar/.test(cmd)) return "Roblox: revisando choques y tapados";
     if (/rodar\.py.*final/.test(cmd)) return "Roblox: rodando la historia";
     if (/tools[\\/]roblox[\\/](medir|choques|hoja|construir)/.test(cmd)) return "Roblox: comprobando el pueblo";
@@ -536,7 +545,9 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   // (v3.50) escribir la escena no usa Studio: rodar.py se niega a fotos/revisar/final (RH_SIN_STUDIO) para no pisar al
   // que está en Studio; lo comprueba la etapa «escena» cuando Studio quede libre
   const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), FISH_API_KEY: claveFish(),
-    ...(etapa === "escribir" ? { RH_SIN_STUDIO: "1" } : {}) });
+    ...(etapa === "escribir" ? { RH_SIN_STUDIO: "1" } : {}), ...(etapa === "escena" ? { RH_ETAPA_ESCENA: "1" } : {}) });
+  // (v3.51) cada vez que empieza la escena, sus rondas de fotos vuelven a 0 (historia.py las limita: 2 libres, 2 cortas)
+  if (etapa === "escena") { try { fs.unlinkSync(path.join(carpetaDe(id), "planos_fotos", "_rondas.json")); } catch (x) {} }
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
   const yo = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0, ligera };
   if (ligera) ligeras.set(id, yo); else tarea = yo;
@@ -569,6 +580,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
     // (v3.50) terminó «bien» pero sin dejar la etapa hecha (las voces de la 22 se relanzaron 4 veces así, ~1 min cada
     // una): se apunta qué falta y lo que respondió; la siguiente vez se le dice en el prompt, y a la segunda se para
     if (ok && /^\s*\**ERROR:/.test(final)) ok = false;
+    if (ok && etapa === "escena") { try { fs.writeFileSync(path.join(carpetaDe(id), ".escena_comprobada"), new Date().toISOString()); } catch (x) {} }
     if (ok && t && !t.cancelada) {
       const k = id + ":" + etapa, fal = faltanDe(etapa, carpetaDe(id));
       if (fal.length) {
@@ -588,7 +600,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
     if (t && t.atascada) final = "Se quedó atascada " + t.atascada + " min sin avanzar (" + (t.accion || "") + "): se cortó y se reintenta sola. " + final;
     registro.anotar("claude", (ok ? "termina " : (t && t.cancelada ? "cancelada " : "FALLA ")) + etapa + " de " + id + " (" + (t ? Math.round((Date.now() - t.inicio) / 6000) / 10 : 0) + " min, " + (t ? t.acciones.length : 0) + " acciones)" + (ok ? "" : ": " + (final || err).slice(-400)), { codigo: code, limite: limite || 0 });
     // (v3.50) escena escrita: la marca que dice que solo falta comprobarla en Studio
-    if (ok && etapa === "escribir") { try { fs.writeFileSync(path.join(carpetaDe(id), ".escena_escrita"), new Date().toISOString()); } catch (x) {} }
+    if (ok && etapa === "escribir") { try { fs.writeFileSync(path.join(carpetaDe(id), ".escena_escrita"), new Date().toISOString()); fs.rmSync(path.join(carpetaDe(id), ".escena_comprobada"), { force: true }); } catch (x) {} }
     emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), cancelada: !!(t && t.cancelada), ...(limite ? { limite } : {}) }, yo);
     if (ligera) { if (ligeras.get(id) === yo) ligeras.delete(id); } else if (tarea === yo) tarea = null;
     trasEtapa(t, id, ok, etapa);
@@ -633,6 +645,17 @@ function promptEtapa(id, etapa, nota) {
   let p = instrucciones("reglas") + "\n\n---\n\n" + instrucciones(base) + `\n\n---\nHISTORIA: ${rel} (número ${id.slice(0, 2)}).\n`;
   if (est.idea) p += "IDEA ELEGIDA:\n" + JSON.stringify(est.idea, null, 1) + "\n";
   if (nota) p += `\nNOTA DEL USUARIO (aplícala por encima de todo):\n${nota}\n`;
+  // (v3.51) el esqueleto de rodar.py lo escribe la app (estructura, sitios, luces, actos y un encuadre por plano): en la 24
+  // Claude tardó 8 min solo en teclearlo; ahora rellena los «# TODO»
+  let esqueleto = false;
+  if (etapa === "escribir" && !nota && !existe(path.join(c, "rodar.py")) && existe(path.join(c, "planos.py")) && existe(path.join(c, "duraciones.json"))) {
+    try {
+      const r = require("child_process").spawnSync("python", [path.join(raiz(), "tools", "roblox", "esqueleto.py"), c],
+        { cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8" }, windowsHide: true, timeout: 60000, encoding: "utf8" });
+      esqueleto = r.status === 0 && existe(path.join(c, "rodar.py"));
+      registro.anotar("historias", (esqueleto ? "esqueleto de rodar.py escrito para " : "no se pudo escribir el esqueleto de rodar.py de ") + id, { salida: String((r.stdout || "") + (r.stderr || "")).slice(-300) });
+    } catch (x) {}
+  }
   // (v3.50) la escena en dos etapas: escribir (sin Studio, en paralelo) y comprobar en Studio (por turnos)
   if (etapa === "escribir" && !soloCifras) p += `\nESTA ETAPA ES «ESCRIBIR ESCENA», SIN ROBLOX STUDIO (otras historias pueden estar usándolo ahora mismo).
 Haz los pasos 1-5b: rodar.py, los módulos de objetos NUEVOS de la historia (roblox/pueblo/<Nombre>.luau) y contadores.py si
@@ -642,9 +665,16 @@ python -c "import ast; ast.parse(open('${rel}/rodar.py', encoding='utf-8').read(
 python tools/contadores.py ${rel}. NO edites archivos comunes del kit (tools/, roblox/pueblo/ que no sean tuyos, construir.py):
 solo los de esta historia y su módulo nuevo. Si rodar.py ya existe (una escritura anterior a medias), complétalo sin
 empezar de cero. Al terminar, di los objetos nuevos, los sitios y los planos más delicados (para quien lo compruebe).\n`;
+  if (esqueleto) p += `\nrodar.py YA TIENE EL ESQUELETO (lo ha escrito la app desde planos.py, duraciones.json y sitios.md): cabecera, actos,
+un sitio y una luz de partida por set, el reparto mínimo y cada plano con Random colocado y un encuadre de partida variado.
+NO lo reescribas entero: rellena los «# TODO» con EDICIONES (quién sale en cada plano, qué hace, objetos y decorado, los
+sitios que no son la plaza y los ajustes de cámara que pida la acción). Mantén la variedad de encuadres que ya trae.\n`;
   if (etapa === "escena" && !nota && !soloCifras && existe(path.join(c, ".escena_escrita"))) p += `\nrodar.py YA ESTÁ ESCRITO (etapa «Escribir escena»): NO lo
 reescribas ni explores el pueblo. Lee rodar.py, empieza directamente por el paso 6 (python rodar.py fotos all) y sigue con
 el 7, con las rondas de TIEMPO. Corrige solo lo que salga mal.\n`;
+  if (etapa === "escena") p += `\nLÍMITE DE RONDAS (lo aplica el motor): las rondas 1 y 2 de fotos son libres; la 3 y la 4, como mucho 8 planos y solo
+con fallos GRAVES; desde la 5, rodar.py se niega y la escena se da por buena. En choques, lo marcado como «roce» no se
+arregla. Cuando termines, termina: no busques la perfección en detalles que no se ven en el Short.\n`;
   const prev = sinHacer[id + ":" + etapa];
   if (prev) p += `
 OJO, INTENTO ANTERIOR: terminaste sin dejar hecha esta etapa. Falta: ${prev.faltan.join(", ")}.
@@ -708,6 +738,8 @@ function avanzar(sender, id, auto) {
   }
   if (s.terminado || s.espera) { try { sender.send("historias-progreso", { id, tipo: s.terminado ? "terminado" : "espera", etapa: s.espera && s.espera.id }); } catch (e) {} return { ok: true, ...s }; }
   if (auto && !ajustes().avanzarSolo) return { ok: true };
+  // (v3.51) «trabajar hasta»: lo que va después de esa etapa espera (sin fallo) hasta que se cambie el ajuste
+  if (auto && fueraDeHasta(s.etapa.id)) return { ok: true, hasta: ajustes().hasta };
   if (auto && !esOrigen() && s.etapa.id === "escena")
     return { ok: true, espera: "preparada: decide el reparto" };
   correrEtapa(sender, id, s.etapa.id, null, true);
@@ -856,7 +888,9 @@ ipcMain.handle("estudio-relevo-subir", async (e, id, token) => {
 });
 ipcMain.handle("estudio-relevo-recibir", async (e, id, token, archivo, md5) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id)) || !archivo) return { ok: false, error: "Relevo no válido" };
-  if (ocupado() || empaquetando || enMarcha(id)) return { ok: false, error: "Hay una tarea en marcha" };
+  // (v3.51) se puede recibir una historia aunque el equipo esté con OTRA (son carpetas distintas): la 25 se perdió porque
+  // el ordenador estaba con la escena de la 24 y el pase se dio por fallido
+  if (empaquetando || enMarcha(id)) return { ok: false, error: enMarcha(id) ? "Esa historia está en marcha aquí" : "Se está empaquetando otra copia" };
   const f = path.join(relevoDir(), "recibido-" + id + ".tgz");
   try {
     fs.mkdirSync(relevoDir(), { recursive: true });
@@ -1208,6 +1242,10 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
     if (typeof nuevos.avanzarSolo === "boolean") a.avanzarSolo = nuevos.avanzarSolo;
     if (typeof nuevos.driveAuto === "boolean") a.driveAuto = nuevos.driveAuto;
     if (typeof nuevos.equipoDePaso === "boolean") a.equipoDePaso = nuevos.equipoDePaso;
+    if (typeof nuevos.hasta === "string" && (nuevos.hasta === "" || ETAPAS.some(x => x.id === nuevos.hasta))) {
+      if (a.hasta !== nuevos.hasta) registro.anotar("equipo", "TRABAJAR HASTA: " + (nuevos.hasta || "el final (todas las etapas)"));
+      a.hasta = nuevos.hasta;
+    }
     escribirJson(path.join(estudioDir(), "ajustes.json"), a);
   }
   const cl = claude.estadoClaude();
