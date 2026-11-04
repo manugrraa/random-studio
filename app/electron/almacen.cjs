@@ -75,7 +75,9 @@ function protegidos() {
   _prot = { set, caduca: Date.now() + 60000 };
   return set;
 }
-const subidos = () => leerJson(path.join(carpetasDe().listos || "", "_subidos.json"), {}) || {};
+// (4/11) los datos de los Shorts viven en <Resultados del clon>\Datos de Shorts (antes dentro de Shorts listos)
+const subidos = () => { const c = carpetasDe(); return leerJson(path.join(c.resultados || "", "Datos de Shorts", "_subidos.json"), null)
+  || leerJson(path.join(c.listos || "", "_subidos.json"), {}) || {}; };
 const tituloDe = (carpeta) => String(carpeta).replace(/^\d+\s*-\s*/, "").trim().toLowerCase();
 const edad = (p) => { try { return Date.now() - fs.statSync(p).mtimeMs; } catch (e) { return 0; } };
 

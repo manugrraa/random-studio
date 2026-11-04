@@ -508,7 +508,8 @@ ipcMain.handle("red-lista", async () => {
 });
 // 28/10, él: "en el editor añade la opción de poder exportar como vídeo": a donde él elija
 ipcMain.handle("red-elegir-destino", async (e, nombre) => {
-  const def = path.join(CLON_DIR, "Shorts Listos", "RandomEditor", String(nombre || "Sin título").replace(/[<>:"/\\|?*]/g, "").trim() + ".mp4");
+  // (4/11) por defecto, en la carpeta de salida del perfil (Editados\<perfil>)
+  const def = path.join(perfilC().carpetasDe().listos || path.join(CLON_DIR, "Shorts Listos"), String(nombre || "Sin título").replace(/[<>:"/\\|?*]/g, "").trim() + ".mp4");
   const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender) || undefined, { title: "Exportar vídeo", defaultPath: def,
     filters: [{ name: "Vídeo MP4", extensions: ["mp4"] }] });
   return r.canceled || !r.filePath ? null : r.filePath;

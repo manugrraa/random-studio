@@ -98,6 +98,7 @@ export function RandomEditor({ toast }) {
   const [efectos, setEfectos] = useState(null);
   const [voces, setVoces] = useState(null);
   const [menuPortada, setMenuPortada] = useState(false);
+  const [eligiendoMini, setEligiendoMini] = useState(null);     // (4/11) «listos», «ruta» o «destino» mientras elige la miniatura
   const [pestInsp, setPestInsp] = useAjuste("red_pest_insp", "basico");
   // 28/10: los subtítulos (las plantillas, la elegida y cuántas palabras por tarjeta)
   const [subsInfo, setSubsInfo] = useState(null);
@@ -400,7 +401,17 @@ export function RandomEditor({ toast }) {
     const r = await window.studioFS.redAbrir(nombre); if(r.error){ toast(r.error); return; } cargarProyecto(r.proyecto);
   };
   const nuevo = () => { if(sucio.current && !window.confirm("Hay cambios sin guardar. ¿Empezar uno nuevo?")) return; cargarProyecto(M.nuevoProyecto()); };
-  const exportar = async como => {
+  // 4/11, él: "que antes de exportarlo me deje seleccionar la miniatura": antes de exportar un vídeo (no un clip) se
+  // elige la portada con el cabezal; se exporta en su carpeta, «Nombre\Nombre.mp4» + «Nombre - Miniatura.jpg»
+  const exportar = como => {
+    setMenuExp(false);
+    if(!v1 || !v1.clips.length){ toast("La pista principal está vacía"); return; }
+    if(como === "clip"){ exportarYa(como); return; }
+    setJugando(0);
+    if(pRef.current.portada != null) ir(pRef.current.portada);
+    setEligiendoMini(como);
+  };
+  const exportarYa = async como => {
     setMenuExp(false);
     if(!v1 || !v1.clips.length){ toast("La pista principal está vacía"); return; }
     let destino = null;
@@ -561,12 +572,12 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         {p.clip && <button onClick={volverAlOriginal} disabled={ocupado} className="rd-btn">Volver al original</button>}
         <div style={{position:"relative",display:"flex"}}>
           <button onClick={()=>exportar(p.destino ? "destino" : "listos")} disabled={ocupado} className={"rd-btn"+(p.clip ? "" : " primario")} style={{borderTopRightRadius:0,borderBottomRightRadius:0}}
-            title={p.destino ? "Ctrl+E · rehace su vídeo en su sitio: " + p.destino : "Ctrl+E · como vídeo, a Shorts Listos/RandomEditor"}>{I.exportar} Exportar vídeo</button>
+            title={p.destino ? "Ctrl+E · rehace su vídeo en su sitio: " + p.destino : "Ctrl+E · elige la miniatura y exporta a su carpeta en Editados (el vídeo y su miniatura juntos)"}>{I.exportar} Exportar vídeo</button>
           <button onClick={()=>setMenuExp(x=>!x)} disabled={ocupado} className={"rd-btn"+(p.clip ? "" : " primario")} style={{borderTopLeftRadius:0,borderBottomLeftRadius:0,borderLeft:"1px solid rgba(0,0,0,0.25)",padding:"6px 7px"}} title="Más formas de exportar">▾</button>
           {menuExp && createPortal(<div onMouseDown={()=>setMenuExp(false)} style={{position:"fixed",inset:0,zIndex:2000}}>
             <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{right:p.clip ? 150 : 12,top:44}}>
               {p.destino && <button onClick={()=>exportar("destino")}><span>Rehacer su vídeo (Editados)</span><kbd>Ctrl+E</kbd></button>}
-              <button onClick={()=>exportar("listos")}><span>Exportar vídeo a Shorts Listos</span><kbd>{p.destino ? "" : "Ctrl+E"}</kbd></button>
+              <button onClick={()=>exportar("listos")}><span>Exportar vídeo a Editados (en su carpeta)</span><kbd>{p.destino ? "" : "Ctrl+E"}</kbd></button>
               <button onClick={()=>exportar("ruta")}><span>Exportar vídeo en…</span><kbd>Ctrl+Shift+E</kbd></button>
               <button onClick={()=>exportar("clip")}><span>Exportar como clip recortado nuevo</span><kbd></kbd></button>
             </div></div>, document.body)}
@@ -689,6 +700,15 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <button onClick={()=>setZoom(z=>Math.min(2000,z*1.4))} className="rd-ico" title="Acercar (Ctrl++)">{I.mas}</button>
         <button onClick={ajustar} className="rd-ico" title="Ver todo (Shift+Z)">{I.ajustar}</button>
       </div>
+      {eligiendoMini && (
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",background:"rgba(212,175,55,0.14)",borderTop:"1px solid #D4AF37",borderBottom:"1px solid #D4AF37",fontSize:12.5}}>
+          <span>📸 <b>Elige la miniatura:</b> mueve el cabezal al fotograma que quieras (se ve en el visor, con sus textos) y pulsa «Usar este fotograma».</span>
+          <span style={{flex:1}}/>
+          <button className="rd-btn primario" onClick={()=>{ const c = eligiendoMini; cambiar(q=>({...q, portada: M.cuantiza(reloj.t, fps)})); setEligiendoMini(null); exportarYa(c); }}>
+            Usar este fotograma y exportar <kbd>{tc(reloj.t, fps)}</kbd></button>
+          <button className="rd-btn" onClick={()=>{ const c = eligiendoMini; cambiar(q=>({...q, portada: null})); setEligiendoMini(null); exportarYa(c); }}>Sin miniatura</button>
+          <button className="rd-btn" onClick={()=>setEligiendoMini(null)}>Cancelar</button>
+        </div>)}
       <div className="rd-linea">
         <LineaTiempo proyecto={p} zoom={zoom} setZoom={setZoom} sel={sel} setSel={setSel} herramienta={herramienta} iman={iman}
           reloj={reloj} jugando={jugandoRef} tiras={tiras} ondas={ondas}
