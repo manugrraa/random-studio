@@ -81,6 +81,10 @@ function Mensaje({ m, tam, puede, onAccion, ocupado }) {
         <span style={{ fontSize: tam * 0.75, color: "var(--text-3)", marginRight: 6 }}>{hora(m.timestamp)}</span>
         <b style={{ color: colorDe(a), marginRight: 6 }}>
           {roles.includes("owner") ? "👑 " : roles.includes("moderator") ? "🔧 " : ""}<Partes parts={a.nameParts || [{ type: "text", text: a.name }]} alto={tam * 1.1}/>
+          {/* (4/11) el verificado de YouTube, como en YouTube: un ✓ gris en un círculo detrás del nombre */}
+          {roles.includes("verified") && <span title="Canal verificado" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: tam * 0.95, height: tam * 0.95, borderRadius: "50%", background: "#AAAAAA", color: "#0F0F0F", fontSize: tam * 0.62,
+            fontWeight: 900, marginLeft: 4, verticalAlign: "-0.12em" }}>✓</span>}
           {a.memberBadge && a.memberBadge.url && <img src={abs(a.memberBadge.url)} alt="" title={a.memberBadge.label || "Miembro"} style={{ height: tam, verticalAlign: "-0.15em", marginLeft: 4 }}/>}
         </b>
         {m.superchat && <span style={{ fontSize: tam * 0.8, padding: "1px 6px", borderRadius: 6, background: "#f59e0b", color: "#000", fontWeight: 700, marginRight: 6 }}>{m.superchat.amount}</span>}
