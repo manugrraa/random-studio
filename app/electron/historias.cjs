@@ -89,13 +89,20 @@ let tarea = null;     // { proc, id, args, inicio, lineas[], paso, planos{hechos
 let fondo = null;
 let kitEsperando = false;      // (v3.49.1) hay kit de otro equipo sin instalar: Claude no repara hasta tenerlo (editaría archivos viejos)
 const USAN_STUDIO = ["escena", "animatic", "render"];
+/* v3.50 (4-11-2026, Manu: «escribir varias escenas a la vez para que se queden preparadas y se vayan haciendo en el Roblox
+ * Studio cuando esté disponible»): TAREAS LIGERAS. Lo que hace Claude SIN Roblox Studio (guion, voces y escribir la escena)
+ * va en su propio hueco, todas las que haya a la vez (una por historia, sin límite: Manu, «no pongas límite»); lo que usa
+ * Studio (comprobar la escena, animatic, render) sigue por turnos en el hueco principal y en el de fondo, como antes. */
+const LIGERAS = ["guion", "voces", "escribir"];
+const ligeras = new Map();     // id → tarea
+const todasTareas = () => [tarea, fondo, ...ligeras.values()].filter(Boolean);
 const solapar = () => ajustes().solapar !== false;
 const ocupado = () => !!(tarea || fondo);
-const enMarcha = (id) => (tarea && tarea.id === id ? tarea : null) || (fondo && fondo.id === id ? fondo : null);
+const enMarcha = (id) => (tarea && tarea.id === id ? tarea : null) || (fondo && fondo.id === id ? fondo : null) || ligeras.get(id) || null;
 
 function emitir(ev, t = tarea) {
   if (!t) return;
-  const d = { ...ev, id: t.id };
+  const d = { ...ev, id: t.id, ...(t.ligera ? { ligera: true, etapa: ev.etapa || t.etapa } : {}) };
   try { if (t.sender && !t.sender.isDestroyed()) t.sender.send("historias-progreso", d); } catch (e) {}
 }
 
@@ -286,17 +293,19 @@ ipcMain.handle("historias-tarea", async (e, id, args) => lanzar(e.sender, id, ar
 ipcMain.handle("historias-tarea-estado", async (e) => {
   const f = fondo ? { id: fondo.id, etapa: fondo.etapa, inicio: fondo.inicio, paso: fondo.paso, render: fondo.render, lineas: fondo.lineas.slice(-20) } : null;
   if (fondo && (!fondo.sender || fondo.sender.isDestroyed())) fondo.sender = e.sender;
-  if (!tarea && empaquetando) return { activa: true, id: empaquetando, tipo: "relevo", etapa: "copia de relevo", inicio: Date.now(), accion: "Guardando la copia de relevo", acciones: [], lineas: [], fondo: f };
-  if (!tarea) return { activa: false, fondo: f };
+  const lg = [...ligeras.values()].map(t => ({ id: t.id, etapa: t.etapa, inicio: t.inicio, accion: t.accion }));
+  for (const t of ligeras.values()) if (!t.sender || t.sender.isDestroyed()) t.sender = e.sender;
+  if (!tarea && empaquetando) return { activa: true, id: empaquetando, tipo: "relevo", etapa: "copia de relevo", inicio: Date.now(), accion: "Guardando la copia de relevo", acciones: [], lineas: [], fondo: f, ligeras: lg };
+  if (!tarea) return { activa: false, fondo: f, ligeras: lg };
   if (!tarea.sender || tarea.sender.isDestroyed()) tarea.sender = e.sender;   // (v3.41.9) sin robarle el progreso a la ventana principal
   return { activa: true, id: tarea.id, args: tarea.args, tipo: tarea.tipo, etapa: tarea.etapa, inicio: tarea.inicio, paso: tarea.paso,
-    render: tarea.render, accion: tarea.accion, acciones: (tarea.acciones || []).slice(-30), lineas: tarea.lineas.slice(-60), fondo: f };
+    render: tarea.render, accion: tarea.accion, acciones: (tarea.acciones || []).slice(-30), lineas: tarea.lineas.slice(-60), fondo: f, ligeras: lg };
 });
 
 ipcMain.handle("historias-cancelar", async (e, soloId) => {
   // soloId: cancelar solo si lo que está en marcha es esa historia (lo pide la cola compartida); y sacarla de la cola local
   if (soloId) { const i = cola.indexOf(soloId); if (i >= 0) cola.splice(i, 1); }
-  for (const t of [tarea, fondo]) {
+  for (const t of todasTareas()) {
     if (!t || (soloId && t.id !== soloId)) continue;
     t.alTerminar = null; t.cancelada = true;   // cancelar también para el avance automático (y no se reintenta)
     if (t.proc) { try { spawn("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
@@ -307,15 +316,15 @@ ipcMain.handle("historias-cancelar", async (e, soloId) => {
 // v3.41.9: al cerrar la app (o reiniciarla para actualizar) se mata el árbol de la tarea en marcha: antes Blender o Claude
 // seguían huérfanos y la app nueva, al no verlos, lanzaba otra tarea sobre la misma historia
 app.on("before-quit", () => {
-  for (const t of [tarea, fondo]) if (t && t.proc) { try { require("child_process").spawnSync("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true, timeout: 8000 }); } catch (e) {} }
+  for (const t of todasTareas()) if (t && t.proc) { try { require("child_process").spawnSync("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true, timeout: 8000 }); } catch (e) {} }
 });
 
 // v3.38.2: PARAR TODO (p. ej. antes de apagar el equipo): vacía la cola local y para lo que esté en marcha.
 // Lo hecho se queda guardado; al volver a estar disponible, la historia sigue sola por donde iba.
 ipcMain.handle("historias-parar-todo", async () => {
-  const habia = (tarea ? 1 : 0) + cola.length;
+  const habia = (tarea ? 1 : 0) + ligeras.size + cola.length;
   cola.length = 0;
-  for (const t of [tarea, fondo]) {
+  for (const t of todasTareas()) {
     if (!t) continue;
     t.alTerminar = null; t.cancelada = true;
     if (t.proc) { try { spawn("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (x) {} }
@@ -450,6 +459,9 @@ const ETAPAS = [
   { id: "guion", nombre: "Guion", tipo: "agente", hecho: c => ["titulo.txt", "narracion.txt", "planos.py"].every(f => existe(path.join(c, f))) },
   { id: "voces", nombre: "Voces y efectos", tipo: "agente", hecho: c => ["duraciones.json", "audio/voz_final.wav", "audio/mezcla.wav"].every(f => existe(path.join(c, f))) },
   // (v3.48.2) y si el guion lleva cifras, con su contadores.py (la 21 se entregó sin ellas: la escena lo olvidó)
+  // (v3.50) escribir la escena (rodar.py, objetos nuevos y cifras) SIN Studio, en paralelo con lo demás; la marca la pone la
+  // app al acabar bien (o vale una escena ya fotografiada, de antes de esta etapa)
+  { id: "escribir", nombre: "Escribir escena", tipo: "agente", hecho: c => existe(path.join(c, "rodar.py")) && !/^\s*import bpy/m.test(leer(path.join(c, "rodar.py"), "")) && (existe(path.join(c, ".escena_escrita")) || todasFotos(c)) && !faltanCifras(c) },
   { id: "escena", nombre: "Escena (Roblox)", tipo: "agente", hecho: c => existe(path.join(c, "rodar.py")) && !/^\s*import bpy/m.test(leer(path.join(c, "rodar.py"), "")) && todasFotos(c) && !faltanCifras(c) },
   { id: "animatic", nombre: "Animatic", tipo: "cadena", args: ["--desde", "subtitulos", "--hasta", "animatic"], hecho: c => existe(path.join(c, "animatic.mp4")) },
   { id: "render", nombre: "Render", tipo: "cadena", args: ["--solo", "render"], hecho: todosFinal },
@@ -510,7 +522,8 @@ function describir(nombre, input) {
 }
 
 function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
-  if (tarea) throw new Error("Ya hay una tarea en marcha (" + tarea.id + ")");
+  const ligera = LIGERAS.includes(etapa);
+  if (ligera ? enMarcha(id) : tarea) throw new Error("Ya hay una tarea en marcha (" + (ligera ? id : tarea.id) + ")");
   const exe = claude.exeClaude();
   if (!exe) throw new Error("No encuentro Claude Code en este equipo");
   const args = ["-p", "--model", claude.MODELO, "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits",
@@ -520,24 +533,28 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   // (Claude lo elegía igual y las instrucciones están escritas para Bash): trabaja exactamente como en el portátil
   if (!claude.rutaBash()) args.push("--append-system-prompt", claude.GUIA_POWERSHELL);
   else { args.splice(args.indexOf("PowerShell"), 1); args.push("--disallowedTools", "PowerShell"); }
-  const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), FISH_API_KEY: claveFish() });
+  // (v3.50) escribir la escena no usa Studio: rodar.py se niega a fotos/revisar/final (RH_SIN_STUDIO) para no pisar al
+  // que está en Studio; lo comprueba la etapa «escena» cuando Studio quede libre
+  const env = claude.entornoClaude({ PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir(), ELEVENLABS_API_KEY: claveEleven(), FISH_API_KEY: claveFish(),
+    ...(etapa === "escribir" ? { RH_SIN_STUDIO: "1" } : {}) });
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
-  tarea = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0 };
-  registro.anotar("claude", "empieza " + etapa + " de " + id + " (Claude)", { bash: !!claude.rutaBash() });
+  const yo = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0, ligera };
+  if (ligera) ligeras.set(id, yo); else tarea = yo;
+  registro.anotar("claude", "empieza " + etapa + " de " + id + " (Claude" + (ligera ? ", en paralelo" : "") + ")", { bash: !!claude.rutaBash() });
   let resto = "", final = "", fallo = false;
   const linea = (l) => {
-    if (tarea) tarea.actividad = Date.now();          // (v3.41.8) para el vigilante: Claude sigue dando señales
+    yo.actividad = Date.now();          // (v3.41.8) para el vigilante: Claude sigue dando señales
     let j; try { j = JSON.parse(l); } catch (e) { return; }
     if (j.type === "assistant" && j.message && Array.isArray(j.message.content)) {
       for (const c of j.message.content) {
         if (c.type === "tool_use") {
           const a = describir(c.name, c.input);
-          tarea.accion = a; tarea.acciones.push({ t: Date.now(), a });
-          if (tarea.acciones.length > 200) tarea.acciones.shift();
-          emitir({ tipo: "agente", accion: a });
+          yo.accion = a; yo.acciones.push({ t: Date.now(), a });
+          if (yo.acciones.length > 200) yo.acciones.shift();
+          emitir({ tipo: "agente", accion: a }, yo);
         } else if (c.type === "text" && c.text.trim()) {
-          tarea.lineas.push(c.text.trim()); if (tarea.lineas.length > 200) tarea.lineas.shift();
-          emitir({ tipo: "agenteTexto", texto: c.text.trim().slice(0, 600) });
+          yo.lineas.push(c.text.trim()); if (yo.lineas.length > 200) yo.lineas.shift();
+          emitir({ tipo: "agenteTexto", texto: c.text.trim().slice(0, 600) }, yo);
         }
       }
     } else if (j.type === "result") { final = String(j.result || ""); fallo = !!j.is_error; }
@@ -547,7 +564,20 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   proc.stderr.on("data", d => err += d);
   proc.on("close", (code) => {
     if (resto.trim()) linea(resto.trim());
-    const t = tarea, ok = code === 0 && !fallo;
+    const t = yo;
+    let ok = code === 0 && !fallo;
+    // (v3.50) terminó «bien» pero sin dejar la etapa hecha (las voces de la 22 se relanzaron 4 veces así, ~1 min cada
+    // una): se apunta qué falta y lo que respondió; la siguiente vez se le dice en el prompt, y a la segunda se para
+    if (ok && /^\s*\**ERROR:/.test(final)) ok = false;
+    if (ok && t && !t.cancelada) {
+      const k = id + ":" + etapa, fal = faltanDe(etapa, carpetaDe(id));
+      if (fal.length) {
+        const n = ((sinHacer[k] || {}).n || 0) + 1;
+        sinHacer[k] = { n, faltan: fal, final: final.slice(-800) };
+        registro.anotar("claude", "AVISO: " + etapa + " de " + id + " terminó sin estar hecha (vez " + n + "), falta: " + fal.join(", "), { respuesta: final.slice(-500) });
+        if (n >= 2) { ok = false; final = "Terminó dos veces sin dejar hecha la etapa (falta: " + fal.join(", ") + "). Última respuesta: " + final; delete sinHacer[k]; }
+      } else delete sinHacer[k];
+    }
     try {
       const c = carpetaDe(id), est = estudioDe(c);
       est.informes = { ...(est.informes || {}), [etapa]: { fecha: new Date().toISOString(), ok, texto: (final || err).slice(0, 4000) } };
@@ -557,12 +587,37 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
     const limite = ok ? 0 : claude.limiteDe(final + "\n" + err);
     if (t && t.atascada) final = "Se quedó atascada " + t.atascada + " min sin avanzar (" + (t.accion || "") + "): se cortó y se reintenta sola. " + final;
     registro.anotar("claude", (ok ? "termina " : (t && t.cancelada ? "cancelada " : "FALLA ")) + etapa + " de " + id + " (" + (t ? Math.round((Date.now() - t.inicio) / 6000) / 10 : 0) + " min, " + (t ? t.acciones.length : 0) + " acciones)" + (ok ? "" : ": " + (final || err).slice(-400)), { codigo: code, limite: limite || 0 });
-    emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), cancelada: !!(t && t.cancelada), ...(limite ? { limite } : {}) });
-    tarea = null;
+    // (v3.50) escena escrita: la marca que dice que solo falta comprobarla en Studio
+    if (ok && etapa === "escribir") { try { fs.writeFileSync(path.join(carpetaDe(id), ".escena_escrita"), new Date().toISOString()); } catch (x) {} }
+    emitir({ tipo: "fin", ok, codigo: code, etapa, informe: (final || err).slice(0, 1500), cancelada: !!(t && t.cancelada), ...(limite ? { limite } : {}) }, yo);
+    if (ligera) { if (ligeras.get(id) === yo) ligeras.delete(id); } else if (tarea === yo) tarea = null;
     trasEtapa(t, id, ok, etapa);
   });
   proc.stdin.end(prompt);
   return { ok: true };
+}
+
+// (v3.50) etapas de Claude que acabaron sin estar hechas: id:etapa → { n, faltan, final }
+const sinHacer = {};
+function faltanDe(etapa, c) {
+  try {
+    if (etapa === "guion") return ["titulo.txt", "narracion.txt", "planos.py"].filter(f => !existe(path.join(c, f)));
+    if (etapa === "voces") return ["duraciones.json", "audio/voz_final.wav", "audio/mezcla.wav"].filter(f => !existe(path.join(c, f)));
+    if (etapa === "escribir") {
+      const f = [];
+      if (!existe(path.join(c, "rodar.py"))) f.push("rodar.py");
+      if (faltanCifras(c)) f.push("contadores.py (el guion lleva cifras)");
+      return f;
+    }
+    if (etapa === "escena") {
+      const f = [];
+      if (!existe(path.join(c, "rodar.py"))) f.push("rodar.py");
+      else if (!todasFotos(c)) f.push("fotos de todos los planos (python rodar.py fotos all)");
+      if (faltanCifras(c)) f.push("contadores.py (el guion lleva cifras)");
+      return f;
+    }
+  } catch (e) {}
+  return [];
 }
 
 function instrucciones(n) { return leer(path.join(raiz(), "tools", "estudio", n + ".md"), ""); }
@@ -573,11 +628,29 @@ function promptEtapa(id, etapa, nota) {
   const base = etapa === "animatic" ? "escena" : etapa;   // los cambios del animatic se hacen en la escena
   if (base === "escena") apartarBlender(c);                // v3.47.0: lo empezado en Blender se rehace en Roblox
   // (v3.48.2) escena hecha salvo las cifras: solo se pide eso, sin rehacer nada
-  const soloCifras = etapa === "escena" && !nota && existe(path.join(c, "rodar.py")) && todasFotos(c) && faltanCifras(c);
+  const soloCifras = (etapa === "escena" || etapa === "escribir") && !nota && existe(path.join(c, "rodar.py")) && todasFotos(c) && faltanCifras(c);
   // v3.41.1: las REGLAS (todo lo que el usuario ha pedido) van delante de cada etapa, también en el ordenador, sin memoria
   let p = instrucciones("reglas") + "\n\n---\n\n" + instrucciones(base) + `\n\n---\nHISTORIA: ${rel} (número ${id.slice(0, 2)}).\n`;
   if (est.idea) p += "IDEA ELEGIDA:\n" + JSON.stringify(est.idea, null, 1) + "\n";
   if (nota) p += `\nNOTA DEL USUARIO (aplícala por encima de todo):\n${nota}\n`;
+  // (v3.50) la escena en dos etapas: escribir (sin Studio, en paralelo) y comprobar en Studio (por turnos)
+  if (etapa === "escribir" && !soloCifras) p += `\nESTA ETAPA ES «ESCRIBIR ESCENA», SIN ROBLOX STUDIO (otras historias pueden estar usándolo ahora mismo).
+Haz los pasos 1-5b: rodar.py, los módulos de objetos NUEVOS de la historia (roblox/pueblo/<Nombre>.luau) y contadores.py si
+el guion lleva cifras. NO ejecutes rodar.py (fotos, revisar ni final), choques.py ni medir.py: se niegan en esta etapa. Las
+fotos y los arreglos los hace la etapa siguiente («Escena») en cuanto Studio quede libre. Para comprobar lo que escribes, solo:
+python -c "import ast; ast.parse(open('${rel}/rodar.py', encoding='utf-8').read())" y, si hay cifras,
+python tools/contadores.py ${rel}. NO edites archivos comunes del kit (tools/, roblox/pueblo/ que no sean tuyos, construir.py):
+solo los de esta historia y su módulo nuevo. Si rodar.py ya existe (una escritura anterior a medias), complétalo sin
+empezar de cero. Al terminar, di los objetos nuevos, los sitios y los planos más delicados (para quien lo compruebe).\n`;
+  if (etapa === "escena" && !nota && !soloCifras && existe(path.join(c, ".escena_escrita"))) p += `\nrodar.py YA ESTÁ ESCRITO (etapa «Escribir escena»): NO lo
+reescribas ni explores el pueblo. Lee rodar.py, empieza directamente por el paso 6 (python rodar.py fotos all) y sigue con
+el 7, con las rondas de TIEMPO. Corrige solo lo que salga mal.\n`;
+  const prev = sinHacer[id + ":" + etapa];
+  if (prev) p += `
+OJO, INTENTO ANTERIOR: terminaste sin dejar hecha esta etapa. Falta: ${prev.faltan.join(", ")}.
+Lo que respondiste entonces: «${prev.final}». Hazla ENTERA ahora. Si algo de verdad te lo impide (una clave, un servicio
+caído), no termines «bien»: explica el problema en tu respuesta final empezando por «ERROR:».
+`;
   if (soloCifras) p += `\nESTA ESCENA YA ESTÁ HECHA (rodar.py y todas las fotos): SOLO FALTA contadores.py, que el guion pide. Escríbelo
 según el guion (una función por plano con cifras; los nombres de los personajes los dice python tools/contadores.py ${rel}),
 comprueba dos o tres planos con python tools/contadores.py ${rel} sXX y no rehagas ni cambies nada más.\n`;
@@ -617,7 +690,7 @@ function sacarDeCola(sender) {
     const et = s && s.etapa && s.etapa.id;
     if (enMarcha(id)) continue;
     if (fondo && USAN_STUDIO.includes(et)) continue;
-    if (tarea && !(et === "render" && solapar() && !fondo)) continue;
+    if (tarea && !LIGERAS.includes(et) && !(et === "render" && solapar() && !fondo)) continue;
     cola.splice(i, 1);
     avanzar(sender, id, true);
     return;
@@ -628,9 +701,9 @@ function avanzar(sender, id, auto) {
   const s = siguiente(id);
   const et = s.etapa && s.etapa.id;
   // (v3.48) el render puede ir de fondo aunque haya otra tarea; lo que usa Studio espera al render de fondo
-  const libre = !enMarcha(id) && !(fondo && USAN_STUDIO.includes(et)) && (!tarea || (et === "render" && solapar() && !fondo));
+  const libre = !enMarcha(id) && !(fondo && USAN_STUDIO.includes(et)) && (!tarea || LIGERAS.includes(et) || (et === "render" && solapar() && !fondo));
   if (!libre && !s.terminado && !s.espera) {
-    if (!cola.includes(id) && !(tarea && tarea.id === id)) cola.push(id);
+    if (!cola.includes(id) && !enMarcha(id)) cola.push(id);
     return { ok: true, cola: true, mensaje: fondo && USAN_STUDIO.includes(et) ? "En cola: Roblox Studio está grabando otra historia" : "En cola: empezará cuando termine lo que está en marcha" };
   }
   if (s.terminado || s.espera) { try { sender.send("historias-progreso", { id, tipo: s.terminado ? "terminado" : "espera", etapa: s.espera && s.espera.id }); } catch (e) {} return { ok: true, ...s }; }
@@ -645,7 +718,7 @@ function avanzar(sender, id, auto) {
 /* Al terminar bien una etapa (guion, voces, escena o animatic), copia de la historia en estudio/_relevo/<id>.tgz, sin lo
  * que se puede volver a generar (render final, cachés); la app la sube a Drive y, si este equipo se apaga, otro equipo
  * la baja y sigue desde ahí. Mientras se prepara, la tarea cuenta como activa (nadie coge otro trabajo a medias). */
-const RELEVABLES = ["guion", "voces", "escena", "animatic"];
+const RELEVABLES = ["guion", "voces", "escribir", "escena", "animatic"];
 const relevoDir = () => path.join(estudioDir(), "_relevo");
 const tarExe = () => path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
 let empaquetando = null;
@@ -688,7 +761,7 @@ async function instantanea(sender, id, etapa, conRender) {
     registro.anotar("relevo", "copia de " + id + " preparada tras " + etapa + (conRender ? " (con los planos renderizados)" : ""), { kit: kitPropioDe(id) });
     try { if (sender && !sender.isDestroyed()) sender.send("historias-progreso", { id, tipo: "relevo", etapa }); } catch (x) {}
     return { ok: true };
-  } catch (e) { return { ok: false, error: e.message }; } finally { empaquetando = null; }
+  } catch (e) { return { ok: false, error: e.message }; } finally { if (empaquetando === id) empaquetando = null; }
 }
 /** Tras una etapa: la copia de relevo (si toca) y luego lo de siempre (la siguiente etapa y la cola). */
 /* v3.41.8 VIGILANTE: una etapa de Claude que pasa mucho rato sin dar ninguna señal (p. ej. esperando en un bucle a un
@@ -716,13 +789,15 @@ setInterval(() => {
   }
 }, 60000);
 setInterval(() => {
-  if (!tarea || tarea.tipo !== "agente" || !tarea.proc || tarea.atascada) return;
-  const h = huellaCarpeta(tarea.id);
-  if (h !== tarea.huellaCarpeta) { tarea.huellaCarpeta = h; tarea.actividad = Date.now(); }
-  const quieto = Date.now() - (tarea.actividad || tarea.inicio);
-  if (quieto < (/^Roblox/.test(tarea.accion || "") ? 45 : 30) * 60000) return;
-  tarea.atascada = Math.round(quieto / 60000);
-  try { spawn("taskkill", ["/PID", String(tarea.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (e) {}
+  for (const t of [tarea, ...ligeras.values()]) {
+    if (!t || t.tipo !== "agente" || !t.proc || t.atascada) continue;
+    const h = huellaCarpeta(t.id);
+    if (h !== t.huellaCarpeta) { t.huellaCarpeta = h; t.actividad = Date.now(); }
+    const quieto = Date.now() - (t.actividad || t.inicio);
+    if (quieto < (/^Roblox/.test(t.accion || "") ? 45 : 30) * 60000) continue;
+    t.atascada = Math.round(quieto / 60000);
+    try { spawn("taskkill", ["/PID", String(t.proc.pid), "/T", "/F"], { windowsHide: true }); } catch (e) {}
+  }
 }, 60000);
 
 // v3.41.4: con una actualización esperando, al terminar la etapa en marcha no se encadena la siguiente (la app se
@@ -781,7 +856,7 @@ ipcMain.handle("estudio-relevo-subir", async (e, id, token) => {
 });
 ipcMain.handle("estudio-relevo-recibir", async (e, id, token, archivo, md5) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id)) || !archivo) return { ok: false, error: "Relevo no válido" };
-  if (ocupado() || empaquetando) return { ok: false, error: "Hay una tarea en marcha" };
+  if (ocupado() || empaquetando || enMarcha(id)) return { ok: false, error: "Hay una tarea en marcha" };
   const f = path.join(relevoDir(), "recibido-" + id + ".tgz");
   try {
     fs.mkdirSync(relevoDir(), { recursive: true });
@@ -1067,7 +1142,7 @@ function slugDe(t) {
 
 // opts.nn: número que toca contando las historias de TODOS los equipos (trabajo dual); opts.idea: la idea si viene de otro equipo
 ipcMain.handle("estudio-crear", async (e, ideaId, opts) => {
-  if (ocupado() || empaquetando) return { ok: false, error: "Ya hay una tarea en marcha: espera a que termine" };
+  // (v3.50) el guion va en el hueco ligero: se puede empezar una historia nueva aunque Studio esté ocupado
   fs.mkdirSync(histDir(), { recursive: true });
   const ideas = leerIdeas();
   let idea = ideas.find(x => x.id === ideaId);
@@ -1093,7 +1168,7 @@ ipcMain.handle("estudio-etapas", async (e, id) => ({ ok: true, etapas: etapasDe(
 ipcMain.handle("estudio-avanzar", async (e, id) => avanzar(e.sender, id, false));
 
 ipcMain.handle("estudio-rehacer", async (e, id, etapaId, nota) => {
-  if (ocupado()) return { ok: false, error: "Ya hay una tarea en marcha" };
+  if (LIGERAS.includes(etapaId) ? enMarcha(id) : ocupado()) return { ok: false, error: "Ya hay una tarea en marcha" };
   if (!ETAPAS.some(x => x.id === etapaId)) return { ok: false, error: "Esa etapa no existe: " + etapaId };
   const c = carpetaDe(id), est = estudioDe(c);
   est.revisiones = { ...(est.revisiones || {}) };
@@ -1105,7 +1180,7 @@ ipcMain.handle("estudio-rehacer", async (e, id, etapaId, nota) => {
 
 ipcMain.handle("estudio-revisar", async (e, id, etapaId, aprobado, nota) => {
   if (!REVISABLES.includes(etapaId)) throw new Error("esa etapa no se revisa");
-  if (!aprobado && tarea) return { ok: false, error: "Ya hay una tarea en marcha" };
+  if (!aprobado && (LIGERAS.includes(etapaId) ? enMarcha(id) : tarea)) return { ok: false, error: "Ya hay una tarea en marcha" };
   const c = carpetaDe(id), est = estudioDe(c);
   est.revisiones = { ...(est.revisiones || {}), [etapaId]: { estado: aprobado ? "aprobado" : "cambios", nota: nota || "", fecha: new Date().toISOString() } };
   guardarEstudio(c, est);

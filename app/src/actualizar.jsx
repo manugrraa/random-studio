@@ -83,7 +83,7 @@ export function AvisoActualizacion() {
     if (!espera) return;
     const iv = setInterval(async () => {
       // (v3.48) también espera al render de fondo (Roblox Studio): reiniciar lo cortaría a medias
-      try { const t = await SF().historiasTareaEstado(); if (!t.activa && !t.fondo) { clearInterval(iv); setEspera(null); aplicar(); } } catch (e) {}
+      try { const t = await SF().historiasTareaEstado(); if (!t.activa && !t.fondo && !(t.ligeras || []).length) { clearInterval(iv); setEspera(null); aplicar(); } } catch (e) {}
     }, 10000);
     return () => clearInterval(iv);
   }, [espera]);
@@ -93,10 +93,11 @@ export function AvisoActualizacion() {
   const instalar = async () => {
     let t = null;
     try { t = SF().historiasTareaEstado ? await SF().historiasTareaEstado() : null; } catch (e) {}
-    if (t && (t.activa || t.fondo)) {
+    // (v3.50) y a las que van en paralelo (guion, voces, escribir la escena): reiniciar las cortaría
+    if (t && (t.activa || t.fondo || (t.ligeras || []).length)) {
       if (SF().historiasPausarEncadenado) SF().historiasPausarEncadenado(true);
       ponerDisponible(false);
-      setEspera({ id: t.id || (t.fondo && t.fondo.id) || "", etapa: t.etapa || (t.fondo && "render") || "la tarea" });
+      setEspera({ id: t.id || (t.fondo && t.fondo.id) || ((t.ligeras || [])[0] || {}).id || "", etapa: t.etapa || (t.fondo && "render") || "la tarea" });
       return;
     }
     aplicar();

@@ -23,8 +23,8 @@ const PASOS = {
   sincronizar: "Voz", revisar: "Revisor", fotos: "Fotos", mezclar: "Mezcla", subtitulos: "Subtítulos",
   animatic: "Animatic", render: "Render", montar: "Montaje", miniatura: "Miniatura", entregar: "Entrega",
 };
-const ETAPA_ICONO = { guion: "📝", voces: "🎙️", escena: "🧱", animatic: "🎞️", render: "🎬", montaje: "📦" };
-const ETAPA_NOMBRE = { guion: "Guion", voces: "Voces y efectos", escena: "Escena 3D", animatic: "Animatic", render: "Render", montaje: "Montaje y entrega" };
+const ETAPA_ICONO = { guion: "📝", voces: "🎙️", escribir: "✍️", escena: "🧱", animatic: "🎞️", render: "🎬", montaje: "📦" };
+const ETAPA_NOMBRE = { guion: "Guion", voces: "Voces y efectos", escribir: "Escribir escena", escena: "Escena 3D", animatic: "Animatic", render: "Render", montaje: "Montaje y entrega" };
 const SF = () => window.studioFS;
 
 const tarjeta = { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 16 };
@@ -78,6 +78,25 @@ function Etapas({ etapas, onElegir, sel }) {
 }
 
 // ------------------------------------------------------------------ tarea en marcha
+/* (v3.50) lo que Claude hace en paralelo sin Roblox Studio (guion, voces, escribir la escena): una línea por historia */
+function EnParalelo({ ligeras, ahora, lista, onParar }) {
+  if (!ligeras || !ligeras.length) return null;
+  return (
+    <div style={{ ...tarjeta, padding: "10px 14px" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-2)", letterSpacing: ".04em", marginBottom: 6 }}>EN PARALELO · {ligeras.length}</div>
+      {ligeras.map(t => (
+        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "5px 0", borderTop: "1px solid var(--border)", fontSize: 12.5 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 9, background: "var(--gold)", animation: "rh-pulso 1.4s infinite", flex: "none" }} />
+          <b style={{ whiteSpace: "nowrap" }}>Historia {t.id.slice(0, 2)}</b>
+          <span style={{ color: "var(--text-2)", whiteSpace: "nowrap" }}>{ETAPA_NOMBRE[t.etapa] || t.etapa}</span>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-2)" }}
+            title={((lista || []).find(h => h.id === t.id) || {}).titulo || ""}>{t.accion || "Pensando…"}</span>
+          <span style={{ color: "var(--text-2)", whiteSpace: "nowrap" }}>{mmss(ahora - (t.inicio || ahora))}</span>
+          <button onClick={() => onParar(t.id)} style={{ ...botonSec, padding: "3px 10px", color: "var(--red)", borderColor: "rgba(248,113,113,0.35)" }}>Parar</button>
+        </div>))}
+    </div>);
+}
+
 function TareaEnMarcha({ tarea, ahora, onCancelar, titulo }) {
   const [verLog, setVerLog] = useState(false);
   const r = tarea.render;
@@ -578,17 +597,30 @@ export function HistoriasView({ toast }) {
     } catch (e) { setDet(null); toast("No se pudo abrir: " + (e.message || e)); }
   }, [toast]);
 
+  const [ligeras, setLigeras] = useState([]);
   const selRef = useRef(selId); selRef.current = selId;
   useEffect(() => {
     if (!escritorio) return;
     cargar();
-    SF().historiasTareaEstado().then(st => st.activa && setTarea({ ...st })).catch(() => {});
+    SF().historiasTareaEstado().then(st => { if (st.activa) setTarea({ ...st }); setLigeras(st.ligeras || []); }).catch(() => {});
     const off = SF().onHistoriasProgreso((d) => {
       if (d.tipo === "espera") { toast(`📋 ${nombreDe(d.id)}: te toca revisar ${ETAPA_NOMBRE[d.etapa] || ""}`); cargar(); if (d.id === selRef.current) cargarDet(d.id); return; }
       if (d.tipo === "terminado") { toast(`🎉 ${nombreDe(d.id)} terminada`); cargar(); if (d.id === selRef.current) cargarDet(d.id); return; }
       // (v3.49.3) solo los avisos de trabajo abren tarjeta: uno suelto después de terminar (p. ej. «subido a Drive») dejaba
       // una tarjeta «Arrancando…» que no se cerraba nunca
       if (!["paso", "plano", "linea", "agente", "agenteTexto", "fin"].includes(d.tipo)) { if (d.tipo === "driveListo") cargar(); return; }
+      // (v3.50) las que van en paralelo tienen su propia lista (no se mezclan con la tarjeta de la tarea principal)
+      if (d.ligera) {
+        if (d.tipo === "fin") {
+          setLigeras(prev => prev.filter(x => x.id !== d.id));
+          if (!d.ok && d.limite) toast(`⏸ ${nombreDe(d.id)}: se acabó el límite de Claude. Sigue sola a las ${new Date(d.limite).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`);
+          else if (!d.ok && !d.cancelada) { toast(`${nombreDe(d.id)}: se paró (mira los detalles)`); setInforme({ id: d.id, etapa: d.etapa, texto: d.informe, titulo: ((listaRef.current || []).find(x => x.id === d.id) || {}).titulo }); }
+          setTimeout(() => { cargar(); if (d.id === selRef.current) cargarDet(d.id); }, 400);
+        } else if (d.tipo === "agente") {
+          setLigeras(prev => { const o = prev.find(x => x.id === d.id); return o ? prev.map(x => x.id === d.id ? { ...x, accion: d.accion } : x) : [...prev, { id: d.id, etapa: d.etapa, inicio: Date.now(), accion: d.accion }]; });
+        }
+        return;
+      }
       setTarea(prev => {
         if (d.tipo === "fin" && !(prev && prev.id === d.id) && d.ok) return prev;
         const t = prev && prev.id === d.id ? { ...prev } : { id: d.id, inicio: Date.now(), lineas: [], acciones: [] };
@@ -611,6 +643,7 @@ export function HistoriasView({ toast }) {
     // (v3.49.3) cada 10 s: si de verdad no hay nada en marcha (ni de fondo), fuera la tarjeta que se haya quedado colgada
     const repaso = setInterval(() => {
       SF().historiasTareaEstado().then(st => {
+        setLigeras(st.ligeras || []);
         if (st.activa) return;
         setTarea(prev => (!prev || prev.terminado || (st.fondo && st.fondo.id === prev.id)) ? prev : null);
       }).catch(() => {});
@@ -629,6 +662,7 @@ export function HistoriasView({ toast }) {
   if (!escritorio) return <HistoriasRemoto toast={toast} />;
 
   const enMarcha = tarea && !tarea.terminado;
+  const trabajaAqui = (hid) => !!((enMarcha && tarea.id === hid) || ligeras.some(x => x.id === hid));
   const accion = async (fn, ok) => {
     try { const r = await fn(); if (r && r.ok === false) return toast(r.error); if (r && r.cola) toast("⏳ " + r.mensaje); else if (ok) toast(ok); setTimeout(() => { cargar(); cargarDet(selId); }, 300); }
     catch (e) { toast(e.message || String(e)); }
@@ -649,7 +683,8 @@ export function HistoriasView({ toast }) {
 
       {error && <div style={{ ...tarjeta, color: "var(--red)", fontSize: 13 }}>{error}</div>}
       {tarea && <TareaEnMarcha tarea={tarea} ahora={ahora} titulo={(lista || []).find(h => h.id === tarea.id)?.titulo}
-        onCancelar={() => { if (tarea.terminado) setTarea(null); else SF().historiasCancelar().then(() => toast("Parando…")); }} />}
+        onCancelar={() => { if (tarea.terminado) setTarea(null); else SF().historiasCancelar(tarea.id).then(() => toast("Parando…")); }} />}
+      <EnParalelo ligeras={ligeras} ahora={ahora} lista={lista} onParar={(id) => SF().historiasCancelar(id).then(() => toast("Parando la historia " + id.slice(0, 2) + "…"))} />
       {informe && (
         <div style={{ ...tarjeta, borderColor: "rgba(248,113,113,.4)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -673,7 +708,7 @@ export function HistoriasView({ toast }) {
             {!lista && !error && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Cargando…</div>}
             {(lista || []).filter(h => !h.entregada).map(h => {
               const activa = h.id === selId, et = h.etapas || [];
-              const hechas = et.filter(x => x.estado === "hecho").length, rev = et.find(x => x.estado === "revisar"), trab = enMarcha && tarea.id === h.id;
+              const hechas = et.filter(x => x.estado === "hecho").length, rev = et.find(x => x.estado === "revisar"), trab = trabajaAqui(h.id);
               return (
                 <button key={h.id} onClick={() => setSelId(h.id)}
                   style={{ display: "flex", gap: 10, alignItems: "center", textAlign: "left", padding: 8, borderRadius: 14,
@@ -713,7 +748,7 @@ export function HistoriasView({ toast }) {
                 <Etapas etapas={etapas} />
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14, alignItems: "center" }}>
                   {mat.legado && <span style={{ fontSize: 12, color: "var(--text-3)" }}>Hecha antes del estudio: aquí se ve, se elige la miniatura y se apunta la nota.</span>}
-                  {!mat.legado && !(enMarcha && tarea.id === det.id) && siguiente && !espera && (
+                  {!mat.legado && !trabajaAqui(det.id) && siguiente && !espera && (
                     <button onClick={() => accion(() => SF().estudioAvanzar(det.id), enMarcha ? "En cola: empezará al terminar lo que está en marcha" : "En marcha: " + ETAPA_NOMBRE[siguiente.id])} className="grad-gold"
                       style={{ ...botonOro, display: "flex", alignItems: "center", gap: 6 }}>▶ {siguiente.estado === "pendiente" && etapas.some(e => e.estado === "hecho") ? "Seguir" : "Empezar"}: {ETAPA_NOMBRE[siguiente.id]}</button>)}
                   {!mat.legado && <select disabled={!!enMarcha} value="" onChange={e => { const v = e.target.value; if (!v) return; const nota = prompt("¿Qué quieres que cambie al rehacer «" + ETAPA_NOMBRE[v] + "»? (puedes dejarlo vacío)", ""); if (nota === null) return; accion(() => SF().estudioRehacer(det.id, v, nota), "Rehaciendo " + ETAPA_NOMBRE[v]); }}
@@ -724,7 +759,7 @@ export function HistoriasView({ toast }) {
                   <span style={{ flex: 1 }} />
                   <button onClick={() => SF().historiasAbrir(det.id, "carpeta")} style={botonSec}>Carpeta</button>
                   {det.final && <button onClick={() => SF().historiasAbrir(det.id, "video")} style={botonSec}>Abrir vídeo</button>}
-                  {!mat.legado && !(enMarcha && tarea.id === det.id) && (
+                  {!mat.legado && !trabajaAqui(det.id) && (
                     <button onClick={async () => {
                       if (!confirm(det.entregada
                         ? "¿Borrar «" + (det.titulo || det.id) + "» para liberar espacio?\n\nSe borra DEL TODO su carpeta de trabajo (planos, renders, audio). El Short, su miniatura y la copia de Drive no se tocan."
@@ -735,7 +770,7 @@ export function HistoriasView({ toast }) {
                 </div>
               </div>
 
-              {espera && !(enMarcha && tarea.id === det.id) && <Revision key={det.id + espera.id} id={det.id} etapa={espera.id} mat={mat} ocupado={false} cambiosOcupado={!!enMarcha}
+              {espera && !trabajaAqui(det.id) && <Revision key={det.id + espera.id} id={det.id} etapa={espera.id} mat={mat} ocupado={false} cambiosOcupado={!!enMarcha}
                 onAprobar={() => accion(() => SF().estudioRevisar(det.id, espera.id, true, ""), "✓ Aprobado: seguimos")}
                 onCambios={(nota) => accion(() => SF().estudioRevisar(det.id, espera.id, false, nota), "Claude está aplicando tus cambios")} />}
 
@@ -833,7 +868,8 @@ export function HistoriasRemoto({ toast, incrustado }) {
   }
   for (const e of equipos) for (const h of (e.datos.historias || [])) {
     if (h.legado || quien[h.id].e !== e) continue;
-    const t = (e.datos.tarea && e.datos.tarea.id === h.id ? e.datos.tarea : null) || (e.datos.fondo && e.datos.fondo.id === h.id ? { ...e.datos.fondo, tipo: "cadena" } : null);
+    const t = (e.datos.tarea && e.datos.tarea.id === h.id ? e.datos.tarea : null) || (e.datos.fondo && e.datos.fondo.id === h.id ? { ...e.datos.fondo, tipo: "cadena" } : null)
+      || (((e.datos.ligeras || []).find(x => x.id === h.id)) ? { ...(e.datos.ligeras.find(x => x.id === h.id)), tipo: "agente" } : null);
     const rev = (h.etapas || []).find(x => x.estado === "revisar");
     const p = pedidoDe(h.id);
     const grupo = rev ? "revisar" : t ? "marcha" : h.entregada ? "hechas" : (p && p.estado === "cancelado") ? "paradas"

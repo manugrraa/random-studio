@@ -12,7 +12,7 @@ const ESTADO = {
   en_cola: ["En cola", "var(--text-2)"], asignado: ["Empezando", "var(--gold)"], trabajando: ["Trabajando", "var(--gold)"],
   revision: ["Te toca revisar", "#F59E0B"], por_animar: ["Preparada: espera al portátil", "#60A5FA"], hecho: ["Hecho", "var(--green)"], cancelado: ["Cancelado", "var(--text-3)"], fallido: ["Falló", "var(--red)"],
 };
-const ETAPA = { guion: "guion", voces: "voces y efectos", escena: "escena 3D", animatic: "animatic", render: "render", montaje: "montaje" };
+const ETAPA = { guion: "guion", voces: "voces y efectos", escribir: "escribir la escena", escena: "escena 3D", animatic: "animatic", render: "render", montaje: "montaje" };
 const boton = { fontSize: 12, fontWeight: 700, borderRadius: 9, padding: "6px 10px", border: "1px solid var(--border)", background: "var(--card-2)", color: "var(--text)" };
 const hace = (s) => { if (!s) return ""; const m = Math.round((Date.now() - new Date(s).getTime()) / 60000); return m < 1 ? "ahora" : m < 60 ? "hace " + m + " min" : "hace " + Math.round(m / 60) + " h"; };
 

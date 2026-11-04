@@ -158,6 +158,7 @@ export function iniciarRemotoEscritorio(t) {
         // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
         bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", gpu: aj.gpu || null, whisper: aj.whisper || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, rescateKit: aj.rescateKit || null, esperandoLimite: Object.keys(esperas()).length },
       numeros: l.historias.map(h => parseInt(h.id, 10)).filter(n => !isNaN(n)),
+      ligeras: ((t && t.ligeras) || []).map(x => ({ id: x.id, titulo: ((l.historias || []).find(h => h.id === x.id) || {}).titulo || "", etapa: x.etapa, inicio: x.inicio, accion: x.accion })),
       fondo: t && t.fondo ? { id: t.fondo.id, titulo: ((l.historias || []).find(h => h.id === t.fondo.id) || {}).titulo || "", etapa: t.fondo.etapa, inicio: t.fondo.inicio, render: t.fondo.render } : null,
       tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8), ultimas: (t.lineas || []).slice(-8).map(x => String(x).slice(0, 220)) } : null,
       ajustes: aj.ajustes,
@@ -443,7 +444,9 @@ const hora = (ms) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit",
  * v3.41.7: el ordenador prepara TODAS las suyas antes de animar ninguna; cada preparada se ofrece al portátil. */
 let _soyDueno = false;
 const BLENDER = ["escena", "animatic", "render", "montaje"];
-const ETAPA_TXT = { guion: "guion", voces: "voces y efectos", escena: "escena 3D", animatic: "animatic", render: "render", montaje: "montaje" };
+// (v3.50) lo que Claude hace sin Roblox Studio va en paralelo (una por historia, sin límite): no espera a que el equipo quede libre
+const LIGERAS = ["guion", "voces", "escribir"];
+const ETAPA_TXT = { guion: "guion", voces: "voces y efectos", escribir: "escribir la escena", escena: "escena 3D", animatic: "animatic", render: "render", montaje: "montaje" };
 /** Historia preparada en este equipo: si el servidor dice que el portátil puede animarla, se sube su copia y se le pasa. */
 async function pasarAlPortatil(pid, id, para) {
   const s = SF();
@@ -460,7 +463,7 @@ async function pasarAlPortatil(pid, id, para) {
     const g = await pedidosApi("GET");
     const ped = (g.pedidos || []).find(x => Number(x.id) === Number(pid));
     const rv = ped && ped.args && ped.args.relevo;
-    if (!para && rv && rv.archivo && rv.fecha && s.estudioCambiadoDesde && ["escena", "animatic"].includes(rv.etapa)) {
+    if (!para && rv && rv.archivo && rv.fecha && s.estudioCambiadoDesde && ["escribir", "escena", "animatic"].includes(rv.etapa)) {
       const ch = await s.estudioCambiadoDesde(id, rv.fecha);
       if (ch && ch.ok && !ch.cambiado) { await nota("uso la copia que ya está en Drive"); return pedidosApi("POST", { accion: "fase_blender", id: Number(pid), relevo: { archivo: rv.archivo, md5: rv.md5, tam: rv.tam } }); }
       if (ch && ch.ok) await nota("la copia de Drive es anterior a " + (ch.archivo || "un cambio") + ": preparo otra");
@@ -619,7 +622,8 @@ export function iniciarTrabajador(t) {
     const m = mios(), w = esperas();
     // 0) lo que esperaba al límite de Claude: a su hora, sigue (de uno en uno, y solo si estoy disponible y libre)
     const vencida = Object.keys(w).find(k => w[k] <= Date.now());
-    if (vencida && _disponible && revisadoRelevo && !(t && t.activa)) {
+    // (v3.50) aunque Studio esté ocupado: estudioAvanzar la pone en marcha (guion, voces, escribir) o en la cola
+    if (vencida && _disponible && revisadoRelevo) {
       delete w[vencida]; guardarEsperas(w);
       const id = vencida.slice(2);
       try {
@@ -656,11 +660,13 @@ export function iniciarTrabajador(t) {
       }
       else if (et.some(e => e.estado === "revisar")) { delete ultimoAviso[pid + "trabajando"]; avisarPedido(Number(pid), "revision", { historia_id: h.id, detalle: "te toca revisar: " + ({ guion: "el guion", voces: "las voces", animatic: "el animatic" }[(et.find(e => e.estado === "revisar") || {}).id] || "una etapa") }); }
       else if (t && t.activa && t.id === h.id) { x.parada = false; x.pausada = false; x.quieta = 0; delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: t.etapa || "" }); }
+      // (v3.50) en paralelo (guion, voces o escribir la escena) mientras el hueco principal hace otra cosa
+      else if (((t && t.ligeras) || []).some(y => y.id === h.id)) { const y = t.ligeras.find(z => z.id === h.id); x.parada = false; x.pausada = false; x.quieta = 0; delete ultimoAviso[pid + "revision"]; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: (ETAPA_TXT[y.etapa] || y.etapa || "") + " (en paralelo)" }); }
       // v3.48: la que se graba de fondo (Roblox Studio) también está trabajando, aunque el hueco principal haga otra cosa
       else if (t && t.fondo && t.fondo.id === h.id) { x.parada = false; x.pausada = false; x.quieta = 0; avisarPedido(Number(pid), "trabajando", { historia_id: h.id, detalle: "render (de fondo)" }); }
       // a medias (equipo apagado, app actualizada, fallo que se reintenta…): se apunta para seguirla (si lleva quieta dos
       // vueltas, para no pisar el paso de una etapa a la siguiente; nunca la parada a mano ni la que espera al límite)
-      else if (!(t && t.activa) && !x.parada && !x.pausada && !w["h:" + h.id] && Date.now() >= (x.reintentar || 0)) {
+      else if ((!(t && t.activa) || LIGERAS.includes((et.find(e => e.estado === "pendiente") || {}).id)) && !x.parada && !x.pausada && !w["h:" + h.id] && Date.now() >= (x.reintentar || 0)) {
         const sig = et.find(e => e.estado === "pendiente");
         // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
         if (sig && sig.id === "voces" && aj.elevenError) continue;
@@ -699,7 +705,7 @@ export function iniciarTrabajador(t) {
         if (r && r.traspasado) { of.x.traspasada = true; guardarMios(m); toast("➡️ Historia " + of.h.id.slice(0, 2) + " preparada: pasa al portátil para animarla"); return; }
       }
     }
-    if (empezada && _disponible && revisadoRelevo && !(t && t.activa)) {
+    if (empezada && _disponible && revisadoRelevo && (!(t && t.activa) || LIGERAS.includes(empezada.sig.id))) {
       const { pid, x, h, sig } = empezada;
       x.quieta = 0;
       if (BLENDER.includes(sig.id) && !x.faseOk) x.faseOk = true;     // (aquí solo llega en el portátil)
@@ -708,19 +714,20 @@ export function iniciarTrabajador(t) {
       return;
     }
     // 3) coger trabajo nuevo: solo si estoy disponible, libre y preparado
-    if (!_disponible || (t && t.activa) || !aj.proyecto || !aj.claude) return;
+    if (!_disponible || !aj.proyecto || !aj.claude) return;
+    const ocupadoAqui = !!(t && t.activa);
     // v3.47.0: preparar (guion y voces) lo puede hacer cualquier equipo; rodar, solo el que tiene Roblox Studio
     const tipos = ["historia", "ideas"];
     ocupadoCogiendo = true;
     try {
       // v3.41: solo se ofrece a seguir relevos si puede bajar la copia de Drive
       // (v3.49.2) con Studio grabando de fondo, no coge historias para animar (esperarían a Studio): que las coja el otro
-      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: !!aj.blender && !(t && t.fondo), relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) });
+      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: !!aj.blender && !(t && t.fondo) && !ocupadoAqui, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) && !ocupadoAqui });
       const p = r.pedido;
       if (!p) {
         // v3.41.7: nada nuevo que preparar ni que animar del portátil: el ordenador anima lo suyo que ya está preparado
         const b = blender[0];
-        if (b && !_soyDueno && aj.blender && !(t && t.fondo)) {
+        if (b && !_soyDueno && aj.blender && !(t && t.fondo) && !ocupadoAqui) {
           b.x.faseOk = true; b.x.quieta = 0; guardarMios(m);
           try { await s.estudioAvanzar(b.h.id); toast("🎬 Ya está todo preparado: animo aquí la historia " + b.h.id.slice(0, 2)); } catch (e) {}
         }
