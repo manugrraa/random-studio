@@ -87,6 +87,10 @@ if (buena) {
     const conMontar = hist.find(n => { try { return /open\(os\.path\.join\(HERE, "rodar\.py"\)/.test(fs.readFileSync(path.join(ORIGEN, "historias", n, "montar.py"), "utf8")); } catch (e) { return false; } });
     if (conMontar) fs.copyFileSync(path.join(ORIGEN, "historias", conMontar, "montar.py"), path.join(plantilla, "montar.py"));
   }
+  // (4-11) el montaje bueno vive en el kit (tarjeta gráfica y planos en paralelo): el de la última historia entregada es
+  // anterior y pisaba esas mejoras en cada compilación
+  const montarKit = path.join(ORIGEN, "tools", "roblox", "montar_plantilla.py");
+  if (fs.existsSync(montarKit)) fs.copyFileSync(montarKit, path.join(plantilla, "montar.py"));
   normalizarPlantilla(plantilla);
   fs.writeFileSync(path.join(plantilla, "LEEME.md"), "Plantilla de RandomHistorias: todo en ROBLOX STUDIO, nada de Blender (scripts de la historia " + buena + ", la última entregada).\n\n"
     + "Cada historia nueva copia de aquí sincronizar.py, mezclar.py, subtitulos.py, montar.py, rodar.py y la estructura de planos.py.\n"
