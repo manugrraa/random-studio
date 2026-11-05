@@ -290,6 +290,9 @@ function AnadirARecopilacion({ c, recops, onAnadir, onCrear, ocupado }) {
 
 function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, onCrearRecop, onMover, onOficializar, ocupado }) {
   const [v, setV] = useState(0);
+  // 5-11, él: "que se puedan ver los Shorts montados, sobretodo las recopilaciones": de un montado se ve su Short
+  const [verShort, setVerShort] = useState(true);
+  const conShort = c.estado==="montado" && !!c.short_video;
   const [nombre, setNombre] = useState(c.nombre);
   const [tit, setTit] = useState(c.titulo_suyo||"");
   useEffect(()=>{ setTit(c.titulo_suyo||""); },[c.carpeta, c.titulo_suyo]);
@@ -306,11 +309,19 @@ function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, on
   return (
     <div style={{border:"1px solid var(--gold)",borderRadius:14,background:"var(--bg-2)",padding:14,display:"grid",gridTemplateColumns:"minmax(0,300px) minmax(0,1fr)",gap:16}}>
       <div>
+        {conShort && verShort && <>
+          <div style={{fontSize:11,color:"var(--gold)",textTransform:"uppercase",letterSpacing:.4,marginBottom:6}}>🎬 El Short montado</div>
+          <video key={c.short_video} src={fileUrl(c.short_video)} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10}}/>
+          {c.videos.length>0 && <button onClick={()=>setVerShort(false)} style={{...boton(false),width:"100%",marginTop:8,padding:"7px 0",fontSize:12.5}}>Ver {c.videos.length>1?"los clips":"el clip"} de origen</button>}
+        </>}
+        {conShort && !verShort && <button onClick={()=>setVerShort(true)} style={{...boton(true),width:"100%",marginBottom:8,padding:"7px 0",fontSize:12.5}}>🎬 Ver el Short montado</button>}
+        {!(conShort && verShort) && <>
         {!c.videos.length && <div style={{aspectRatio:"9/16",borderRadius:10,border:"1px dashed var(--border)",display:"flex",alignItems:"center",justifyContent:"center",
           textAlign:"center",padding:20,color:"var(--text-3)",fontSize:13}}>{(c.en_drive||[]).length
             ? <span>☁ {c.en_drive.length===1?"Su vídeo está":"Sus "+c.en_drive.length+" vídeos están"} fuera del disco{c.en_drive.every(e=>e.estado==="drive")?", en tu Google Drive":""}<br/>Recupéra{c.en_drive.length===1?"lo":"los"} desde Configuración › Almacenamiento</span>
             : <span>📁 Recopilación vacía<br/>Añádele clips desde cada clip: «Añadir a recopilación»</span>}</div>}
         {c.videos.length>0 && <video key={c.videos[v]+(c.editados&&c.editados[archivoDe(c.videos[v])]?"e":"")} src={fileUrl(c.videos[v])} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10,opacity:fuera.has(archivoDe(c.videos[v]))?.45:1}}/>}
+        </>}
         {c.estado!=="montado" && onEditar && c.videos.length>0 && <button onClick={()=>onEditar(c, c.videos[v])} disabled={ocupado} title="Ábrelo en el RandomEditor (E)"
           style={{...boton(false),width:"100%",marginTop:8,padding:"8px 0",fontSize:12.5}}>✂ Editar {c.videos.length>1?"este momento":"el clip"}{c.editados&&c.editados[archivoDe(c.videos[v])]?" · ya editado":""}</button>}
         {/* 28/10, él: "mandar al editor todos los clips de una recopilación, en el orden seleccionado, y que sea

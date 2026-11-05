@@ -971,3 +971,4 @@ require("./contador.cjs");
 // v3.40 (Carental): perfiles locales (sin Google) y brutos para montar con el clon
 require("./brutos.cjs");
 require("./redes.cjs");          // (5/11) Instagram y TikTok: preparar y subir la copia del vídeo
+require("./vigilante.cjs");      // (5/11) vigilante de seguridad: Defender, TeamViewer, Tailscale y escritorio remoto

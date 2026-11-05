@@ -10,6 +10,7 @@ import { HistoriasView } from "./historias";
 import { ordenarTabs, useModulosOff, useOrdenModulos } from "./modulos";
 import { AdminView, esAdmin, useRolEquipo, useSolicitudesPendientes } from "./admin";
 import { iniciarRemotoEscritorio, iniciarTrabajador } from "./remoto";
+import { iniciarVigilante } from "./vigilante";
 import { AvisoActualizacion } from "./actualizar";
 import { UsoClaude } from "./uso_claude";
 import { EstadoHistoriasLateral } from "./cola";
@@ -165,7 +166,7 @@ export function App() {
   const [syncCode, setSyncCodeState] = useState(()=>getSyncCode());
   const [toast, toastNode] = useToast();
   // v3.30: el escritorio publica cómo va y atiende las órdenes del móvil (y sube los Shorts a Drive)
-  useEffect(()=>{ iniciarRemotoEscritorio(toast); iniciarTrabajador(toast); },[]);
+  useEffect(()=>{ iniciarRemotoEscritorio(toast); iniciarTrabajador(toast); iniciarVigilante(); },[]);
   useSesionChat(toast);   // v3.8.2: la sesión de YouTube llega al RandomChat esté donde esté
 
   const lastSyncedRef = useRef(null); // huella de los últimos datos sincronizados (para ignorar ecos)

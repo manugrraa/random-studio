@@ -349,6 +349,46 @@ ipcMain.handle("historias-miniatura", async (e, id, plano, t) => {
   return { ok: true, miniatura: miniDataUrl(path.join(c, "miniatura.png"), 360) };
 });
 
+/* (5-11, Manu: «que el portátil pueda escoger la miniatura de cualquier historia, hasta las hechas por el ordenador»)
+ * Sin fotos de los planos (las tiene el equipo que la hizo, y el de paso las borra), la miniatura se elige directamente
+ * en el Short entregado, que el portátil baja de Drive a Vídeos RDR\Editados\RandomHistorias\<TÍTULO>\: un fotograma
+ * del vídeo final, con su subtítulo, como las de Gelo. Se guarda como «<TÍTULO> - miniatura.png» en esa carpeta. */
+const carpetaEntregaDe = (nombre) => {
+  const n = path.basename(String(nombre || ""));
+  if (!n || n.startsWith(".")) throw new Error("carpeta no válida");
+  return path.join(listasDir(), n);
+};
+const archivosEntrega = (dir) => {
+  let ls = [];
+  try { ls = fs.readdirSync(dir); } catch (e) { return { mp4: null, png: null }; }
+  const mp4 = ls.find(n => /\.mp4$/i.test(n) && !/_sin_/i.test(n));
+  const png = ls.find(n => / - miniatura\.png$/i.test(n)) || ls.find(n => /miniatura\.png$/i.test(n));
+  return { mp4: mp4 ? path.join(dir, mp4) : null, png: png ? path.join(dir, png) : null };
+};
+ipcMain.handle("historias-entrega-video", async (e, nombre) => {
+  const dir = carpetaEntregaDe(nombre), a = archivosEntrega(dir);
+  return { ok: true, video: a.mp4 ? urlArchivo(a.mp4) : null, miniatura: a.png ? miniDataUrl(a.png, 360) : null };
+});
+ipcMain.handle("historias-miniatura-entrega", async (e, nombre, t) => {
+  const dir = carpetaEntregaDe(nombre), a = archivosEntrega(dir);
+  if (!a.mp4) throw new Error("El Short todavía no está en este equipo (se baja de Drive solo)");
+  const destino = a.png || path.join(dir, path.basename(a.mp4).replace(/\.mp4$/i, "") + " - miniatura.png");
+  const tt = Math.max(0, Number(t) || 0);
+  await new Promise((ok, ko) => {
+    const p = spawn("ffmpeg", ["-v", "error", "-y", "-ss", tt.toFixed(3), "-i", a.mp4, "-frames:v", "1", "-vf", "scale=1080:1920:flags=lanczos", destino], { windowsHide: true });
+    let err = ""; p.stderr.on("data", d => err += d);
+    p.on("close", code => code === 0 ? ok() : ko(new Error(err.split("\n").filter(Boolean).slice(-1)[0] || ("ffmpeg " + code))));
+  });
+  // y en la carpeta de la historia, si está en este equipo (la que usa la entrega y la subida a Drive)
+  try {
+    const t0 = path.basename(dir);
+    const id = fs.readdirSync(histDir()).find(n => /^\d{2}_/.test(n) && tituloArchivo(titulo(path.join(histDir(), n)) || "") === t0);
+    if (id) fs.copyFileSync(destino, path.join(histDir(), id, "miniatura.png"));
+  } catch (x) {}
+  registro.anotar("historias", "miniatura elegida en el Short entregado: " + path.basename(dir), { segundo: tt });
+  return { ok: true, miniatura: miniDataUrl(destino, 360) };
+});
+
 ipcMain.handle("historias-abrir", async (e, id, que) => {
   const r = resumen(id);
   const ruta = que === "entrega" ? r.carpetaEntrega : que === "video" ? r.final : r.carpeta;
@@ -477,10 +517,13 @@ const REVISABLES = ["guion", "voces", "animatic"];
 function etapasDe(id) {
   const c = carpetaDe(id), est = estudioDe(c), aj = ajustes();
   let antesHecho = true;
+  // (5-11, Manu) con el Short ya entregado, todas sus etapas están hechas: las de Blender no tienen el rodar.py de Roblox
+  // y al equipo de paso se le borran los planos al subir a Drive, y salían «a medias» aunque estuvieran terminadas
+  const entregada = ETAPAS[ETAPAS.length - 1].hecho(c);
   return ETAPAS.map(e => {
-    const hecho = e.hecho(c), rev = (est.revisiones || {})[e.id] || null;
+    const hecho = entregada || e.hecho(c), rev = (est.revisiones || {})[e.id] || null;
     // las historias hechas antes del estudio (sin estudio.json) ya se revisaron en el chat
-    const pideRevision = REVISABLES.includes(e.id) && aj.revisar[e.id] && !!est.creado;
+    const pideRevision = REVISABLES.includes(e.id) && aj.revisar[e.id] && !!est.creado && !entregada;
     let estado = hecho ? "hecho" : "pendiente";
     if (hecho && pideRevision && !(rev && rev.estado === "aprobado")) estado = "revisar";
     const tm = enMarcha(id);

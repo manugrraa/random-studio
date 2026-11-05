@@ -21,6 +21,8 @@ const ORIGEN = process.env.RH_ORIGEN || "E:\\A RdeRandom\\RandomHistorias";
 const DEST = path.join(APP, "proyecto");
 // (v3.47.1) sin kit/ de Blender (Manu, 3-11: solo Roblox Studio); con el kit de Roblox (pueblo en Luau y sus herramientas)
 const QUE = [["tools", /\.py$/], [path.join("tools", "estudio"), /\.md$/], [path.join("tools", "roblox"), /\.(py|md)$/],
+  [path.join("tools", "recopilacion"), /\.py$/],          // (4.2.0) intro/outro en horizontal, miniatura y CapCut de las recopilaciones
+  ["guiones", /^recopilaciones\.md$/],
   [path.join("roblox", "pueblo"), /\.luau$/],
   ["guiones", /^(prompt-produccion|prompt-para-amigo|canal_nuevo|ideas_aprobadas|ideas_cifras|ideas_temporada)\.md$/],
   [path.join("historias", "_plantilla"), /\.(py|md|json)$/], ["_memoria", /\.md$/]];

@@ -244,7 +244,9 @@ function ElegirMiniatura({ det, toast, onHecha }) {
         </div>
         <div style={{ flex: 1, minWidth: 260 }}>
           {conFoto.length === 0
-            ? <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Las fotos de los planos aparecen tras la escena 3D.</div>
+            ? (det.entregada && det.carpetaEntrega
+                ? <ElegirMiniaturaShort nombre={String(det.carpetaEntrega).split(/[\\/]/).pop()} toast={toast} />
+                : <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Las fotos de los planos aparecen tras la escena 3D.</div>)
             : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(74px,1fr))", gap: 8, maxHeight: 330, overflowY: "auto", paddingRight: 4 }}>
                 {conFoto.map(p => (
                   <button key={p.id} onClick={() => setSel(p.id)} title={p.texto}
@@ -270,6 +272,47 @@ function ElegirMiniatura({ det, toast, onHecha }) {
             </div>)}
         </div>
       </div>
+    </div>);
+}
+
+/* (5-11, Manu) elegir la miniatura en el Short ENTREGADO: vale para cualquier historia que esté en este equipo, aunque la
+ * hiciera el ordenador (sin fotos de sus planos aquí). Paras el vídeo en el fotograma que quieras y se usa ese. */
+function ElegirMiniaturaShort({ nombre, toast, plegado }) {
+  const [abierto, setAbierto] = useState(!plegado);
+  const [d, setD] = useState(null);
+  const [haciendo, setHaciendo] = useState(false);
+  const vid = useRef(null);
+  useEffect(() => {
+    if (!abierto || !nombre) return;
+    let vivo = true;
+    SF().historiasEntregaVideo(nombre).then(r => vivo && setD(r)).catch(() => vivo && setD({ video: null }));
+    return () => { vivo = false; };
+  }, [abierto, nombre]);
+  const avisar = (m) => (toast ? toast(m) : alert(m));
+  const usar = async () => {
+    if (!vid.current) return;
+    setHaciendo(true);
+    try {
+      const r = await SF().historiasMiniaturaEntrega(nombre, vid.current.currentTime);
+      setD(x => ({ ...x, miniatura: r.miniatura }));
+      avisar("Miniatura cambiada: " + nombre + " - miniatura.png");
+    } catch (e) { avisar("No se pudo: " + String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
+    setHaciendo(false);
+  };
+  if (!abierto) return <button onClick={() => setAbierto(true)} style={{ ...botonSec, alignSelf: "flex-start" }}>{Icons.camera} Elegir la miniatura en el Short</button>;
+  return (
+    <div style={{ ...tarjeta, padding: 12 }}>
+      <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 10 }}>Para el Short en el fotograma que quieras y pulsa «Usar este fotograma» (sale con su subtítulo, como las de Gelo).</div>
+      {!d ? <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Buscando el Short…</div>
+        : !d.video ? <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>El Short todavía no está en este equipo: se baja solo de Drive al terminarse.</div>
+        : <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <video ref={vid} src={d.video} controls preload="metadata" style={{ width: 200, aspectRatio: "9/16", background: "#000", borderRadius: 12, border: "1px solid var(--border)" }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 11, color: "var(--text-3)" }}>Actual</div>
+              {d.miniatura ? <img src={d.miniatura} style={{ width: 120, borderRadius: 10, border: "1px solid var(--border-gold)" }} /> : <div style={{ fontSize: 12, color: "var(--text-3)" }}>(sin miniatura)</div>}
+              <button onClick={usar} disabled={haciendo} className="grad-gold" style={{ ...botonOro, opacity: haciendo ? 0.6 : 1 }}>{haciendo ? "Guardando…" : "Usar este fotograma"}</button>
+            </div>
+          </div>}
     </div>);
 }
 
@@ -975,6 +1018,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
                 {(h.drive.archivos || []).map(a => <a key={a.nombre} href={a.ver} target="_blank" rel="noopener" style={{ ...botonSec, textDecoration: "none" }}>⬇ {/\.mp4$/i.test(a.nombre) ? "Short" : /\.png$/i.test(a.nombre) ? "Miniatura" : a.nombre}</a>)}
                 <a href={h.drive.carpeta} target="_blank" rel="noopener" style={{ ...botonSec, textDecoration: "none" }}>Carpeta</a>
               </div>)}
+            {h.drive && h.drive.nombreCarpeta && <ElegirMiniaturaShort nombre={h.drive.nombreCarpeta} plegado />}
             {h.entregada && !h.drive && <button onClick={() => ordenA(e, "drive_subir", { id: h.id, que: "short" }, "☁️ Subiendo a Drive")} style={{ ...botonSec, alignSelf: "flex-start" }}>☁️ Subir a Drive</button>}
             {h.entregada && <NotaRemota h={h} onOrden={(q, a, ok) => ordenA(e, q, a, ok)} />}
             {!it.t && (
