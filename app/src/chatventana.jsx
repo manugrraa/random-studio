@@ -57,6 +57,16 @@ function useMensajes() {
         else if (d.type === "delete") setMsgs(l => l.filter(m => !(m.platform === d.platform && m.platformId === d.platformId)));
         else if (d.type === "deleteByAuthor") setMsgs(l => l.filter(m => !(m.platform === d.platform && m.author.id === d.authorId)));
         else if (d.type === "clear") setMsgs(l => d.platform ? l.filter(m => m.platform !== d.platform) : []);
+        // (5/11, él: "poder ver los mensajes de donación en el chat"): los Super Chat ya llegan como mensaje (con
+        // «superchat»); las propinas, las gemas y los stickers llegan como alerta y aquí se ponen como un mensaje más
+        else if (d.type === "alert" && d.alert && ["tip", "gems", "sticker"].includes(d.alert.kind) && !d.alert.test) {
+          const a = d.alert;
+          const m = { id: "alerta:" + a.id, platform: a.platform || "youtube", platformId: "alerta-" + a.id, timestamp: a.timestamp || Date.now(),
+            author: { id: (a.user && a.user.id) || "", name: (a.user && a.user.name) || "Alguien", avatar: a.user && a.user.avatar, roles: [], nameParts: a.user && a.user.nameParts },
+            parts: (a.parts && a.parts.length) ? a.parts : [{ type: "text", text: a.message || a.text || "" }],
+            donacion: { tipo: a.kind, importe: [a.amount, a.currency].filter(Boolean).join(" ") } };
+          setMsgs(l => l.some(x => x.id === m.id) ? l : [...l, m].slice(-MAX));
+        }
       };
     };
     abrir();
@@ -72,13 +82,18 @@ function Mensaje({ m, tam, puede, onAccion, ocupado }) {
   const roles = a.roles || [];
   const intocable = roles.includes("owner") || roles.includes("moderator") || roles.includes("bot");
   const mini = { padding: "3px 7px", fontSize: 11.5, borderRadius: 7, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text-2)", cursor: "pointer", whiteSpace: "nowrap" };
+  const don = m.donacion || (m.superchat ? { tipo: "superchat", importe: m.superchat.amount } : null);
+  const ICONO_DON = { superchat: "💰", tip: "💸", gems: "💎", sticker: "🎟️" };
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => { setHover(false); setMenu(""); }}
-      style={{ position: "relative", display: "flex", gap: 8, padding: "5px 10px", alignItems: "flex-start", background: hover ? "rgba(255,255,255,0.04)" : "transparent", opacity: ocupado ? 0.5 : 1 }}>
+      style={{ position: "relative", display: "flex", gap: 8, padding: don ? "8px 10px" : "5px 10px", alignItems: "flex-start", opacity: ocupado ? 0.5 : 1,
+        background: don ? "linear-gradient(90deg, rgba(212,175,55,0.28), rgba(212,175,55,0.10))" : hover ? "rgba(255,255,255,0.04)" : "transparent",
+        borderLeft: don ? "3px solid #D4AF37" : "3px solid transparent", margin: don ? "3px 0" : 0 }}>
       {a.avatar ? <img src={abs(a.avatar)} alt="" style={{ width: tam * 1.7, height: tam * 1.7, borderRadius: "50%", flex: "none", marginTop: 1 }} onError={ev => { ev.currentTarget.style.visibility = "hidden"; }}/>
         : <span style={{ width: tam * 1.7, height: tam * 1.7, borderRadius: "50%", flex: "none", background: colorDe(a), opacity: 0.6 }}/>}
       <div style={{ fontSize: tam, lineHeight: 1.35, minWidth: 0, overflowWrap: "anywhere" }}>
         <span style={{ fontSize: tam * 0.75, color: "var(--text-3)", marginRight: 6 }}>{hora(m.timestamp)}</span>
+        {don && <span style={{ display: "inline-block", fontSize: tam * 0.8, fontWeight: 800, color: "#0e0e0e", background: "#D4AF37", borderRadius: 6, padding: "1px 7px", marginRight: 6 }}>{ICONO_DON[don.tipo] || "💰"} {don.importe || "Donación"}</span>}
         <b style={{ color: colorDe(a), marginRight: 6 }}>
           {roles.includes("owner") ? "👑 " : roles.includes("moderator") ? "🔧 " : ""}<Partes parts={a.nameParts || [{ type: "text", text: a.name }]} alto={tam * 1.1}/>
           {/* (4/11) el verificado de YouTube, como en YouTube: un ✓ gris en un círculo detrás del nombre */}
@@ -169,7 +184,32 @@ function ChatEnDirecto({ toast, compacto }) {
         </div>}
         {msgs.map(m => <Mensaje key={m.id} m={m} tam={tam} puede={puede || /^(sim-|test)/.test(String(m.platformId))} ocupado={!!ocupados[m.id]} onAccion={accion}/>)}
       </div>
-      {!abajo && <button onClick={() => setAbajo(true)} style={{ position: "absolute", bottom: 16, left: "50%", transform: "translateX(-50%)", ...boton(true), padding: "5px 14px", fontSize: 12.5, boxShadow: "0 4px 14px rgba(0,0,0,0.5)" }}>↓ Mensajes nuevos</button>}
+      {!abajo && <button onClick={() => setAbajo(true)} style={{ position: "absolute", bottom: compacto ? 16 : 62, left: "50%", transform: "translateX(-50%)", ...boton(true), padding: "5px 14px", fontSize: 12.5, boxShadow: "0 4px 14px rgba(0,0,0,0.5)" }}>↓ Mensajes nuevos</button>}
+      {!compacto && <Escribir puede={puede} toast={toast} tam={tam}/>}
+    </div>);
+}
+
+/* (5/11, él: "que yo pueda escribir por el chat del RandomStudio"): sale en el chat de YouTube como el canal */
+function Escribir({ puede, toast, tam }) {
+  const [texto, setTexto] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const enviar = async () => {
+    const t = texto.trim();
+    if (!t || enviando || !puede) return;
+    setEnviando(true);
+    try {
+      const r = await window.studioFS.chatModerar({ accion: "escribir", texto: t });
+      if (r && r.error) toast && toast("✕ " + r.error, "red"); else setTexto("");
+    } catch (e) { toast && toast("✕ " + e.message, "red"); }
+    finally { setEnviando(false); }
+  };
+  return (
+    <div style={{ display: "flex", gap: 6, padding: "8px 10px", borderTop: "1px solid var(--border)" }}>
+      <input value={texto} maxLength={200} disabled={!puede || enviando} onChange={e => setTexto(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); enviar(); } }}
+        placeholder={puede ? "Escribe en el chat del directo (sale como tu canal)…" : "Para escribir hace falta el directo conectado y la sesión de YouTube de Studio"}
+        style={{ flex: 1, minWidth: 0, fontSize: Math.max(12, tam - 1), padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", outline: "none" }}/>
+      <button onClick={enviar} disabled={!puede || enviando || !texto.trim()} style={{ ...boton(true), padding: "6px 14px", opacity: (!puede || !texto.trim()) ? 0.5 : 1 }}>{enviando ? "…" : "Enviar"}</button>
     </div>);
 }
 

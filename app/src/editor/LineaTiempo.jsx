@@ -1,5 +1,5 @@
 import React from "react";
-import { fin, largo, tc, corto, puntosDeCorte, cuantiza, solapa, vel } from "./modelo";
+import { fin, largo, tc, corto, puntosDeCorte, cuantiza, solapa, vel, nuevaPistaAudio, nuevaPistaVideo, nuevaPistaTexto } from "./modelo";
 const { useEffect, useLayoutEffect, useRef, useState, useMemo, memo, useCallback } = React;
 
 /* RandomEditor · la línea de tiempo, al estilo de CapCut de PC.
@@ -193,14 +193,16 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           g.fillStyle = "rgba(5,10,18,0.92)"; g.fillRect(a, ALTO_FOTO, b - a, H - ALTO_FOTO);
         }
         // la onda: de abajo hacia arriba, un pico por píxel
-        const od = ondas[c.ruta];
+        // (5/11) cada pico dura «dt» segundos exactos desde «inicio» (antes se estiraban sobre la duración del vídeo)
+        const ond = ondas[c.ruta], od = ond && (Array.isArray(ond) ? ond : ond.p);
         if(od && od.length){
-          const ytop = pi.tipo==="video" ? ALTO_FOTO + 3 : 16, hW = H - ytop - 3, base = H - 3, n = od.length, ds = c.dur_src || 1;
+          const ytop = pi.tipo==="video" ? ALTO_FOTO + 3 : 16, hW = H - ytop - 3, base = H - 3, n = od.length;
+          const dt = (ond && ond.dt) || ((c.dur_src || 1) / n), ini = (ond && ond.inicio) || 0;
           g.fillStyle = gris ? "rgba(150,150,150,0.55)" : (pi.tipo==="video" ? "rgba(96,165,250,0.95)" : "rgba(74,222,128,0.95)");
           const vf = Math.min(1.25, c.vol ?? 1);
           for(let x = Math.floor(a); x < b; x++){
-            const s0 = tsrc(x), s1 = tsrc(x + 1);
-            let i0 = Math.floor(s0 / ds * n), i1 = Math.max(i0 + 1, Math.ceil(s1 / ds * n)), m = 0;
+            const s0 = tsrc(x) - ini, s1 = tsrc(x + 1) - ini;
+            let i0 = Math.floor(s0 / dt), i1 = Math.max(i0 + 1, Math.ceil(s1 / dt)), m = 0;
             for(let i = Math.max(0, i0); i < Math.min(n, i1); i++) if(od[i] > m) m = od[i];
             const hh = Math.max(1, m * vf * hW);
             g.fillRect(x, base - hh, 1, hh);
@@ -325,7 +327,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     // de los elegidos (sin las pistas bloqueadas), se mueve el grupo entero, cada uno en su pista
     const grupo = modo === "mover" && sel.has(c.id) && sel.size > 1
       ? new Set(inicial.pistas.filter(pi=>!pi.bloqueada).flatMap(pi=>pi.clips.filter(y=>sel.has(y.id)).map(y=>y.id))) : null;
-    let movido = false;
+    let movido = false, nueva = null;       // (5/11) la pista nueva que se crea al soltar fuera de las pistas
     arrastrando.current = true;
     onGesto("inicio");
     const mover = (ev, desdeAuto) => {
@@ -335,10 +337,29 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       encajado.current = null;
       const dt = (ev.clientX - x0 + caja.current.scrollLeft - s0) / zRef.current;
       if(grupo && grupo.size > 1){ moverGrupo(inicial, grupo, dt, ev.clientX, ev.altKey); return; }
-      let destino = pista.id;
-      if(modo === "mover" && pista.tipo !== "video"){ const f = pistaBajo(ev.clientY); if(f){ const pd = inicial.pistas.find(x=>x.id===f[0]); if(pd && pd.tipo===pista.tipo && !pd.bloqueada) destino = pd.id; } }
-      let txt = "";
-      const ps = inicial.pistas.map(pi=>{
+      let destino = pista.id, base = inicial.pistas;
+      // 5/11, él: "que se puedan crear nuevos canales, tanto visual como de audio, simplemente moviendo el clip a la
+      // ranura donde se crearía el nuevo canal": encima de la primera pista o debajo de la última, una pista nueva
+      if(modo === "mover" && pista.tipo !== "subtitulos"){
+        const f = pistaBajo(ev.clientY);
+        if(f){ const pd = inicial.pistas.find(x=>x.id===f[0]); if(pd && pd.tipo===pista.tipo && !pd.bloqueada) destino = pd.id; }
+        else {
+          const rs = Object.values(filas.current).filter(Boolean).map(el=>el.getBoundingClientRect());
+          const arriba = rs.length && ev.clientY < Math.min(...rs.map(r=>r.top)), abajo = rs.length && ev.clientY > Math.max(...rs.map(r=>r.bottom));
+          if(arriba || abajo){
+            if(!nueva || nueva.arriba !== !!arriba){
+              const hacer = pista.tipo === "audio" ? nuevaPistaAudio : pista.tipo === "texto" ? nuevaPistaTexto : nuevaPistaVideo;
+              nueva = { pi: hacer(inicial.pistas), arriba: !!arriba };
+            }
+            const ps0 = inicial.pistas, mismos = ps0.map((x, i)=>x.tipo === pista.tipo ? i : -1).filter(i=>i >= 0);
+            const i = nueva.arriba ? (mismos.length ? mismos[0] : 0) : (mismos.length ? mismos[mismos.length - 1] + 1 : ps0.length);
+            base = [...ps0.slice(0, i), nueva.pi, ...ps0.slice(i)];
+            destino = nueva.pi.id;
+          }
+        }
+      }
+      let txt = destino !== pista.id && nueva && destino === nueva.pi.id ? "＋ Pista nueva" : "";
+      const ps = base.map(pi=>{
         if(pi.id !== pista.id && pi.id !== destino) return pi;
         let clips = pi.clips;
         if(pi.id === pista.id) clips = clips.filter(y=>!(y.id===c.id && destino!==pista.id));
@@ -346,8 +367,10 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           if(y.id !== c.id) return y;
           if(modo === "izq"){
             const vy = vel(y);
-            let desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + dt * vy));
-            const g = encaje(y.en + (desde - y.desde) / vy, y.id); desde = Math.max(0, Math.min(y.hasta - 1/fps, y.desde + (g - y.en) * vy));
+            // (5/11, él: "que haya un límite al principio del timeline"): el clip no puede empezar antes del 0
+            const minDesde = pi.id==="v1" && mag ? 0 : Math.max(0, y.desde - y.en * vy);
+            let desde = Math.max(minDesde, Math.min(y.hasta - 1/fps, y.desde + dt * vy));
+            const g = encaje(y.en + (desde - y.desde) / vy, y.id); desde = Math.max(minDesde, Math.min(y.hasta - 1/fps, y.desde + (g - y.en) * vy));
             desde = cuantiza(desde, fps);
             txt = `${desde - y.desde >= 0 ? "−" : "+"}${tc(Math.abs(desde - y.desde) / vy, fps)}  ·  dura ${tc((y.hasta - desde) / vy, fps)}`;
             const n = {...y, desde, en: pi.id==="v1" && mag ? y.en : y.en + (desde - y.desde) / vy};
@@ -372,6 +395,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           const en = Math.max(0, encaje(c.en + dt, c.id));
           if(!solapa(pi, en, largo(c), c.id)) clips = [...clips, {...c, en}];
           else return pi;
+          if(!txt) txt = tc(en, fps);
         }
         return {...pi, clips};
       });

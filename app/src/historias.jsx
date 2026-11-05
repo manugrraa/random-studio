@@ -413,6 +413,7 @@ function Ideas({ toast, onCreada }) {
             <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.55 }}>{i.resumen}</div>
             {i.visual && <div style={{ fontSize: 12, color: "var(--text-3)" }}>👀 {i.visual}</div>}
             {i.fundamento && <div style={{ fontSize: 12, color: "var(--text-3)" }}>📈 {i.fundamento}</div>}
+            {i.de && <div style={{ fontSize: 12, color: "#60A5FA", fontWeight: 600 }}>💬 Idea de @{i.de}{i.comentario ? ": «" + String(i.comentario).slice(0, 160) + "»" : ""}</div>}
             {i.historia && <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 700 }}>Creada: historia {i.historia.slice(0, 2)}</div>}
             {i.estado !== "usada" && (
               <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
@@ -1067,12 +1068,16 @@ export function HistoriasRemoto({ toast, incrustado }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <button disabled={pensando} onClick={() => pedido({ accion: "crear", tipo: "ideas", titulo: "Pensar 5 ideas", args: { n: 5 } }, "💡 Pedido: pensar 5 ideas")} className="grad-gold"
             style={{ ...botonOro, alignSelf: "flex-start", opacity: pensando ? .5 : 1 }}>{pensando ? "Pensando ideas…" : "💡 Pedir 5 ideas"}</button>
+          {/* (5/11) ideas que sugiere la gente en los comentarios del canal */}
+          <button disabled={pensando} onClick={() => pedido({ accion: "crear", tipo: "ideas", titulo: "Ideas de los comentarios", args: { n: 5, comentarios: true } }, "💬 Pedido: ideas de los comentarios")}
+            style={{ ...botonSec, alignSelf: "flex-start", opacity: pensando ? .5 : 1 }}>💬 Ideas de los comentarios</button>
           {!ideas.length && <div style={{ ...tarjeta, fontSize: 13, color: "var(--text-3)" }}>No hay ideas por mirar.</div>}
           {ideas.map(i => (
             <div key={i.e.id + i.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 6 }}>
               <b style={{ fontFamily: "'Sora'" }}>{i.titulo}</b>
               <div style={{ fontSize: 12.5, color: "var(--gold)" }}>{i.regla}</div>
               <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{i.resumen}</div>
+              {i.de && <div style={{ fontSize: 12, color: "#60A5FA", fontWeight: 600 }}>💬 Idea de @{i.de}{i.comentario ? ": «" + String(i.comentario).slice(0, 160) + "»" : ""}</div>}
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {i.estado === "en_cola" ? <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", padding: "8px 4px" }}>📋 En la cola</span>
                   : <button disabled={!!enviandoIdea[i.id]} onClick={async () => {

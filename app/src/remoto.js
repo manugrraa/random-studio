@@ -162,7 +162,7 @@ export function iniciarRemotoEscritorio(t) {
       fondo: t && t.fondo ? { id: t.fondo.id, titulo: ((l.historias || []).find(h => h.id === t.fondo.id) || {}).titulo || "", etapa: t.fondo.etapa, inicio: t.fondo.inicio, render: t.fondo.render } : null,
       tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8), ultimas: (t.lineas || []).slice(-8).map(x => String(x).slice(0, 220)) } : null,
       ajustes: aj.ajustes,
-      ideas: (id.ideas || []).filter(i => i.estado !== "descartada").slice(0, 30).map(i => ({ id: i.id, titulo: i.titulo, regla: i.regla, resumen: i.resumen, estado: i.estado, temporada: i.temporada, historia: i.historia })),
+      ideas: (id.ideas || []).filter(i => i.estado !== "descartada").slice(0, 30).map(i => ({ id: i.id, titulo: i.titulo, regla: i.regla, resumen: i.resumen, estado: i.estado, temporada: i.temporada, historia: i.historia, de: i.de, comentario: i.comentario })),
       generandoIdeas: !!id.generando,
       // v3.40.6: el uso de Claude de este equipo (lo ve el móvil en su marcador); se lee como mucho cada 10 min
       claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,
@@ -506,6 +506,29 @@ export async function pasarHistoria(hid, destino) {
   return { ok: false, error: (r && r.error) || "No se pudo pasar: mira el detalle del pedido" };
 }
 
+/* (5/11) Los comentarios recientes del canal de RandomHistorias (con la sesión de Google de ese perfil), para las ideas
+ * que sugiere la gente. 1 unidad de cuota por página de 100. */
+const CANAL_HISTORIAS = "UCt7hr6bzAxETC8y961WmH4g";
+async function comentariosDelCanal() {
+  const tk = await tokenTrabajo();
+  const out = [];
+  let pag = "";
+  for (let i = 0; i < 2; i++) {
+    const u = "https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&maxResults=100&order=time&textFormat=plainText&allThreadsRelatedToChannelId=" + CANAL_HISTORIAS + (pag ? "&pageToken=" + pag : "");
+    const r = await fetch(u, { headers: { Authorization: "Bearer " + tk } });
+    if (!r.ok) break;
+    const d = await r.json();
+    for (const it of d.items || []) {
+      const c = it.snippet && it.snippet.topLevelComment && it.snippet.topLevelComment.snippet;
+      if (c && c.textDisplay && c.authorChannelId && c.authorChannelId.value !== CANAL_HISTORIAS) out.push({ autor: String(c.authorDisplayName || "").replace(/^@/, ""), texto: c.textDisplay, likes: c.likeCount || 0 });
+    }
+    pag = d.nextPageToken; if (!pag) break;
+  }
+  // los que más pinta tienen de sugerencia primero (piden algo o tienen likes)
+  const pide = t => /(haz|has|podr[ií]as|hagan|hacer|historia|pueblo|deber[ií]as|quiero|ojal[aá]|idea|sobre|de\s+(uno|una)\b)/i.test(t);
+  return out.sort((a, b) => (pide(b.texto) - pide(a.texto)) || (b.likes - a.likes)).slice(0, 60);
+}
+
 let _trabajador = false;
 export function iniciarTrabajador(t) {
   if (t) _toast = t;
@@ -783,7 +806,8 @@ export function iniciarTrabajador(t) {
         await pedidosApi("POST", { accion: "estado", id: p.id, estado: "trabajando", historia_id: c.id, detalle: "guion" });
         if (toast) toast("📥 Pedido de la cola: «" + (p.titulo || c.id) + "» (historia " + c.id.slice(0, 2) + ")");
       } else {
-        const g = await s.estudioIdeasGenerar(Number(p.args && p.args.n) || 5, String((p.args && p.args.pista) || ""));
+        const coms = p.args && p.args.comentarios ? await comentariosDelCanal().catch(() => []) : [];
+        const g = await s.estudioIdeasGenerar(Number(p.args && p.args.n) || 5, String((p.args && p.args.pista) || ""), coms);
         if (g && g.ok === false) { await pedidosApi("POST", { accion: "estado", id: p.id, estado: "fallido", detalle: g.error }); return; }
         m[p.id] = { tipo: "ideas", n: Number(p.args && p.args.n) || 5, pista: String((p.args && p.args.pista) || "") }; guardarMios(m);
         await pedidosApi("POST", { accion: "estado", id: p.id, estado: "trabajando", detalle: "pensando ideas" });

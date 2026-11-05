@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   claudeUso: (forzar) => ipcRenderer.invoke("claude-uso", forzar),   // v3.40.6: el marcador de uso de Claude
   // v3.30: el estudio de Historias (ideas, etapas, revisiones y notas)
   estudioIdeas: () => ipcRenderer.invoke("estudio-ideas"),
-  estudioIdeasGenerar: (n, pista) => ipcRenderer.invoke("estudio-ideas-generar", n, pista),
+  estudioIdeasGenerar: (n, pista, comentarios) => ipcRenderer.invoke("estudio-ideas-generar", n, pista, comentarios),
   estudioIdeaPoner: (id, cambios) => ipcRenderer.invoke("estudio-idea-poner", id, cambios),
   estudioBorrar: (id) => ipcRenderer.invoke("estudio-borrar", id),
   historiasPararTodo: () => ipcRenderer.invoke("historias-parar-todo"),

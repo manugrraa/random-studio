@@ -14,6 +14,10 @@ import { PanelColor } from "./PanelColor";
 import { PanelMascara } from "./Mascara";
 import { PanelVoces, SeccionVoz } from "./Voz";
 import { PanelSubtitulos, InspectorSub } from "./Subtitulos";
+import { RecorteAudio } from "./RecorteAudio";
+
+// (5/11, él: "poder copiar atributos de un clip a otro, como la mejora de voz, el audio, etc. Como en CapCut y DaVinci")
+const ATRIBUTOS = ["vol", "fade_in", "fade_out", "silencio", "voz", "velocidad", "tono", "flujo", "filtro", "color", "mascara", "transform", "kf"];
 export { ATAJOS_EDITOR } from "./atajos";
 const { useState, useEffect, useRef, useMemo } = React;
 const { fin, largo, tc, tcLargo } = M;
@@ -164,7 +168,7 @@ export function RandomEditor({ toast }) {
     p.pistas.forEach(pi=>pi.clips.forEach(c=>{
       if(!c.ruta || pedidos.current.has(c.ruta)) return;
       pedidos.current.add(c.ruta);
-      consultar(["redonda", c.ruta]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); setOndas(o=>({...o, [c.ruta]: h ? h.picos : []})); }).catch(()=>{});
+      consultar(["redonda", c.ruta]).then(ev=>{ const h = ev.find(e=>e.evento==="hecho"); setOndas(o=>({...o, [c.ruta]: h ? { p: h.picos || [], dt: h.dt, inicio: h.inicio || 0 } : { p: [] } })); }).catch(()=>{});
       if(pi.tipo==="video" && !c.efecto) consultar(["redtira", c.ruta]).then(ev=>{
         const h = (ev.find(e=>e.evento==="hecho")||{}).tira; if(!h) return;
         const img = new Image(); img.onload = () => setTiras(t=>({...t, [c.ruta]:{...h, img}})); img.src = fileUrl(h.jpg);
@@ -381,6 +385,39 @@ export function RandomEditor({ toast }) {
     const f = q => ({...q, pistas: q.pistas.map(pi=>pi.clips.some(c=>c.id===n.id) ? {...pi, clips: pi.clips.map(c=>{ if(c.id!==n.id) return c; const x = {...n}; delete x.pista; return x; })} : pi)});
     if(gesto) alGesto("durante", f(pRef.current)); else cambiar(f);
   };
+  // ---- copiar y pegar atributos (Ctrl+Alt+C / Ctrl+Alt+V)
+  const portaAtrib = useRef(null);
+  const copiarAtributos = () => {
+    const s = est.current.sel, c = M.todos(pRef.current).find(x=>s.has(x.id) && x.ruta);
+    if(!c){ toast("Elige el clip del que copiar"); return; }
+    portaAtrib.current = { de: c.nombre || "el clip", a: Object.fromEntries(ATRIBUTOS.filter(k=>c[k] !== undefined).map(k=>[k, JSON.parse(JSON.stringify(c[k]))])) };
+    toast("📋 Atributos copiados de «" + portaAtrib.current.de + "»: elige otros clips y pulsa «Pegar atributos» (Ctrl+Alt+V)");
+  };
+  const pegarAtributos = () => {
+    const pa = portaAtrib.current, s = est.current.sel;
+    if(!pa){ toast("Primero copia los atributos de un clip (Ctrl+Alt+C)"); return; }
+    let n = 0;
+    cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.bloqueada ? pi : ({...pi, clips: pi.clips.map(c=>{
+      if(!s.has(c.id) || !c.ruta) return c;
+      n++; const x = {...c}; for(const k of ATRIBUTOS){ if(pa.a[k] === undefined) delete x[k]; else x[k] = JSON.parse(JSON.stringify(pa.a[k])); } return x;
+    })}))}));
+    toast(n ? "📋 Atributos de «" + pa.de + "» pegados en " + n + " clip" + (n > 1 ? "s" : "") : "Elige los clips en los que pegarlos");
+  };
+  // ---- el volumen con puntos clave (◆): con puntos, mover la barra cambia el del cabezal (o pone uno)
+  const tRelDe = c => Math.max(0, Math.min(M.largo(c), reloj.t - c.en));
+  const ponerVol = (c, v, gesto) => {
+    const kf = (c.kf || {}).vol;
+    if(kf && kf.length){
+      const t = +tRelDe(c).toFixed(4), i = kf.findIndex(x=>Math.abs(x[0] - t) < 0.02);
+      const n = i >= 0 ? kf.map((x, j)=>j === i ? [x[0], v, x[2]] : x) : [...kf, [t, v, "lineal"]].sort((a,b)=>a[0]-b[0]);
+      cambiarClip({...c, kf:{...(c.kf || {}), vol:n}}, gesto);
+    } else cambiarClip({...c, vol:v}, gesto);
+  };
+  const alternarKfVol = c => {
+    const kf = (c.kf || {}).vol || [], t = +tRelDe(c).toFixed(4), ya = kf.find(x=>Math.abs(x[0] - t) < 0.02);
+    const n = ya ? kf.filter(x=>x !== ya) : [...kf, [t, M.volEn(c, t), "lineal"]].sort((a,b)=>a[0]-b[0]);
+    cambiarClip({...c, kf:{...(c.kf || {}), vol:n}, ...(n.length ? {} : { vol: M.volEn(c, t) })});
+  };
   const ponerEnElegidos = (campo, v) => { const s = est.current.sel;
     alGesto("durante", {...pRef.current, pistas: pRef.current.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>s.has(c.id) ? {...c, [campo]:v} : c)}))}); };
 
@@ -482,6 +519,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(ctrl && e.shiftKey && K==="s"){ ok(); extraer(); }
       else if(ctrl && e.shiftKey && K==="f"){ ok(); setCompleta(x=>!x); }
       else if(ctrl && K==="b"){ ok(); dividir(); }
+      else if(ctrl && e.altKey && K==="c"){ ok(); copiarAtributos(); }
+      else if(ctrl && e.altKey && K==="v"){ ok(); pegarAtributos(); }
       else if(ctrl && K==="c"){ ok(); copiar(false); }
       else if(ctrl && K==="x"){ ok(); copiar(true); }
       else if(ctrl && K==="v"){ ok(); pegar(); }
@@ -606,7 +645,12 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               title="Copias ligeras para previsualizar: mientras se hacen, se ve el original">Preparando la previsualización fluida… {proxiesListos}/{rutasVideo.length}</div>}
             <div onClick={jugar} onDoubleClick={()=>{ setJugando(0); setCompleta(true); }} title="Clic: reproducir / pausar · doble clic: pantalla completa"
               style={{flex:1,minWidth:0,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-              {completa ? createPortal(<div style={{position:"fixed",inset:0,zIndex:1500,background:"#000",display:"flex",alignItems:"center",justifyContent:"center"}} onDoubleClick={()=>setCompleta(false)}>{vistaEl}</div>, document.body) : vistaEl}
+              {completa ? createPortal(<div style={{position:"fixed",inset:0,zIndex:1500,background:"#000",display:"flex",alignItems:"center",justifyContent:"center"}} onDoubleClick={()=>setCompleta(false)}>{vistaEl}
+                {/* (5/11, él: "que pueda salir de la vista ampliada con una X en la esquina, a parte de pulsando Esc") */}
+                <button onClick={e=>{ e.stopPropagation(); setCompleta(false); }} onDoubleClick={e=>e.stopPropagation()} title="Salir de la vista ampliada (Esc)"
+                  style={{position:"fixed",top:16,right:16,zIndex:1501,width:42,height:42,borderRadius:"50%",border:"1px solid rgba(255,255,255,0.35)",
+                    background:"rgba(20,20,20,0.75)",color:"#fff",fontSize:22,lineHeight:"40px",cursor:"pointer",boxShadow:"0 4px 14px rgba(0,0,0,0.5)"}}>✕</button>
+              </div>, document.body) : vistaEl}
             </div>
             {verMedidor && <Medidor reloj={reloj} proyecto={p} ondas={ondas}/>}
           </div>
@@ -653,16 +697,38 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           </div>}
           {elegidos.length>0 && !elegidos.every(c=>c.tipo==="texto" || c.tipo==="sub") && <>
             {[["Volumen","vol",0,2,0.01,v=>(v <= 0.001 ? "−∞" : (20*Math.log10(v) >= 0 ? "+" : "") + (20*Math.log10(v)).toFixed(1)) + " dB · " + Math.round(v*100)+"%"],["Fundido de entrada","fade_in",0,3,0.05,v=>v.toFixed(2)+" s"],["Fundido de salida","fade_out",0,3,0.05,v=>v.toFixed(2)+" s"]].map(([n,campo,a,b,st,fmt])=>{
-              const v = elegidos[0][campo] ?? (campo==="vol" ? 1 : 0);
-              return <label key={campo} style={{display:"flex",flexDirection:"column",gap:4}}><span style={{display:"flex",justifyContent:"space-between"}}>{n}<span style={{color:"#999"}}>{fmt(v)}</span></span>
-                <input type="range" min={a} max={b} step={st} value={v} onPointerDown={()=>alGesto("inicio")} onPointerUp={()=>alGesto("fin")}
-                  onChange={e=>ponerEnElegidos(campo, Math.min(Number(e.target.value), campo==="vol" ? 2 : (uno ? largo(uno)/2 : 3)))}/></label>;
+              const conKf = campo==="vol" && uno && ((uno.kf || {}).vol || []).length > 0;
+              const v = campo==="vol" && uno ? M.volEn(uno, tRelDe(uno)) : (elegidos[0][campo] ?? (campo==="vol" ? 1 : 0));
+              const tope = x => Math.max(a, Math.min(x, campo==="vol" ? 2 : (uno ? largo(uno)/2 : 3)));
+              const poner = (x, gesto) => campo==="vol" && uno ? ponerVol(uno, tope(x), gesto) : ponerEnElegidos(campo, tope(x));
+              // (5/11, él: "que en las propiedades haya botones para subir o bajar las características, a parte de la barra"):
+              // el volumen de 1 dB en 1 dB, los fundidos de 0,1 s en 0,1 s
+              const paso = d => campo==="vol" ? (v <= 0.001 ? (d > 0 ? Math.pow(10, -40/20) : 0) : v * Math.pow(10, d/20)) : Math.round((v + d * 0.1) * 100) / 100;
+              const enKf = conKf && ((uno.kf.vol || []).some(x=>Math.abs(x[0] - tRelDe(uno)) < 0.02));
+              const bt = { padding:"0 8px", height:24, borderRadius:6, border:"1px solid #333", background:"#1a1a1a", color:"#ddd", cursor:"pointer", fontSize:14, lineHeight:"22px" };
+              return <div key={campo} style={{display:"flex",flexDirection:"column",gap:4}}><span style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>{n}
+                  <span style={{display:"flex",gap:6,alignItems:"center"}}><span style={{color:"#999"}}>{fmt(v)}</span>
+                    {campo==="vol" && uno && <button onClick={()=>alternarKfVol(uno)} title={enKf ? "Quitar el punto del cabezal" : "Poner un punto de volumen en el cabezal (para que suba o baje en un trozo)"}
+                      style={{...bt, height:20, lineHeight:"18px", padding:"0 6px", color: enKf ? "#D4AF37" : conKf ? "#b9a35a" : "#888", fontSize:12}}>◆</button>}</span></span>
+                <span style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <button style={bt} onClick={()=>poner(paso(-1))} title={campo==="vol" ? "−1 dB" : "−0,1 s"}>−</button>
+                  <input type="range" min={a} max={b} step={st} value={v} style={{flex:1,minWidth:0}} onPointerDown={()=>alGesto("inicio")} onPointerUp={()=>alGesto("fin")}
+                    onChange={e=>poner(Number(e.target.value), true)}/>
+                  <button style={bt} onClick={()=>poner(paso(+1))} title={campo==="vol" ? "+1 dB" : "+0,1 s"}>+</button>
+                </span>
+                {campo==="vol" && conKf && <span style={{fontSize:11,color:"#9a8a4a"}}>◆ {uno.kf.vol.length} punto{uno.kf.vol.length > 1 ? "s" : ""}: la barra cambia el volumen en el cabezal</span>}
+              </div>;
             })}
+            {uno && uno.ruta && !uno.imagen && (uno.pista !== "v1") && !(todos.find(x=>x.id===uno.id) || {}).efecto &&
+              p.pistas.some(pi=>pi.tipo==="audio" && pi.clips.some(x=>x.id===uno.id)) &&
+              <RecorteAudio c={uno} onda={ondas[uno.ruta]} fps={fps} alGesto={alGesto} cambiarClip={cambiarClip}/>}
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
               <button onClick={silenciar} className={"rd-ico"+(elegidos.every(c=>c.silencio)?" on":"")} title="Silenciar (Shift+M)">{elegidos.every(c=>c.silencio) ? I.mudo : I.sonido}</button>
               {elegidos.some(c=>c.pista==="v1") && <button onClick={extraer} className="rd-ico" title="Extraer el audio a una pista (Ctrl+Shift+S)">{I.extraer}</button>}
               <button onClick={dividir} className="rd-ico" title="Dividir (Ctrl+B)">{I.dividir}</button>
               <button onClick={duplicar} className="rd-ico" title="Duplicar (Ctrl+D)">{I.duplicar}</button>
+              <button onClick={copiarAtributos} className="rd-ico" title="Copiar atributos: volumen, fundidos, mejora de voz, color, transformación… (Ctrl+Alt+C)" style={{fontSize:12,width:"auto",padding:"0 8px"}}>📋 Copiar</button>
+              <button onClick={pegarAtributos} className="rd-ico" title="Pegar atributos en los clips elegidos (Ctrl+Alt+V)" style={{fontSize:12,width:"auto",padding:"0 8px",opacity: portaAtrib.current ? 1 : 0.55}}>📥 Pegar</button>
               <button onClick={eliminar} className="rd-ico peligro" title="Eliminar (Supr)">{I.borrar}</button>
             </div>
             {uno && uno.ruta && !uno.imagen && !uno.efecto && <SeccionVoz c={uno} procesar={procesarVoz} cambiarClip={cambiarClip} toast={toast}/>}

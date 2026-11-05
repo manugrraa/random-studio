@@ -1135,12 +1135,18 @@ function extraerJson(txt) {
 
 ipcMain.handle("estudio-ideas", async () => ({ ok: true, ideas: leerIdeas(), generando: !!ideasProc }));
 
-ipcMain.handle("estudio-ideas-generar", async (e, cuantas, pista) => {
+ipcMain.handle("estudio-ideas-generar", async (e, cuantas, pista, comentarios) => {
   if (ideasProc) return { ok: false, error: "Ya está generando ideas" };
   const n = Math.max(1, Math.min(10, Number(cuantas) || 5));
   const sender = e.sender;
+  // (5/11, él: "añadir ideas de gente que sugiera temas en los comentarios"): los comentarios recientes del canal
+  const coms = Array.isArray(comentarios) ? comentarios.filter(c => c && c.texto).slice(0, 60) : [];
+  const deComentarios = coms.length ? `\n\nIDEAS DE LOS ESPECTADORES. Estos son comentarios recientes del canal. Busca los que sugieren un tema, un
+juego, un personaje o un pueblo, y convierte los mejores en ideas con las mismas reglas de siempre (si ninguno sirve, dilo
+y propón menos). En cada idea que salga de un comentario añade el campo "de" con el nombre de quien la sugirió y el campo
+"comentario" con su frase tal cual:\n` + coms.map(c => "- @" + String(c.autor || "alguien").slice(0, 40) + ": " + String(c.texto).replace(/\s+/g, " ").slice(0, 220)).join("\n") : "";
   const prompt = instrucciones("reglas") + "\n\n---\n\n" + instrucciones("ideas") + `\n\nPropón ${n} ideas.` + (pista ? `\nPista del usuario: ${String(pista).slice(0, 500)}` : "")
-    + `\nFecha de hoy: ${new Date().toISOString().slice(0, 10)}.`;
+    + deComentarios + `\nFecha de hoy: ${new Date().toISOString().slice(0, 10)}.`;
   ideasProc = claude.generar(prompt, { cwd: raiz(), herramientas: "lectura", segundos: 900 })
     .then(txt => {
       const nuevas = extraerJson(txt).map((x, i) => ({ id: "i" + Date.now().toString(36) + i, fecha: new Date().toISOString(), estado: "nueva", ...x }));

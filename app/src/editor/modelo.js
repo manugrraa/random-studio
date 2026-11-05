@@ -175,10 +175,23 @@ export function quitarAire(p, aires) {
 }
 
 // el volumen de un clip en un instante (con sus fundidos), para la previsualización
+/* (5/11, él: "que se puedan poner puntos para animar o distribuir las características como yo quiera, por ejemplo una
+   parte en la que quiero bajar la música y otra en la que la quiero subir"): el volumen también con puntos clave,
+   kf.vol = [[segundo desde el principio del clip, volumen, curva]] (como los de transformar) */
+export function volEn(c, tRel) {
+  const kf = ((c.kf || {}).vol || []).slice().sort((a,b)=>a[0]-b[0]);
+  if(!kf.length) return c.vol ?? 1;
+  if(tRel <= kf[0][0]) return kf[0][1];
+  for(let i = 1; i < kf.length; i++){
+    const [ta, va] = kf[i-1], [tb, vb, curva] = kf[i];
+    if(tRel <= tb){ const u = tb > ta ? (tRel - ta) / (tb - ta) : 1; return va + (vb - va) * (CURVAS[curva] || CURVAS.lineal)(u); }
+  }
+  return kf[kf.length-1][1];
+}
 export function volumenEn(c, t, pistaMuda) {
   if(c.silencio || pistaMuda) return 0;
   const d = t - c.en, L = largo(c);
-  let v = c.vol ?? 1;
+  let v = volEn(c, d);
   if(c.fade_in > 0 && d < c.fade_in) v *= Math.max(0, d / c.fade_in);
   if(c.fade_out > 0 && L - d < c.fade_out) v *= Math.max(0, (L - d) / c.fade_out);
   return Math.max(0, Math.min(1, v));

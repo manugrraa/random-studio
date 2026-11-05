@@ -958,7 +958,7 @@ ipcMain.handle("chat-moderacion", async () => {
 });
 ipcMain.handle("chat-moderar", async (e, op) => {
   if (!op || typeof op !== "object") return { error: "Petición no válida" };
-  const r = await chatPeticion("POST", "/studio/moderar", { accion: op.accion, id: op.id, autor: op.autor, platform: op.platform, segundos: op.segundos, banId: op.banId }, 60000);
+  const r = await chatPeticion("POST", "/studio/moderar", { accion: op.accion, id: op.id, autor: op.autor, platform: op.platform, segundos: op.segundos, banId: op.banId, texto: typeof op.texto === "string" ? op.texto.slice(0, 200) : undefined }, 60000);
   return r.apagado ? { error: "El chat está apagado" } : (r.data || { error: r.error || "Sin respuesta" });
 });
 
