@@ -3,6 +3,7 @@ const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { DAYS, Icon, Icons, PALETTE, STATUSES, dnd, iso, sortedFormats } from "./base";
 import { VideoCard, inputStyle, labelStyle } from "./videos";
 import { AccionesDeVista } from "./base";
+import { CarrilesView } from "./redes";
 
 export function FormatsModal({formats, setFormats, videos, onClose, toast, askConfirm}) {
   const [name, setName] = useState("");
@@ -216,7 +217,7 @@ export const CalDayCell = React.memo(function CalDayCell({d, di, big, minH, item
   );
 });
 
-export function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffset, setWeekOffset, calView, setCalView, onQuickAdd, onUnassign, formats}) {
+export function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, weekOffset, setWeekOffset, calView, setCalView, onQuickAdd, onUnassign, formats, toast}) {
   const [dragDay, setDragDay] = useState(null);
   const [dragUnassign, setDragUnassign] = useState(false);
   const base = new Date();
@@ -272,6 +273,8 @@ export function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, we
     return cells;
   },[weekOffset]);
 
+  // (5/11) los carriles por red: YouTube, Instagram y TikTok (src/redes.jsx)
+  if(calView==="redes") return <CarrilesView videos={videos} weekOffset={weekOffset} setWeekOffset={setWeekOffset} setCalView={setCalView} onOpen={onOpen} toast={toast}/>;
   return (
     <div className="fade-in" style={{padding:"4px 2px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:12}}>
@@ -284,7 +287,7 @@ export function CalendarView({videos, onOpen, onDrop, onDragStart, onDragEnd, we
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
           <div style={{display:"flex",gap:3,background:"var(--card)",borderRadius:9,padding:3}}>
-            {[["month","Mes"],["week","Semana"],["day","Día"]].map(([k,label])=>(
+            {[["month","Mes"],["week","Semana"],["day","Día"],["redes","Redes"]].map(([k,label])=>(
               <button key={k} onClick={()=>{ setCalView(k); setWeekOffset(0); }} style={{
                 fontSize:12,fontWeight:600,padding:"6px 12px",borderRadius:6,
                 background:calView===k?"var(--gold)":"transparent",color:calView===k?"#000":"var(--text-3)"

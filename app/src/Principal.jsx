@@ -24,6 +24,19 @@ import { CalendarView, FormatsModal, KanbanView } from "./planificacion";
 import { TasksView, dailyDayKey, weekKey } from "./tareas";
 import { ExpandCtx, VideoModal, YouTubeUploadModal, inputStyle } from "./videos";
 import { ScheduledView, StatsView, TrashView } from "./youtube";
+import { RedStats, RED } from "./redes";
+// (5/11, él: "en estadísticas haz un apartado para cada red social"): YouTube, Instagram y TikTok
+function EstadisticasRedes({ videos, goals, onConnect, toast }) {
+  const [red, setRed] = React.useState(() => { try { return localStorage.getItem("rds_stats_red") || "youtube"; } catch(e){ return "youtube"; } });
+  React.useEffect(() => { try { localStorage.setItem("rds_stats_red", red); } catch(e){} }, [red]);
+  return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"flex",gap:3,background:"var(--card)",borderRadius:9,padding:3,alignSelf:"flex-start"}}>
+      {["youtube","instagram","tiktok"].map(k => <button key={k} onClick={()=>setRed(k)} style={{fontSize:12.5,fontWeight:700,padding:"6px 14px",borderRadius:6,
+        background: red===k ? "var(--gold)" : "transparent", color: red===k ? "#000" : "var(--text-2)"}}><span style={{color: red===k ? "#000" : RED[k].color}}>{RED[k].icono}</span> {RED[k].nombre}</button>)}
+    </div>
+    {red === "youtube" ? <StatsView videos={videos} goals={goals} onConnect={onConnect}/> : <RedStats red={red} toast={toast}/>}
+  </div>);
+}
 
 export function App() {
   // Cargar UNA vez (antes se re-parseaba todo el JSON en cada render), migrar a formatos v2
@@ -1223,10 +1236,10 @@ export function App() {
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar vídeo por título..." style={{...inputStyle,paddingLeft:38}}/>
           </div>
         )}
-        {view==="calendar" && <CalendarView videos={videos} onOpen={setEditing} onDrop={dropOnDate} onDragStart={onDragStart} onDragEnd={onDragEnd} weekOffset={weekOffset} setWeekOffset={setWeekOffset} calView={calView} setCalView={setCalView} onQuickAdd={quickAdd} onUnassign={unassignVideo} formats={formats}/>}
+        {view==="calendar" && <CalendarView videos={videos} onOpen={setEditing} onDrop={dropOnDate} onDragStart={onDragStart} onDragEnd={onDragEnd} weekOffset={weekOffset} setWeekOffset={setWeekOffset} calView={calView} setCalView={setCalView} onQuickAdd={quickAdd} onUnassign={unassignVideo} formats={formats} toast={toast}/>}
         {view==="kanban" && <KanbanView videos={videos} onOpen={setEditing} onDrop={dropOnStatus} onDragStart={onDragStart} onDragEnd={onDragEnd} onQuickAdd={quickAdd} formats={formats} search={search}/>}
         {view==="tasks" && <TasksView taskLists={taskLists} setTaskLists={setTaskLists} dailyArchive={dailyArchive} toast={toast} onTaskDeleted={(id)=>addTomb(id,"task")} onListDeleted={(id)=>addTomb(id,"list")} askConfirm={(cfg)=>setConfirm({...cfg, onConfirm:()=>{ cfg.onConfirm(); setConfirm(null); }})}/>}
-        {view==="stats" && <StatsView videos={videos} goals={goals} onConnect={connectGoogle}/>}
+        {view==="stats" && <EstadisticasRedes videos={videos} goals={goals} onConnect={connectGoogle} toast={toast}/>}
         {view==="scheduled" && <ScheduledView videos={videos} trashYtIds={trash.map(t=>t.youtubeId).filter(Boolean)} onOpen={setEditing} onUpdateVideo={(id,patch)=>setVideos(vs=>vs.map(v=>v.id===id?{...v,...patch,updatedAt:Date.now()}:v))} onAddVideos={(nuevos)=>setVideos(vs=>[...vs, ...nuevos])} subHistory={subHistory} onRecordSubs={recordSubs} onConnect={connectGoogle} formats={formats} toast={toast} goals={goals} setGoals={setGoals}/>}
         {view==="agent" && <AgentView promptTemplates={promptTemplates} setPromptTemplates={setPromptTemplates} toast={toast}/>}
         {view==="directos" && <DirectosView toast={toast}/>}
