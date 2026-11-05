@@ -20,6 +20,67 @@ const uidC = () => "c" + Date.now().toString(36) + Math.random().toString(36).sl
 const ESTADOS = { nuevo: ["Sin montar", "var(--text-3)"], montando: ["Montando…", "var(--gold)"], montado: ["Montado", "#4ade80"], error: ["Con error", "var(--red)"] };
 const ls = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } };
 
+/* (5/11) TERMINADOS: los vídeos ya exportados del perfil (su carpeta de salida), para subirlos a Drive de un clic a
+   RandomStudio/<perfil> - .Terminados/<nombre del vídeo>/ (el vídeo y su miniatura). */
+function Terminados({ toast, drive, perfil, onConectar }) {
+  const [d, setD] = useState(null);
+  const [abierto, setAbierto] = useState(() => ls("rds_terminados_abierto", "1") === "1");
+  const [subiendo, setSubiendo] = useState({});      // id -> fracción
+  const leer = async () => { const r = await window.studioFS.terminadosLista(); if (r && r.ok) setD(r); };
+  useEffect(() => { if (window.studioFS && window.studioFS.terminadosLista) leer(); }, []);
+  useEffect(() => { try { localStorage.setItem("rds_terminados_abierto", abierto ? "1" : "0"); } catch (e) {} }, [abierto]);
+  useEffect(() => window.studioFS && window.studioFS.onTerminadosProgreso ? window.studioFS.onTerminadosProgreso(x => setSubiendo(s => ({ ...s, [x.id]: x.fraccion }))) : undefined, []);
+  if (!window.studioFS || !window.studioFS.terminadosLista) return null;
+  const lista = (d && d.lista) || [], sin = lista.filter(t => !t.drive);
+  const subir = async (t, aviso = true) => {
+    if (!drive) { toast("Conecta Drive primero"); return false; }
+    setSubiendo(s => ({ ...s, [t.id]: 0 }));
+    try {
+      const r = await window.studioFS.terminadosSubir(t.id, await driveToken(), perfil);
+      if (r && r.error) throw new Error(r.error);
+      if (aviso) toast("☁️ «" + t.nombre + "» subido a RandomStudio/" + perfil + " - .Terminados");
+      return true;
+    } catch (e) { toast("Drive: " + e.message); return false; }
+    finally { setSubiendo(s => { const n = { ...s }; delete n[t.id]; return n; }); leer(); }
+  };
+  const subirTodos = async () => { let n = 0; for (const t of sin) if (await subir(t, false)) n++; toast("☁️ " + n + " vídeo" + (n === 1 ? "" : "s") + " subido" + (n === 1 ? "" : "s") + " a Drive"); };
+  const abrirCarpeta = async () => { try { const r = await window.studioFS.terminadosCarpeta(await driveToken(), perfil); if (r && r.url) window.open(r.url); else toast(r.error || "No se pudo abrir"); } catch (e) { toast(e.message); } };
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 14, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <button onClick={() => setAbierto(a => !a)} style={{ ...boton(false), padding: "4px 9px" }}>{abierto ? "▾" : "▸"}</button>
+        <b style={{ fontFamily: "'Sora'", fontSize: 15 }}>📤 Terminados</b>
+        <span style={{ fontSize: 12, color: "var(--text-3)" }}>{d ? lista.length + " exportados · " + (sin.length ? sin.length + " sin subir" : "todos en Drive") : "…"}</span>
+        <span style={{ flex: 1 }} />
+        <button onClick={leer} style={boton(false)}>Actualizar</button>
+        {d && d.base && <button onClick={() => window.studioFS.clonAbrir(d.base)} style={boton(false)}>Abrir carpeta</button>}
+        {drive ? <>
+            <button onClick={abrirCarpeta} style={boton(false)} title={"RandomStudio/" + perfil + " - .Terminados"}>Ver en Drive</button>
+            <button disabled={!sin.length || Object.keys(subiendo).length > 0} onClick={subirTodos} style={{ ...boton(true), opacity: sin.length ? 1 : 0.5 }}>☁️ Subir los {sin.length || ""} nuevos</button></>
+          : <button onClick={onConectar} style={boton(true)}>Conectar Drive</button>}
+      </div>
+      {abierto && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 360, overflow: "auto" }}>
+          {d && !lista.length && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>No hay vídeos exportados en {d.base}. Los que exportes del RandomEditor (o los montajes de los brutos) salen aquí.</div>}
+          {lista.map(t => {
+            const fr = subiendo[t.id];
+            return (
+              <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 10, background: "var(--bg-2)" }}>
+                {t.miniatura ? <img src={fileUrl(t.miniatura)} alt="" style={{ width: 34, height: 52, objectFit: "cover", borderRadius: 5, flex: "none" }} />
+                  : <span style={{ width: 34, height: 52, borderRadius: 5, background: "#111", flex: "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>🎬</span>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t.video}>{t.nombre}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{new Date(t.fecha).toLocaleDateString("es-ES")} · {(t.tam / 1e6).toFixed(0)} MB{t.miniatura ? " · con miniatura" : " · sin miniatura"}</div>
+                </div>
+                {fr != null ? <span style={{ fontSize: 12, color: "var(--gold)", fontWeight: 700 }}>Subiendo {Math.round(fr * 100)}%</span>
+                  : t.drive ? <a href={t.drive.carpeta} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#4ade80", fontWeight: 700 }}>✓ En Drive</a>
+                  : <button disabled={!drive} onClick={() => subir(t)} style={{ ...boton(false), opacity: drive ? 1 : 0.5 }}>☁️ Subir</button>}
+              </div>);
+          })}
+        </div>)}
+    </div>);
+}
+
 export function BrutosView({ toast }) {
   const enPC = !!(window.studioFS && window.studioFS.brutosEstado);
   const [dias, setDias] = useState(null);
@@ -149,6 +210,8 @@ export function BrutosView({ toast }) {
       </div>
 
       {tarea && tarea.args[0] === "brutosmontar" && <PanelTarea tarea={tarea} onCerrar={cerrarTarea} />}
+
+      <Terminados toast={toast} drive={drive} perfil={perfil} onConectar={conectarDrive} />
 
       {dias && !dias.length && !cargando && (
         <div style={{ padding: "18px 20px", border: "1px dashed var(--border)", borderRadius: 14, color: "var(--text-2)", fontSize: 13.5, lineHeight: 1.6 }}>

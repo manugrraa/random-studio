@@ -101,7 +101,8 @@ ipcMain.handle("brutos-drive-subir", async (e, id, token, perfilNombre) => {
     const c = est.carpetas.find(x => x.id === id);
     if (!c || !c.resultado || !c.resultado.mp4 || !fs.existsSync(c.resultado.mp4)) return { error: "Todavía no hay vídeo que subir" };
     const archivos = [c.resultado.mp4, c.resultado.miniatura].filter(x => x && fs.existsSync(x));
-    const partes = ["RandomStudio", perfilNombre || "Perfil", path.basename(path.dirname(c.resultado.mp4))];
+    // (5/11) al mismo sitio que los demás terminados: RandomStudio/<perfil> - .Terminados/<nombre del vídeo>/
+    const partes = ["RandomStudio", (perfilNombre || "Perfil") + " - .Terminados", path.basename(c.resultado.mp4).replace(/\.(mp4|mov)$/i, "")];
     const hechos = [];
     for (let i = 0; i < archivos.length; i++) {
       hechos.push(await drive.subir(token, archivos[i], partes, fr => { try { sender.send("brutos-progreso", { id, fraccion: (i + fr) / archivos.length }); } catch (x) {} }));
@@ -110,8 +111,66 @@ ipcMain.handle("brutos-drive-subir", async (e, id, token, perfilNombre) => {
     const est2 = { ...estadoVacio(), ...leerJson(f, {}) };
     const c2 = est2.carpetas.find(x => x.id === id);
     if (c2) { c2.drive = { fecha: new Date().toISOString(), carpeta: "https://drive.google.com/drive/folders/" + hechos[0].carpeta, ver: hechos[0].ver, verificado: hechos.every(h => h.verificado), mp4: c.resultado.mp4 }; escribirJson(f, est2); }
+    // y en la lista de Terminados queda como subido (no se vuelve a subir)
+    try { const base = (carpetas.carpetasDe() || {}).listos, rel = base && path.relative(base, c.resultado.mp4);
+      if (rel && !rel.startsWith("..")) { const reg = leerJson(terminadosRegistro(), {}) || {}; reg[rel] = { fecha: new Date().toISOString(), tam: fs.statSync(c.resultado.mp4).size, carpeta: "https://drive.google.com/drive/folders/" + hechos[0].carpeta, ver: hechos[0].ver }; escribirJson(terminadosRegistro(), reg); } } catch (x) {}
     return { ok: true, drive: c2 && c2.drive };
   } catch (x) { return { error: x.message || String(x) }; }
+});
+
+/* (5/11, él: "un apartado que detecte los vídeos exportados en el perfil de Carental, para poder subirlos al Drive más
+ * fácilmente… en mi Drive, dentro de RandomStudio, una carpeta «Carental - .Terminados» y ahí todos los exportados con
+ * sus carpetas y sus miniaturas; la carpeta, simplemente con el nombre del vídeo").
+ * Los TERMINADOS son los vídeos de la carpeta de salida del perfil (Configuración → Carpetas → «Shorts listos», p. ej.
+ * Vídeos RDR\Editados\Carental), sueltos o en su carpeta con su «… - Miniatura.jpg». Se suben a
+ * RandomStudio/<perfil> - .Terminados/<nombre del vídeo>/ y se apunta cuál está subido (si cambia, vuelve a «sin subir»). */
+const terminadosRegistro = () => path.join(carpetas.dirDatos(), "terminados_drive.json");
+function terminadosLista() {
+  const base = (carpetas.carpetasDe() || {}).listos;
+  if (!base || !fs.existsSync(base)) return { base, lista: [] };
+  const reg = leerJson(terminadosRegistro(), {}) || {};
+  const lista = [];
+  const ver = (d, nivel) => {
+    let ns = []; try { ns = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { return; }
+    for (const n of ns) {
+      if (n.name.startsWith("_") || n.name.startsWith(".")) continue;
+      const x = path.join(d, n.name);
+      if (n.isDirectory()) { if (nivel < 2) ver(x, nivel + 1); continue; }
+      if (!/\.(mp4|mov)$/i.test(n.name) || /_proxy|\.tmp\./i.test(n.name)) continue;
+      const st = fs.statSync(x), nombre = n.name.replace(/\.(mp4|mov)$/i, "");
+      const mini = (() => { try { return fs.readdirSync(d).filter(f => /miniatura\.(jpe?g|png)$/i.test(f)).sort((a, b) => (b.startsWith(nombre) ? 1 : 0) - (a.startsWith(nombre) ? 1 : 0)).map(f => path.join(d, f))[0] || null; } catch (e) { return null; } })();
+      const rel = path.relative(base, x), r = reg[rel];
+      lista.push({ id: rel, nombre, video: x, miniatura: mini && path.dirname(mini) === d && (mini.includes(nombre) || nivel > 0) ? mini : null, tam: st.size, fecha: st.mtimeMs,
+        drive: r && r.tam === st.size ? r : null });
+    }
+  };
+  ver(base, 0);
+  lista.sort((a, b) => b.fecha - a.fecha);
+  return { base, lista };
+}
+ipcMain.handle("terminados-lista", async () => { try { return { ok: true, ...terminadosLista() }; } catch (x) { return { error: x.message }; } });
+ipcMain.handle("terminados-subir", async (e, id, token, perfilNombre) => {
+  const sender = e.sender;
+  try {
+    const { lista } = terminadosLista();
+    const t = lista.find(x => x.id === id);
+    if (!t) return { error: "Ese vídeo ya no está" };
+    const archivos = [t.video, t.miniatura].filter(Boolean);
+    // (la carpeta, solo con el nombre del vídeo: sin el «Carental - » de delante si lo tiene)
+    const pre = (perfilNombre || "") + " - ", limpio = perfilNombre && t.nombre.toLowerCase().startsWith(pre.toLowerCase()) ? t.nombre.slice(pre.length).trim() : t.nombre;
+    const partes = ["RandomStudio", (perfilNombre || "Perfil") + " - .Terminados", limpio || t.nombre];
+    const hechos = [];
+    for (let i = 0; i < archivos.length; i++)
+      hechos.push(await drive.subir(token, archivos[i], partes, fr => { try { sender.send("terminados-progreso", { id, fraccion: (i + fr) / archivos.length }); } catch (x) {} }));
+    const reg = leerJson(terminadosRegistro(), {}) || {};
+    reg[id] = { fecha: new Date().toISOString(), tam: t.tam, carpeta: "https://drive.google.com/drive/folders/" + hechos[0].carpeta, ver: hechos[0].ver, verificado: hechos.every(h => h.verificado) };
+    escribirJson(terminadosRegistro(), reg);
+    return { ok: true, drive: reg[id] };
+  } catch (x) { return { error: x.message || String(x) }; }
+});
+ipcMain.handle("terminados-carpeta", async (e, token, perfilNombre) => {
+  try { return { ok: true, url: "https://drive.google.com/drive/folders/" + (await drive.rutaCarpetas(token, ["RandomStudio", (perfilNombre || "Perfil") + " - .Terminados"])) }; }
+  catch (x) { return { error: x.message || String(x) }; }
 });
 
 // v3.40.2: la carpeta del perfil en Drive (RandomStudio/<perfil>), para abrirla y compartirla con los compañeros
