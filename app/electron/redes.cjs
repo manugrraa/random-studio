@@ -44,6 +44,28 @@ ipcMain.handle("redes-preparar", async (e, ruta) => {
   } catch (x) { return { error: x.message }; }
 });
 
+/* (5/11, él: "hacer una copia de seguridad de esta versión con todo lo que tenemos"): el CÓDIGO de todo (sin vídeos,
+ * modelos ni claves) con Copias de seguridad\hacer_copia.py, y se sube a Drive a RandomStudio/Copias de seguridad.
+ * Solo en el equipo que tiene el script (el portátil). */
+const COPIAS = "E:\\A RdeRandom\\Copias de seguridad";
+ipcMain.handle("copia-posible", async () => ({ ok: fs.existsSync(path.join(COPIAS, "hacer_copia.py")), carpeta: COPIAS }));
+ipcMain.handle("copia-hacer", async (e, token) => {
+  try {
+    const script = path.join(COPIAS, "hacer_copia.py");
+    if (!fs.existsSync(script)) return { error: "Este equipo no tiene el script de copias (está en el portátil)" };
+    // (sin bloquear la app mientras se hace: ~20 s)
+    const r = await new Promise((ok) => {
+      const p = spawn("python", ["-I", script, require("../package.json").version], { windowsHide: true, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+      let stdout = "", stderr = ""; p.stdout.on("data", d => stdout += d); p.stderr.on("data", d => stderr += d);
+      p.on("close", () => ok({ stdout, stderr })); p.on("error", x => ok({ stdout: "", stderr: x.message }));
+    });
+    let info; try { info = JSON.parse(r.stdout); } catch (x) { return { error: "La copia falló: " + (r.stderr || r.stdout || "").slice(-300) }; }
+    if (!token) return { ok: true, ...info };
+    const up = await require("./drive.cjs").subir(token, info.zip, ["RandomStudio", "Copias de seguridad"]);
+    return { ok: true, ...info, drive: { ver: up.ver, carpeta: "https://drive.google.com/drive/folders/" + up.carpeta, verificado: up.verificado } };
+  } catch (x) { return { error: x.message }; }
+});
+
 ipcMain.handle("redes-subir", async (e, ruta, url, borrarDespues) => {
   try {
     const datos = fs.readFileSync(ruta);

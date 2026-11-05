@@ -2,7 +2,7 @@ import React from "react";
 import { ATAJOS_EDITOR } from "./random_editor";
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 import { Icons, STATUSES } from "./base";
-import { driveConectado, driveConectar, driveDesconectar, ytClearTokens, ytIsConnected } from "./datos";
+import { driveConectado, driveConectar, driveDesconectar, driveToken, ytClearTokens, ytIsConnected } from "./datos";
 import { Field, inputStyle } from "./videos";
 import { ingresosEstimadosActivos } from "./youtube";
 import { SeguridadPanel } from "./acceso";
@@ -61,6 +61,32 @@ const btnOro = { color: "#000", fontWeight: 700, fontSize: 12.5, padding: "9px 1
 const btnSec = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: "var(--text)", border: "1px solid var(--border)", borderRadius: 10, padding: "9px 14px", background: "var(--card-2)" };
 const cajaPanel = { background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 16, padding: 20, marginBottom: 14 };
 const tituloPanel = { fontSize: 11, fontWeight: 800, color: "var(--gold)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 10 };
+
+/* (5/11) la copia de seguridad del código de todo (sin vídeos ni claves), y a Drive si está conectado */
+function CopiaSeguridad({ toast }) {
+  const [posible, setPosible] = React.useState(null);
+  const [haciendo, setHaciendo] = React.useState(false);
+  const [ultima, setUltima] = React.useState(() => { try { return JSON.parse(localStorage.getItem("rds_copia_ultima") || "null"); } catch (e) { return null; } });
+  React.useEffect(() => { window.studioFS.copiaPosible().then(r => setPosible(!!(r && r.ok))); }, []);
+  if (!posible) return null;
+  const hacer = async () => {
+    setHaciendo(true);
+    try {
+      const r = await window.studioFS.copiaHacer(driveConectado() ? await driveToken() : null);
+      if (r.error) throw new Error(r.error);
+      const u = { fecha: Date.now(), archivos: r.archivos, mb: r.mb_zip, drive: r.drive ? r.drive.carpeta : null };
+      setUltima(u); try { localStorage.setItem("rds_copia_ultima", JSON.stringify(u)); } catch (e) {}
+      toast("💾 Copia hecha: " + r.archivos + " archivos (" + r.mb_zip + " MB)" + (r.drive ? " y subida a Drive" : " (Drive sin conectar: solo en el disco)"));
+    } catch (e) { toast("✕ " + e.message); }
+    setHaciendo(false);
+  };
+  return (
+    <Fila titulo="Copia de seguridad" ultima ayuda={"El código de todo (Studio, servidor, clon, chat, historias y la memoria), sin vídeos ni claves, en E:\\A RdeRandom\\Copias de seguridad y en tu Drive (RandomStudio/Copias de seguridad)."
+      + (ultima ? " Última: " + new Date(ultima.fecha).toLocaleString("es-ES") + " · " + ultima.archivos + " archivos." : "")}>
+      {ultima && ultima.drive && <a href={ultima.drive} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "var(--gold)" }}>Ver en Drive</a>}
+      <button disabled={haciendo} onClick={hacer} className="grad-gold" style={btnOro}>{haciendo ? "Haciendo la copia…" : "💾 Hacer copia"}</button>
+    </Fila>);
+}
 
 export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExpanded, setCardsExpanded, onConnect, onExport, onImport, onReset, toast }) {
   const cfg = (goals && goals.cfg) || { targetEur:100, shortsPerDay:3, rpmManual:null };
@@ -149,6 +175,7 @@ export function ConfigView({ modulos, goals, setGoals, theme, setTheme, cardsExp
                       <button onClick={() => { driveDesconectar(); setTick(t=>t+1); toast("Drive desconectado"); }} style={{ ...btnSec, color: "var(--red)" }}>Desconectar</button></>
                   : <button onClick={async () => { try { await driveConectar(); setTick(t=>t+1); toast("☁️ Drive conectado"); } catch (e) { toast(e.message); } }} className="grad-gold" style={btnOro}>Conectar Drive</button>)}
               </Fila>
+              {esEscritorio && window.studioFS.copiaHacer && <CopiaSeguridad toast={toast} />}
             </Tarjeta>
           </>)}
 

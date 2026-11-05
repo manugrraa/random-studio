@@ -177,6 +177,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   brutosDriveCarpeta: (token, perfil) => ipcRenderer.invoke("brutos-drive-carpeta", token, perfil),
   terminadosLista: () => ipcRenderer.invoke("terminados-lista"),
   redesPreparar: (ruta) => ipcRenderer.invoke("redes-preparar", ruta),
+  copiaPosible: () => ipcRenderer.invoke("copia-posible"),
+  copiaHacer: (token) => ipcRenderer.invoke("copia-hacer", token),
   redesSubir: (ruta, url, borrar) => ipcRenderer.invoke("redes-subir", ruta, url, borrar),
   terminadosSubir: (id, token, perfil) => ipcRenderer.invoke("terminados-subir", id, token, perfil),
   terminadosCarpeta: (token, perfil) => ipcRenderer.invoke("terminados-carpeta", token, perfil),
