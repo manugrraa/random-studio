@@ -9,6 +9,7 @@ import { UsoClaude, usoDeEquipos } from "./uso_claude";
 import { alTimbre } from "./timbre";
 import { AccionesDeVista } from "./base";
 import { VideoDrive } from "./drive_video";
+import { Recopilaciones } from "./recopilaciones";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
  * Todo el proceso de RandomHistorias dentro del Studio, con una «carpeta» por historia:
@@ -24,7 +25,7 @@ const PASOS = {
   animatic: "Animatic", render: "Render", montar: "Montaje", miniatura: "Miniatura", entregar: "Entrega",
 };
 const ETAPA_ICONO = { guion: "📝", voces: "🎙️", escribir: "✍️", escena: "🧱", animatic: "🎞️", render: "🎬", montaje: "📦" };
-const ETAPA_NOMBRE = { guion: "Guion", voces: "Voces y efectos", escribir: "Escribir escena", escena: "Escena 3D", animatic: "Animatic", render: "Render", montaje: "Montaje y entrega" };
+const ETAPA_NOMBRE = { guion: "Guion", voces: "Voces y efectos", escribir: "Escribir escena", escena: "Escena 3D", animatic: "Animatic", render: "Render", montaje: "Montaje y entrega", recopilacion: "Intro y outro de la recopilación" };
 const SF = () => window.studioFS;
 
 const tarjeta = { background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 16 };
@@ -111,7 +112,7 @@ function TareaEnMarcha({ tarea, ahora, onCancelar, titulo }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span style={{ width: 10, height: 10, borderRadius: 9, background: "var(--gold)", animation: "rh-pulso 1.4s infinite" }} />
         <div style={{ fontFamily: "'Sora'", fontWeight: 700, fontSize: 15 }}>
-          {"Historia " + tarea.id.slice(0, 2)}{titulo ? " · " + titulo : ""}{etapa ? " · " + etapa : ""}
+          {/^R\d{2}$/.test(tarea.id) ? "Recopilación " + tarea.id.slice(1) : "Historia " + tarea.id.slice(0, 2)}{titulo ? " · " + titulo : ""}{etapa ? " · " + etapa : ""}
         </div>
         {esAgente && <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", border: "1px solid var(--border-gold)", borderRadius: 99, padding: "2px 8px" }}>CLAUDE TRABAJANDO</span>}
         <span style={{ flex: 1 }} />
@@ -621,7 +622,7 @@ export function HistoriasView({ toast }) {
   const [informe, setInforme] = useState(null);
   const listaRef = useRef([]);
   // «Historia 07 · TÍTULO» (mientras no hay guion, el título de la idea)
-  const nombreDe = (id) => { const h = (listaRef.current || []).find(x => x.id === id); return "Historia " + id.slice(0, 2) + (h && h.titulo ? " · «" + h.titulo + "»" : ""); };
+  const nombreDe = (id) => { if (/^R\d{2}$/.test(id)) return "Recopilación " + id.slice(1); const h = (listaRef.current || []).find(x => x.id === id); return "Historia " + id.slice(0, 2) + (h && h.titulo ? " · «" + h.titulo + "»" : ""); };
 
   const cargar = useCallback(async () => {
     try {
@@ -721,7 +722,7 @@ export function HistoriasView({ toast }) {
       {/* v3.43: el título ya está en la cabecera de la app; aquí solo las pestañas, y los botones del equipo arriba a la derecha */}
       <AccionesDeVista><BotonPararTodo toast={toast} /><BotonDisponible /></AccionesDeVista>
       <div className="rs-seg" style={{ alignSelf: "flex-start" }}>
-        {[...(admin ? [["todo", "Todos los equipos", Icons.cloud]] : []), ["proyectos", "Historias", Icons.camera], ["cola", "Cola", Icons.tasks], ["ideas", "Ideas", Icons.sparkle], ["ajustes", "Ajustes", Icons.gear]].map(([k, t, ic]) => (
+        {[...(admin ? [["todo", "Todos los equipos", Icons.cloud]] : []), ["proyectos", "Historias", Icons.camera], ["recop", "Recopilaciones", Icons.largo], ["cola", "Cola", Icons.tasks], ["ideas", "Ideas", Icons.sparkle], ["ajustes", "Ajustes", Icons.gear]].map(([k, t, ic]) => (
           <button key={k} onClick={() => setPestana(k)} className={pestana === k ? "on" : ""}>{ic}{t}</button>))}
       </div>
 
@@ -742,6 +743,7 @@ export function HistoriasView({ toast }) {
       {pestana === "todo" && admin && <HistoriasRemoto toast={toast} incrustado />}
       {pestana === "ideas" && <Ideas toast={toast} onCreada={() => cargar()} />}
       {pestana === "cola" && <ColaTrabajo toast={toast} />}
+      {pestana === "recop" && <Recopilaciones toast={toast} />}
       {pestana === "ajustes" && <AjustesEstudio toast={toast} />}
 
       {pestana === "proyectos" && (

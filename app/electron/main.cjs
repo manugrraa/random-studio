@@ -972,3 +972,4 @@ require("./contador.cjs");
 require("./brutos.cjs");
 require("./redes.cjs");          // (5/11) Instagram y TikTok: preparar y subir la copia del vídeo
 require("./vigilante.cjs");      // (5/11) vigilante de seguridad: Defender, TeamViewer, Tailscale y escritorio remoto
+require("./recopilaciones.cjs"); // (5/11) recopilaciones de 12 historias: grupo, ideas, intro/outro, miniatura y montaje

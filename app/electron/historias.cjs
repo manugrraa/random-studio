@@ -38,6 +38,13 @@ function titulo(c) {
   return leer(path.join(c, "titulo.txt"), "").trim();
 }
 function tituloArchivo(t) { return t.replace(/!+$/, "!"); }
+/* (5-11) la carpeta de un Short entregado: en las entregas o, si ya está en una recopilación, en .Recopilaciones/NN/ */
+function dirEntrega(t) {
+  const n = tituloArchivo(String(t || "")), d = path.join(listasDir(), n);
+  if (existe(d)) return d;
+  try { for (const nn of fs.readdirSync(path.join(listasDir(), ".Recopilaciones"))) { const q = path.join(listasDir(), ".Recopilaciones", nn, n); if (n && existe(q)) return q; } } catch (e) {}
+  return d;
+}
 
 function miniDataUrl(p, ancho) {
   try {
@@ -66,7 +73,7 @@ function resumen(id) {
   for (const [p, f] of Object.entries(hechoA))
     if (!estado[p] && existe(path.join(c, f))) estado[p] = { fin: fecha(path.join(c, f)), aMano: true };
   const t = titulo(c);
-  const entrega = path.join(listasDir(), tituloArchivo(t));
+  const entrega = dirEntrega(t);
   const hechos = PASOS.filter(p => estado[p]);
   const mini = existe(path.join(c, "miniatura.png")) ? path.join(c, "miniatura.png") : null;
   return {
@@ -356,7 +363,7 @@ ipcMain.handle("historias-miniatura", async (e, id, plano, t) => {
 const carpetaEntregaDe = (nombre) => {
   const n = path.basename(String(nombre || ""));
   if (!n || n.startsWith(".")) throw new Error("carpeta no válida");
-  return path.join(listasDir(), n);
+  return dirEntrega(n);
 };
 const archivosEntrega = (dir) => {
   let ls = [];
@@ -510,7 +517,7 @@ const ETAPAS = [
   { id: "render", nombre: "Render", tipo: "cadena", args: ["--solo", "render"], hecho: todosFinal },
   { id: "montaje", nombre: "Montaje y entrega", tipo: "cadena", args: ["--desde", "montar", "--sin-parar"],
     // (v3.41.9) o ya subido a Drive: el equipo de paso borra la entrega local y la historia volvía a «montaje pendiente»
-    hecho: c => { const t = titulo(c); return (!!t && existe(path.join(listasDir(), tituloArchivo(t), tituloArchivo(t) + ".mp4"))) || !!estudioDe(c).drive; } },
+    hecho: c => { const t = titulo(c); return (!!t && existe(path.join(dirEntrega(t), tituloArchivo(t) + ".mp4"))) || !!estudioDe(c).drive; } },
 ];
 const REVISABLES = ["guion", "voces", "animatic"];
 
@@ -1366,7 +1373,7 @@ ipcMain.handle("estudio-drive-subir", async (e, id, token, perfilNombre, que) =>
   const base = ["RandomStudio", String(perfilNombre || "RandomHistorias"), "Historias"];
   let archivos, partes;
   if (que === "short") {
-    const dir = path.join(listasDir(), tituloArchivo(t));
+    const dir = dirEntrega(t);
     if (!existe(dir)) return { ok: false, error: "Todavía no está entregado" };
     archivos = fs.readdirSync(dir).map(n => path.join(dir, n)).filter(f => fs.statSync(f).isFile());
     partes = [...base, tituloArchivo(t)];
@@ -1667,5 +1674,16 @@ ipcMain.handle("estudio-renumerar", async (e, de, a) => {
   return { ok: true };
 });
 
-module.exports = { etapasDe };
+/* (5-11) RECOPILACIONES (recopilaciones.cjs): su intro y outro se ruedan en Roblox Studio, así que ocupan el hueco
+ * principal como una tarea más (las historias que usan Studio esperan en la cola, y siguen solas al terminar). */
+function reservarStudio(t) {
+  if (tarea || fondo) return false;
+  tarea = { lineas: [], acciones: [], inicio: Date.now(), tipo: "agente", ...t, actividad: Date.now() };
+  return tarea;
+}
+function liberarStudio(t, sender) {
+  if (tarea === t) tarea = null;
+  try { sacarDeCola(sender || (t && t.sender)); } catch (e) {}
+}
+module.exports = { etapasDe, reservarStudio, liberarStudio, emitir, claveFish, urlArchivo };
 
