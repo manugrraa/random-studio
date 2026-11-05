@@ -1,5 +1,5 @@
 import React from "react";
-import { YT_BACKEND, cloudToken } from "./datos";
+import { YT_BACKEND, cloudToken, ytEnsureToken, ytGetTokens, ytIsConnected } from "./datos";
 import { cabecerasEquipo } from "./seguridad";
 const { useState, useEffect, useMemo, useCallback } = React;
 
@@ -17,7 +17,7 @@ export const RED = {
   instagram: { nombre: "Instagram", icono: "◉", color: "#E1306C" },
   tiktok: { nombre: "TikTok", icono: "♪", color: "#25F4EE" },
 };
-const HORA_DEF = { instagram: "19:00", tiktok: "20:00" };
+const HORA_DEF = { youtube: "18:00", instagram: "19:00", tiktok: "20:00" };
 const ls = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const fileUrl = p => p ? "file:///" + p.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/").replace(/^([A-Za-z])%3A/, "$1:") : null;
@@ -73,7 +73,33 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
   const [horaOtra, setHoraOtra] = useState(() => ls("rds_redes_hora_" + otra, HORA_DEF[otra]));
   const [texto, setTexto] = useState(() => (video.nombre || "").replace(/^\d+\s*-\s*/, "") + (ls("rds_redes_coletilla", "") ? "\n\n" + ls("rds_redes_coletilla", "") : ""));
   const [paso, setPaso] = useState("");
+  const [tituloYt, setTituloYt] = useState(() => (video.nombre || "").replace(/^d+s*-s*/, ""));
+  const [pct, setPct] = useState(null);
+  const esYt = red === "youtube";
+  /* (5/11, él: "en YouTube no me deja programar desde redes") YouTube: se sube YA desde el PC en privado con su fecha
+     de publicación (publishAt) y YouTube lo publica solo a esa hora, como en la sección Vídeos. */
+  const hechoYt = async () => {
+    try {
+      lsSet("rds_redes_hora_youtube", hora);
+      if (!(await ytEnsureToken())) throw new Error("Conecta tu cuenta de Google (YouTube) en Configuración");
+      const tok = ytGetTokens();
+      const cuando = new Date(dia + "T" + hora + ":00");
+      if (cuando.getTime() < Date.now() + 15 * 60000) throw new Error("Pon una hora de al menos 15 minutos desde ahora");
+      setPaso("Subiendo a YouTube…"); setPct(0);
+      const off = window.studioFS.onUploadProgress && window.studioFS.onUploadProgress(d => setPct(d.pct));
+      let r;
+      try {
+        r = await window.studioFS.ytUpload({ filePath: video.video, token: tok.access_token,
+          meta: { snippet: { title: tituloYt.trim().slice(0, 100), description: texto, categoryId: "20" },
+            status: { privacyStatus: "private", publishAt: cuando.toISOString(), selfDeclaredMadeForKids: false } } });
+      } finally { if (off) off(); setPct(null); }
+      if (!r || r.error || !r.videoId) throw new Error((r && r.error) || "YouTube no devolvió el vídeo");
+      toast && toast("📅 «" + tituloYt.trim() + "» programado en YouTube a las " + hora + " (aparece en el carril al sincronizar)");
+      onHecho();
+    } catch (e) { toast && toast("✕ " + e.message); setPaso(""); }
+  };
   const hecho = async () => {
+    if (esYt) return hechoYt();
     try {
       lsSet("rds_redes_hora_" + red, hora); lsSet("rds_redes_tambien", tambien ? "1" : "0"); if (tambien) lsSet("rds_redes_hora_" + otra, horaOtra);
       setPaso("Preparando el vídeo…");
@@ -100,11 +126,14 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
         <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16 }}><span style={{ color: RED[red].color }}>{RED[red].icono}</span> Programar en {RED[red].nombre}</div>
         <div style={{ fontSize: 13, color: "var(--text-2)" }}>«{video.nombre}» · {new Date(dia + "T12:00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}</div>
         <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>Hora <input type="time" value={hora} onChange={e => setHora(e.target.value)} style={campo} /></label>
-        {conectada(otra) && <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+        {esYt && <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>Título
+          <input value={tituloYt} onChange={e => setTituloYt(e.target.value)} maxLength={100} style={campo} /></label>}
+        {!esYt && conectada(otra) && <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
           <input type="checkbox" checked={tambien} onChange={e => setTambien(e.target.checked)} /> También en {RED[otra].nombre}
           {tambien && <input type="time" value={horaOtra} onChange={e => setHoraOtra(e.target.value)} style={campo} />}</label>}
         <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>Texto (descripción)
           <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={4} maxLength={2200} style={{ ...campo, resize: "vertical" }} /></label>
+        {esYt && <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>Se sube ahora en privado y YouTube lo publica solo a esa hora (con el PC apagado también).{pct != null ? " · " + pct + "%" : ""}</div>}
         {red === "tiktok" && <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>Mientras TikTok no apruebe la app, sale en privado (solo tú lo ves); cuando la apruebe, en público.</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
           {paso && <span style={{ fontSize: 12, color: "var(--gold)", marginRight: "auto" }}>{paso}</span>}
@@ -136,7 +165,11 @@ export function CarrilesView({ videos, weekOffset, setWeekOffset, setCalView, on
   const soltar = (red, d) => {
     setEncima(null);
     if (!arrastrado) return;
-    if (red === "youtube") { toast && toast("YouTube: súbelo en YouTube Studio programado y aparece aquí solo"); return; }
+    if (red === "youtube") {
+      if (!ytIsConnected()) { toast && toast("Conecta tu cuenta de Google (YouTube) en Configuración"); return; }
+      if (isoDia(d) < hoy) { toast && toast("Ese día ya ha pasado"); return; }
+      setSoltando({ video: arrastrado, dia: isoDia(d), red }); return;
+    }
     if (!(est && (est.cuentas || []).some(x => x.red === red))) { toast && toast("Conecta " + RED[red].nombre + " arriba primero"); return; }
     if (isoDia(d) < hoy) { toast && toast("Ese día ya ha pasado"); return; }
     setSoltando({ video: arrastrado, dia: isoDia(d), red });
@@ -148,7 +181,7 @@ export function CarrilesView({ videos, weekOffset, setWeekOffset, setCalView, on
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 700 }}>Redes · {dias[0].toLocaleDateString("es-ES", { day: "numeric", month: "short" })} – {dias[6].toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</h2>
-          <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 2 }}>Arrastra un vídeo de la bandeja a un día de Instagram o TikTok · cada red con su hora</p>
+          <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 2 }}>Arrastra un vídeo de la bandeja a un día de YouTube, Instagram o TikTok · cada red con su hora</p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <Cuentas est={est} leer={leer} toast={toast} />
