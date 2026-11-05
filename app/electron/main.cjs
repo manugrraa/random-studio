@@ -362,7 +362,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
 const CONSULTAS = new Set(["estado", "brutos", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "redefectos", "redefecto", "pesoclips", "borrarclips", "borrardescartados", "borrarshorts", "oficializar", "mover", "redvoces", "redtts", "redvozproc", "redsubsguardar", "redsubsborrar", "retencion", "aprender"]);
-const TAREAS = new Set(["brutosmontar", "preparar", "clipear", "montar", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip", "redsubs"]);
+const TAREAS = new Set(["brutosmontar", "preparar", "clipear", "montar", "rehacer", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip", "redsubs"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
 function leerEventos(texto) {

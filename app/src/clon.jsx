@@ -288,8 +288,10 @@ function AnadirARecopilacion({ c, recops, onAnadir, onCrear, ocupado }) {
     </div>);
 }
 
-function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, onCrearRecop, onMover, onOficializar, ocupado }) {
+function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, onCerrar, onNota, onExcluir, onMontar, onEdit, onRecribir, onTitulo, onOrden, onAnadir, onCrearRecop, onMover, onOficializar, onRehacer, ocupado }) {
   const [v, setV] = useState(0);
+  const [rehaciendo, setRehaciendo] = useState(false);
+  const [directrices, setDirectrices] = useState("");
   // 5-11, él: "que se puedan ver los Shorts montados, sobretodo las recopilaciones": de un montado se ve su Short
   const [verShort, setVerShort] = useState(true);
   const conShort = c.estado==="montado" && !!c.short_video;
@@ -314,6 +316,20 @@ function Detalle({ c, recops, onEditar, onEditarRecop, onCribar, onRenombrar, on
           <video key={c.short_video} src={fileUrl(c.short_video)} controls autoPlay style={{width:"100%",aspectRatio:"9/16",background:"#000",borderRadius:10}}/>
           {c.videos.length>0 && <button onClick={()=>setVerShort(false)} style={{...boton(false),width:"100%",marginTop:8,padding:"7px 0",fontSize:12.5}}>Ver {c.videos.length>1?"los clips":"el clip"} de origen</button>}
         </>}
+        {c.estado==="montado" && onRehacer && (!rehaciendo
+          ? <button onClick={()=>setRehaciendo(true)} disabled={ocupado} title="Vuelve a montar el Short con lo que le pidas y sustituye al anterior"
+              style={{...boton(true),width:"100%",marginTop:8,padding:"8px 0",fontSize:12.5}}>↻ Rehacer con nuevas directrices</button>
+          : <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:6}}>
+              <textarea value={directrices} onChange={e=>setDirectrices(e.target.value)} rows={4} autoFocus
+                placeholder="Qué quieres cambiar. P. ej.: alarga los clips 2 s al principio, otro gancho, música más tranquila…"
+                style={{width:"100%",background:"var(--bg-3)",border:"1px solid var(--border)",borderRadius:8,color:"var(--text)",padding:8,fontSize:12.5,resize:"vertical"}}/>
+              <div style={{fontSize:11,color:"var(--text-3)"}}>Se vuelve a escribir el guion con esto por encima de todo y el Short nuevo sustituye al anterior (mismo número; el anterior se guarda).</div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>{ onRehacer(c, directrices); setRehaciendo(false); setDirectrices(""); }} disabled={ocupado || !directrices.trim()}
+                  style={{...boton(true),flex:1,padding:"7px 0",fontSize:12.5,opacity:directrices.trim()?1:.5}}>Rehacer el Short</button>
+                <button onClick={()=>{ setRehaciendo(false); setDirectrices(""); }} style={{...boton(false),padding:"7px 12px",fontSize:12.5}}>Cancelar</button>
+              </div>
+            </div>)}
         {conShort && !verShort && <button onClick={()=>setVerShort(true)} style={{...boton(true),width:"100%",marginBottom:8,padding:"7px 0",fontSize:12.5}}>🎬 Ver el Short montado</button>}
         {!(conShort && verShort) && <>
         {!c.videos.length && <div style={{aspectRatio:"9/16",borderRadius:10,border:"1px dashed var(--border)",display:"flex",alignItems:"center",justifyContent:"center",
@@ -539,6 +555,13 @@ Van a la Papelera de Windows (desde allí se recuperan si hace falta). Después 
       setSel(new Set());
     } catch(e){ toast && toast(e.message); }
   };
+  // 5-11, él: "un botón para rehacer el Short con nuevas directrices": vuelve a escribir el guion con lo que pide y
+  // sustituye al Short anterior en Shorts Listos (mismo número; el anterior se guarda en el taller)
+  const rehacer = async (c, directrices) => {
+    if(!directrices.trim()) return;
+    try { await lanzar(["rehacer", c.carpeta, "--directrices", directrices.trim(), "--modelo", ls("rds_clon_modelo_montar","claude-opus-5-5")]); }
+    catch(e){ toast && toast(e.message); }
+  };
   // 19/10: su nota por clip y los momentos que quita de una recopilación
   const conClip = async (c, args, cambio, aviso) => {
     if(ocupados[c.carpeta]) return;
@@ -689,7 +712,7 @@ Van a la Papelera de Windows (desde allí se recuperan si hace falta). Después 
       {det && <Detalle c={det} onCribar={cribar} onEditar={async (c, ruta)=>{ await soltarVideo(); abrirEnEditor({carpeta:c.carpeta, archivo:archivoDe(ruta)}); }}
         onEditarRecop={async c=>{ await soltarVideo(); abrirEnEditor({recopilacion:c.carpeta}); }} onRenombrar={renombrar} onCerrar={()=>setAbierto(null)}
         onNota={guardarNota} onExcluir={excluir} onMontar={montar} onEdit={ponerEdit} onRecribir={recribir} onTitulo={ponerTitulo} onOrden={ponerOrden}
-        recops={recops.filter(r=>r.carpeta!==det.carpeta)} onAnadir={anadirA} onCrearRecop={(c, nombre, archivo, momento)=>crearRecop(nombre, c, archivo, momento)} onMover={moverMomento} onOficializar={oficializar}
+        recops={recops.filter(r=>r.carpeta!==det.carpeta)} onAnadir={anadirA} onCrearRecop={(c, nombre, archivo, momento)=>crearRecop(nombre, c, archivo, momento)} onMover={moverMomento} onOficializar={oficializar} onRehacer={rehacer}
         ocupado={!!ocupados[det.carpeta] || !!ocupado}/>}
       {/* 28/10, él: "si hay recopilaciones deben aparecer en la parte de arriba, como carpetas" */}
       {(()=>{
