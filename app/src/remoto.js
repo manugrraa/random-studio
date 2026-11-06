@@ -64,7 +64,8 @@ let _toast = null, _base = null, _kitVivo = null, _kitPropio = null, _basePendie
 // 3-11: el kit compartido al momento (ver kitcompartido.cjs): lo que este equipo tiene del kit, en una huella corta que va
 // en el timbre; los demás, al oírla distinta, se ponen al día en segundos. _kitPendiente: llegaron cambios con una tarea en
 // marcha: se aplican en el primer hueco.
-let _kitPendiente = false, _otros = [], _igualarAhora = null;
+let _kitPendiente = false, _otros = [], _igualarAhora = null, _publicarPronto = null;
+const publicarYa = () => { try { _publicarPronto && _publicarPronto(); } catch (e) {} };
 const miKitHuella = () => ((_kitVivo && _kitVivo.huella) || "") + "/" + ((_kitPropio && _kitPropio.huella) || "");
 const anotar = (ambito, texto, datos) => { try { const s = SF(); if (s && s.registro) s.registro(ambito, texto, datos); } catch (e) {} };
 // (v3.42.1) el último fallo se guarda: antes vivía en memoria y se perdía al reiniciar la app
@@ -153,7 +154,7 @@ export function iniciarRemotoEscritorio(t) {
       historias.push(x);
     }
     const datos = {
-      tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible,
+      tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible, enCurso: enCursoAqui(),
       capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven,
         // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
         bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", gpu: aj.gpu || null, whisper: aj.whisper || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, rescateKit: aj.rescateKit || null, esperandoLimite: Object.keys(esperas()).length },
@@ -298,6 +299,7 @@ export function iniciarRemotoEscritorio(t) {
   // publicar al momento lo que cambia aquí (sin esperar a la siguiente vuelta)
   let pronto = null;
   const publicarPronto = () => { clearTimeout(pronto); pronto = setTimeout(publicar, 1500); };
+  _publicarPronto = publicarPronto;
   s.onHistoriasProgreso && s.onHistoriasProgreso((d) => { if (["fin", "terminado", "espera", "driveListo"].includes(d.tipo)) publicarPronto(); });
   alCambiarDisponible(publicarPronto);
 
@@ -432,6 +434,19 @@ export function alCambiarDisponible(f) { _oyentes.add(f); return () => _oyentes.
  * queda libre y coge otro pedido. Los pedidos de este equipo se guardan aquí para seguir su estado aunque se reinicie. */
 const K_MIOS = "rs_perfil_pedidos_mios";
 const mios = () => { try { return JSON.parse(localStorage.getItem(K_MIOS) || "{}"); } catch (e) { return {}; } };
+/* (6-11, Manu: «hago 6 historias a la vez y 5 las hace el ordenador y 1 el portátil, en vez de 3 y 3») REPARTO: cuántas
+ * historias lleva este equipo a medias (pedidos suyos sin terminar y sin pasar a otro). Cada equipo lo publica, y nadie
+ * coge una historia NUEVA si ya lleva más que otro equipo disponible: así 6 pedidos a la vez quedan 3 y 3. */
+const enCursoAqui = () => Object.values(mios()).filter(x => x.tipo === "historia" && x.historia && !x.fin && !x.traspasada).length;
+async function voyPorDelante() {
+  try {
+    const r = await remotoApi("GET");
+    const rivales = (r.equipos || []).filter(e => e.id !== r.yo && e.en_linea && e.datos && e.datos.tipo === "escritorio" && e.datos.disponible !== false
+      && e.datos.capacidad && e.datos.capacidad.proyecto && e.datos.capacidad.claude && typeof e.datos.enCurso === "number");
+    if (!rivales.length) return false;
+    return enCursoAqui() > Math.min(...rivales.map(e => e.datos.enCurso));
+  } catch (e) { return false; }
+}
 const guardarMios = (m) => { try { localStorage.setItem(K_MIOS, JSON.stringify(m)); } catch (e) {} };
 /* v3.40.4: lo que se paró por el LÍMITE de uso de Claude espera aquí a que se restablezca y luego sigue solo: historias
  * (de la cola o empezadas a mano) y pedidos de ideas. { "h:<historia>": hora, "i:<pedido>": hora } */
@@ -745,13 +760,21 @@ export function iniciarTrabajador(t) {
     if (!_disponible || !aj.proyecto || !aj.claude) return;
     const ocupadoAqui = !!(t && t.activa);
     // v3.47.0: preparar (guion y voces) lo puede hacer cualquier equipo; rodar, solo el que tiene Roblox Studio
-    const tipos = ["historia", "ideas"];
+    const puedeRodar = !!aj.blender && !(t && t.fondo) && !ocupadoAqui && !pasaDe("escena");
+    // (6-11) reparto: si este equipo ya lleva más historias que otro, no coge NUEVAS (sí las que hay que animar aquí)
+    const porDelante = await voyPorDelante();
+    const tipos = porDelante && !puedeRodar ? ["ideas"] : ["historia", "ideas"];
     ocupadoCogiendo = true;
     try {
       // v3.41: solo se ofrece a seguir relevos si puede bajar la copia de Drive
       // (v3.49.2) con Studio grabando de fondo, no coge historias para animar (esperarían a Studio): que las coja el otro
-      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: !!aj.blender && !(t && t.fondo) && !ocupadoAqui && !pasaDe("escena"), relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) && !ocupadoAqui });
+      const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: puedeRodar, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) && !ocupadoAqui });
       const p = r.pedido;
+      if (p && porDelante && p.tipo === "historia" && !p.porAnimar && !p.relevo) {
+        // una nueva cuando ya voy por delante: vuelve a la cola para el otro equipo
+        await pedidosApi("POST", { accion: "devolver", id: p.id }).catch(() => {});
+        return;
+      }
       if (!p) {
         // v3.41.7: nada nuevo que preparar ni que animar del portátil: el ordenador anima lo suyo que ya está preparado
         const b = blender[0];
@@ -803,6 +826,7 @@ export function iniciarTrabajador(t) {
           return;
         }
         m[p.id] = { tipo: "historia", historia: c.id }; guardarMios(m);
+        publicarYa();          // (6-11) que el otro equipo sepa cuanto antes cuántas llevo (reparto)
         await pedidosApi("POST", { accion: "estado", id: p.id, estado: "trabajando", historia_id: c.id, detalle: "guion" });
         if (toast) toast("📥 Pedido de la cola: «" + (p.titulo || c.id) + "» (historia " + c.id.slice(0, 2) + ")");
       } else {
