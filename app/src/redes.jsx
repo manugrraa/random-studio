@@ -380,9 +380,31 @@ function MenuProgramado({ p, toast, onCerrar, onCambio }) {
   const [hora, setHora] = useState(() => { const d = new Date(p.hora); return isoDia(d) + "T" + d.toTimeString().slice(0, 5); });
   const r = p.resultado || {};
   const accion = async (a, datos) => { try { await socialApi(a, { id: p.id, ...(datos || {}) }); toast && toast(a === "cancelar" ? "Cancelado" : "Hora cambiada"); onCambio(); } catch (e) { toast && toast("✕ " + e.message); } };
+  // (6/11, él: «que se pueda editar un vídeo que ya está programado, para meterle la miniatura») texto y portada
+  const [texto, setTexto] = useState(p.caption || "");
+  const [portada, setPortada] = useState(null);
+  const [guardando, setGuardando] = useState("");
+  const tienePortada = !!(r.portada || r.portada_ms != null);
+  const guardar = async (quitar) => {
+    try {
+      const datos = { caption: texto };
+      if (portada && portada.ruta) {
+        setGuardando("Subiendo la miniatura…");
+        const sp = await socialApi("subida", { nombre: "portada.jpg", tam: portada.tam });
+        const up = await window.studioFS.redesSubir(portada.ruta, sp.url, false);
+        if (up.error) throw new Error(up.error);
+        datos.portada = sp.archivo;
+        if (portada.origen === "fotograma") datos.portada_ms = Math.round((portada.segundo || 0) * 1000);
+      } else if (quitar) datos.quitar_portada = true;
+      setGuardando("Guardando…");
+      await socialApi("editar", { id: p.id, ...datos });
+      toast && toast("✅ Cambios guardados" + (datos.portada ? " (con su miniatura)" : ""));
+      onCambio();
+    } catch (e) { toast && toast("✕ " + e.message); setGuardando(""); }
+  };
   return (
     <div onClick={onCerrar} style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 400, maxWidth: "92vw", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: "92vw", maxHeight: "92vh", overflowY: "auto", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontWeight: 800 }}><span style={{ color: RED[p.red].color }}>{RED[p.red].icono}</span> {p.titulo}</div>
         <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{{ programado: "Programado", publicando: "Publicándose…", publicado: "Publicado", fallido: "No se pudo publicar" }[p.estado]}
           {r.privacidad === "SELF_ONLY" ? " · en privado (TikTok aún no ha aprobado la app)" : ""}</div>
@@ -391,6 +413,18 @@ function MenuProgramado({ p, toast, onCerrar, onCambio }) {
         {p.estado === "programado" && <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>Cuándo
           <input type="datetime-local" value={hora} onChange={e => setHora(e.target.value)} style={{ fontSize: 13, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)" }} />
           <button onClick={() => accion("reprogramar", { hora: new Date(hora).toISOString() })} style={{ fontSize: 12.5, fontWeight: 700, color: "var(--gold)" }}>Cambiar</button></label>}
+        {p.estado === "programado" && <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>Texto
+          <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={4} maxLength={2200} style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)", resize: "vertical" }} /></label>}
+        {p.estado === "programado" && <>
+          {tienePortada && !portada && <div style={{ fontSize: 12, color: "var(--text-3)" }}>Ya tiene miniatura{r.portada_ms != null && !r.portada ? " (fotograma del segundo " + (r.portada_ms / 1000).toFixed(1) + ")" : ""}. Elige otra para cambiarla.</div>}
+          <Portada video={p.video_ref} valor={portada} onCambio={setPortada} toast={toast} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {guardando && <span style={{ fontSize: 12, color: "var(--gold)" }}>{guardando}</span>}
+            <span style={{ flex: 1 }} />
+            {tienePortada && !portada && <button disabled={!!guardando} onClick={() => guardar(true)} style={{ fontSize: 12.5, color: "var(--text-3)" }}>Quitar miniatura</button>}
+            <button disabled={!!guardando || (texto === (p.caption || "") && !portada)} onClick={() => guardar(false)} className="grad-gold"
+              style={{ fontSize: 12.5, fontWeight: 700, padding: "6px 12px", borderRadius: 8, color: "#000", opacity: (texto === (p.caption || "") && !portada) ? .5 : 1 }}>Guardar cambios</button>
+          </div></>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           {(p.estado === "programado" || p.estado === "fallido") && <button onClick={() => { if (confirm("¿Cancelar esta publicación?")) accion("cancelar"); }} style={{ fontSize: 13, color: "var(--red)", padding: "6px 12px" }}>Cancelar publicación</button>}
           <button onClick={onCerrar} style={{ fontSize: 13, padding: "6px 12px", borderRadius: 8, border: "1px solid var(--border)" }}>Cerrar</button>
