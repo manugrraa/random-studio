@@ -463,6 +463,16 @@ const BLENDER = ["escena", "animatic", "render", "montaje"];
 const LIGERAS = ["guion", "voces", "escribir"];
 const ETAPA_TXT = { guion: "guion", voces: "voces y efectos", escribir: "escribir la escena", escena: "escena 3D", animatic: "animatic", render: "render", montaje: "montaje" };
 /** Historia preparada en este equipo: si el servidor dice que el portátil puede animarla, se sube su copia y se le pasa. */
+/** (6-11) otro equipo en línea, disponible, con Roblox Studio y Drive y SIN nada en Studio (ni tarea ni render de fondo). */
+async function equipoStudioLibre() {
+  try {
+    const r = await remotoApi("GET");
+    return (r.equipos || []).find(e => e.id !== r.yo && e.en_linea && e.datos && e.datos.tipo === "escritorio" && e.datos.disponible !== false
+      && e.datos.capacidad && e.datos.capacidad.blender && e.datos.capacidad.proyecto && e.datos.capacidad.claude && e.datos.capacidad.drive
+      && !e.datos.tarea && !e.datos.fondo) || null;
+  } catch (x) { return null; }
+}
+
 async function pasarAlPortatil(pid, id, para) {
   const s = SF();
   // v3.45.11: cada paso queda escrito en el pedido (se ve en la cola y desde el otro equipo): antes, si algo fallaba, la
@@ -687,6 +697,9 @@ export function iniciarTrabajador(t) {
     // antigua a la más nueva); se apunta la primera que puede seguir aquí
     let empezada = null;
     const blender = [];             // v3.41.7: empezadas a las que les toca Blender (en el ordenador, van al final)
+    // (6-11, Manu: «3 historias paradas cuando el ordenador podría estar haciéndolas») las del portátil que esperan a Roblox
+    // Studio mientras el suyo está ocupado (render de fondo u otra etapa): se pasan a otro equipo con Studio LIBRE
+    const esperaStudio = [];
     const ordenadas = Object.entries(m).sort((a, b) => String(a[1].historia || "").localeCompare(String(b[1].historia || "")));
     for (const [pid, x] of ordenadas) {
       if (x.tipo !== "historia" || !x.historia || x.fin || x.traspasada) continue;
@@ -714,7 +727,7 @@ export function iniciarTrabajador(t) {
         // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
         if (sig && sig.id === "voces" && aj.elevenError) continue;
         // v3.48: con Studio grabando de fondo, las que necesitan Studio esperan y este equipo sigue con guiones y voces
-        if (sig && t && t.fondo && ["escena", "animatic", "render"].includes(sig.id)) continue;
+        if (sig && t && t.fondo && ["escena", "animatic", "render"].includes(sig.id)) { if (_soyDueno && !pasaDe(sig.id)) esperaStudio.push({ pid, x, h, sig }); continue; }
         if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2) {
           // v3.49.2 — PRIORIDADES (Manu, 1-11): 1) las historias empezadas antes que nada nuevo; 2) el portátil anima y
           // renderiza; 3) el ordenador PREPARA TODO (guion y voces) y, «cuando acabe de preparar todo», se pone también a
@@ -733,6 +746,11 @@ export function iniciarTrabajador(t) {
         const sig = et.find(e => e.estado === "pendiente");
         if (sig && ["escena", "animatic", "render"].includes(sig.id) && !pasaDe(sig.id)) blender.push({ pid, x, h, sig });
       }
+      // (6-11) lo mismo en el portátil (antes nunca pasaba nada: era la regla que dejaba al ordenador parado)
+      else if (t && t.activa && t.id !== h.id && _soyDueno && !x.parada && !x.pausada && !w["h:" + h.id]) {
+        const sig = et.find(e => e.estado === "pendiente");
+        if (sig && ["escena", "animatic", "render"].includes(sig.id) && !pasaDe(sig.id)) esperaStudio.push({ pid, x, h, sig });
+      }
     }
     guardarMios(m);
     // v3.41.8: el pedido dice el estado real de las que esperan aquí (antes se quedaba «voces» aunque estuviera parada)
@@ -746,6 +764,21 @@ export function iniciarTrabajador(t) {
         of.x.ofrecida = Date.now(); guardarMios(m);
         const r = await pasarAlPortatil(of.pid, of.h.id).catch((e) => { pedidosApi("POST", { accion: "estado", id: Number(of.pid), estado: "trabajando", detalle: "➡️ pasar al otro equipo: error " + (e && e.message || e) }).catch(() => {}); return null; });
         if (r && r.traspasado) { of.x.traspasada = true; guardarMios(m); toast("➡️ Historia " + of.h.id.slice(0, 2) + " preparada: pasa al portátil para animarla"); return; }
+      }
+    }
+    // (6-11) el portátil pasa UNA de las que esperan a Studio a otro equipo con Studio libre (cada 5 min como mucho cada una)
+    if (_soyDueno && esperaStudio.length && _disponible && revisadoRelevo) {
+      const of = esperaStudio.find(b => Date.now() - (b.x.ofrecida || 0) > 5 * 60000);
+      const libre = of ? await equipoStudioLibre() : null;
+      if (of && libre) {
+        of.x.ofrecida = Date.now(); guardarMios(m);
+        const r = await pasarAlPortatil(of.pid, of.h.id, libre.id).catch((e) => { pedidosApi("POST", { accion: "estado", id: Number(of.pid), estado: "trabajando", detalle: "➡️ pasar al otro equipo: error " + (e && e.message || e) }).catch(() => {}); return null; });
+        if (r && r.traspasado) {
+          of.x.traspasada = true; guardarMios(m);
+          anotar("equipo", "la historia " + of.h.id + " (" + (ETAPA_TXT[of.sig.id] || of.sig.id) + ") pasa a " + (libre.nombre || "otro equipo") + ": el Roblox Studio de aquí está ocupado y el suyo, libre");
+          toast("➡️ Historia " + of.h.id.slice(0, 2) + ": Roblox Studio está ocupado aquí, sigue en " + (libre.nombre || "el otro equipo"));
+          return;
+        }
       }
     }
     if (empezada && _disponible && revisadoRelevo && (!(t && t.activa) || LIGERAS.includes(empezada.sig.id))) {
