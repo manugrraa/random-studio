@@ -679,6 +679,9 @@ export function HistoriasView({ toast }) {
           if (!d.ok && d.limite) toast(`⏸ ${nombreDe(d.id)}: se acabó el límite de Claude. Sigue sola a las ${new Date(d.limite).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`);
           else if (!d.ok) { toast(`${nombreDe(d.id)}: se paró (mira los detalles)`); setInforme({ id: d.id, etapa: d.etapa, texto: d.informe, titulo: ((listaRef.current || []).find(x => x.id === d.id) || {}).titulo }); }
           setTimeout(() => { cargar(); if (d.id === selRef.current) cargarDet(d.id); }, 400);
+          // (6-11) si no había tarjeta de esa historia (p. ej. las voces se pararon antes de empezar), basta con el aviso:
+          // antes se creaba una tarjeta «Arrancando…» que parecía una tarea en marcha
+          if (!(prev && prev.id === d.id)) return prev;
           return d.ok ? null : { ...t, terminado: true, fallo: true };
         }
         return t;

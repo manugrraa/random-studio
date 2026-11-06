@@ -480,7 +480,11 @@ async function probarEleven(forzar) {
       : /quota|credit/i.test(det) ? "Sin créditos en ElevenLabs (" + det + ")"
       : "ElevenLabs " + r.status + ": " + det;
     return (elevenPrueba = { ok: false, error, cuando: Date.now() });
-  } catch (e) { return (elevenPrueba = { ok: false, error: "No se pudo conectar con ElevenLabs: " + e.message, cuando: Date.now() }); }
+  } catch (e) {
+    // (6-11) un corte de red (p. ej. justo al reiniciar para actualizar) no es un problema de la clave: no se bloquean las
+    // voces 6 horas por eso; se vuelve a probar en la próxima
+    return (elevenPrueba = { ok: null, error: "No se pudo conectar con ElevenLabs: " + e.message, cuando: 0 });
+  }
 }
 app.whenReady().then(() => setTimeout(() => probarEleven(false), 12000));
 // v3.43.4: clave de fish.audio (voz del narrador «esqueleto», tools/voz_fish.py), cifrada igual que la de ElevenLabs
@@ -747,9 +751,12 @@ function correrEtapa(sender, id, etapaId, nota, encadenar) {
     return lanzarAgente(sender, id, "escena", promptEtapa(id, "animatic", nota), (ok, snd) => { if (ok) lanzar(snd, id, e.args, "animatic", seguir); });
   }
   if (etapaId === "voces" && claveEleven() && elevenPrueba.ok === false) {
-    try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, bloqueada: true, etapa: "voces", informe: elevenPrueba.error + ". Arréglalo y pulsa «Seguir»." }); } catch (x) {}
-    probarEleven(true);       // por si ya está arreglada: la próxima vez que se intente, valdrá
-    return { ok: false, error: elevenPrueba.error };
+    // (6-11) la prueba guardada puede ser vieja: se repite AHORA y, si ya va, las voces siguen solas sin pulsar nada
+    probarEleven(true).then(p => {
+      if (p.ok !== false) { try { correrEtapa(sender, id, etapaId, nota, encadenar); } catch (x) { try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, etapa: "voces", informe: x.message }); } catch (y) {} } return; }
+      try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, bloqueada: true, etapa: "voces", informe: p.error + ". Arréglalo y pulsa «Seguir»." }); } catch (x) {}
+    });
+    return { ok: true, comprobando: true };
   }
   if (etapaId === "voces" && !claveEleven()) {
     try { sender.send("historias-progreso", { id, tipo: "fin", ok: false, etapa: "voces", informe: "Falta la clave de ElevenLabs para hacer las voces: ponla en RandomHistorias → Ajustes y pulsa «Seguir»." }); } catch (x) {}
