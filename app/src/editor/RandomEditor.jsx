@@ -770,16 +770,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",background:"rgba(212,175,55,0.14)",borderTop:"1px solid #D4AF37",borderBottom:"1px solid #D4AF37",fontSize:12.5}}>
           <span>📸 <b>Elige la miniatura:</b> mueve el cabezal al fotograma que quieras (se ve en el visor, con sus textos) y pulsa «Usar este fotograma».</span>
           <span style={{flex:1}}/>
-          {/* (6/11, él: "no puedo acabar con la última parte del Short en negro"): lo que siga a la última imagen de la
-              pista principal sale en negro con sus textos y sonidos; congelar la última imagen, solo si lo eliges */}
-          <label title="Lo que haya en el timeline después del último clip de la pista principal (textos, SFX, música)" style={{display:"inline-flex",alignItems:"center",gap:6}}>
-            Final:
-            <select value={p.final === "congelar" ? "congelar" : "negro"} onChange={e=>cambiar(q=>({...q, final: e.target.value === "congelar" ? "congelar" : undefined}))}
-              style={{fontSize:12,padding:"3px 6px",borderRadius:6,background:"#111",color:"#eee",border:"1px solid #444"}}>
-              <option value="negro">⬛ En negro (con textos y SFX)</option>
-              <option value="congelar">🧊 Congelar la última imagen</option>
-            </select>
-          </label>
+          {/* (6/11, él: «el final es el final, no hay más»): sin elegir nada; se exporta lo que hay en el timeline */}
           <button className="rd-btn primario" onClick={()=>{ const c = eligiendoMini; cambiar(q=>({...q, portada: M.cuantiza(reloj.t, fps)})); setEligiendoMini(null); exportarYa(c); }}>
             Usar este fotograma y exportar <kbd>{tc(reloj.t, fps)}</kbd></button>
           <button className="rd-btn" onClick={()=>{ const c = eligiendoMini; cambiar(q=>({...q, portada: null})); setEligiendoMini(null); exportarYa(c); }}>Sin miniatura</button>
