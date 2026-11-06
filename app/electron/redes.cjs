@@ -69,9 +69,47 @@ ipcMain.handle("copia-hacer", async (e, token) => {
 ipcMain.handle("redes-subir", async (e, ruta, url, borrarDespues) => {
   try {
     const datos = fs.readFileSync(ruta);
-    const r = await fetch(url, { method: "PUT", headers: { "Content-Type": "video/mp4", "x-upsert": "true" }, body: datos });
+    const tipo = /\.png$/i.test(ruta) ? "image/png" : /\.jpe?g$/i.test(ruta) ? "image/jpeg" : "video/mp4";   // (6/11) también portadas
+    const r = await fetch(url, { method: "PUT", headers: { "Content-Type": tipo, "x-upsert": "true" }, body: datos });
     if (!r.ok) return { error: "El servidor no aceptó el vídeo (" + r.status + "): " + (await r.text()).slice(0, 200) };
     if (borrarDespues) { try { fs.unlinkSync(ruta); } catch (x) {} }
     return { ok: true, tam: datos.length };
+  } catch (x) { return { error: x.message }; }
+});
+
+/* (6/11, él: «poder subir las miniaturas desde RandomStudio, en YouTube y en Instagram») PORTADAS.
+ *  - redes-portada-junto: la miniatura que ya está junto al vídeo («<TÍTULO> - miniatura.png», la de las historias).
+ *  - redes-portada: una imagen JPG lista para subir, de un fotograma del vídeo ({ video, segundo }), de una imagen
+ *    elegida ({ dataUrl }) o de un archivo ({ ruta }). Sale a 1080 de ancho como mucho y de menos de 2 MB (lo que admite
+ *    YouTube para las miniaturas); devuelve la ruta, el tamaño y una vista previa. */
+const vistaPrevia = (ruta) => "data:image/jpeg;base64," + fs.readFileSync(ruta).toString("base64");
+ipcMain.handle("redes-portada-junto", async (e, video) => {
+  try {
+    if (!video || !fs.existsSync(video)) return { ok: true, ruta: null };
+    const dir = path.dirname(video), base = path.basename(video).replace(/\.[^.]+$/, "");
+    const ls = fs.readdirSync(dir);
+    const n = ls.find(x => x.toLowerCase() === (base + " - miniatura.png").toLowerCase()) || ls.find(x => / - miniatura\.(png|jpe?g)$/i.test(x)) || ls.find(x => /^miniatura\.(png|jpe?g)$/i.test(x));
+    return { ok: true, ruta: n ? path.join(dir, n) : null };
+  } catch (x) { return { error: x.message }; }
+});
+ipcMain.handle("redes-portada", async (e, o) => {
+  try {
+    const salida = path.join(temporal(), "portada_" + Date.now().toString(36) + ".jpg");
+    let entrada = null, pre = [];
+    if (o && o.dataUrl) {
+      const m = String(o.dataUrl).match(/^data:image\/(\w+);base64,(.+)$/);
+      if (!m) return { error: "Imagen no válida" };
+      entrada = path.join(temporal(), "elegida_" + Date.now().toString(36) + "." + (m[1] === "jpeg" ? "jpg" : m[1]));
+      fs.writeFileSync(entrada, Buffer.from(m[2], "base64"));
+    } else if (o && o.ruta) entrada = o.ruta;
+    else if (o && o.video) { entrada = o.video; pre = ["-ss", String(Math.max(0, Number(o.segundo) || 0))]; }
+    if (!entrada || !fs.existsSync(entrada)) return { error: "No encuentro la imagen" };
+    for (const q of [2, 4, 7]) {
+      const r = spawnSync("ffmpeg", ["-v", "error", "-y", ...pre, "-i", entrada, "-frames:v", "1", "-vf", "scale='min(1080,iw)':-2", "-q:v", String(q), salida], { windowsHide: true });
+      if (r.status !== 0) return { error: "ffmpeg: " + String(r.stderr || "").slice(-200) };
+      if (fs.statSync(salida).size < 1.9 * 1024 * 1024) break;
+    }
+    if (o && o.dataUrl) { try { fs.unlinkSync(entrada); } catch (x) {} }
+    return { ok: true, ruta: salida, tam: fs.statSync(salida).size, vista: vistaPrevia(salida) };
   } catch (x) { return { error: x.message }; }
 });

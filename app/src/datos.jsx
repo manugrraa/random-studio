@@ -612,6 +612,21 @@ export async function ytAddToPlaylist(playlistId, videoId){
   return true;
 }
 
+/* (6/11, él: «poder poner las miniaturas desde RandomStudio») sube la miniatura de un vídeo (JPG/PNG de menos de 2 MB).
+   YouTube solo lo deja si el canal está verificado (miniaturas personalizadas). */
+export async function ytSetThumbnail(videoId, blob){
+  await ytEnsureToken();
+  const res = await fetch("https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=" + encodeURIComponent(videoId), {
+    method: "POST", headers: { ...ytAuthHeader(), "Content-Type": blob.type || "image/jpeg" }, body: blob
+  });
+  if(!res.ok){
+    const data = await res.json().catch(()=>({}));
+    const msg = data?.error?.message || ("Error al subir la miniatura ("+res.status+")");
+    throw new Error(/permission|verif/i.test(msg) ? "YouTube no deja miniaturas personalizadas en este canal (hay que verificarlo con el teléfono)" : msg);
+  }
+  return true;
+}
+
 /* ——— ID del canal propio (cacheado en el dispositivo) ——— */
 export async function ytMyChannelId(){
   try { const c = localStorage.getItem("rds_channel_id"); if(c) return c; } catch(e){}

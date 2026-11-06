@@ -180,6 +180,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   copiaPosible: () => ipcRenderer.invoke("copia-posible"),
   copiaHacer: (token) => ipcRenderer.invoke("copia-hacer", token),
   redesSubir: (ruta, url, borrar) => ipcRenderer.invoke("redes-subir", ruta, url, borrar),
+  redesPortada: (o) => ipcRenderer.invoke("redes-portada", o),
+  redesPortadaJunto: (video) => ipcRenderer.invoke("redes-portada-junto", video),
   terminadosSubir: (id, token, perfil) => ipcRenderer.invoke("terminados-subir", id, token, perfil),
   terminadosCarpeta: (token, perfil) => ipcRenderer.invoke("terminados-carpeta", token, perfil),
   onTerminadosProgreso: (cb) => { const f = (e, d) => cb(d); ipcRenderer.on("terminados-progreso", f); return () => ipcRenderer.removeListener("terminados-progreso", f); },

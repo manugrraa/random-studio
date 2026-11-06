@@ -1,5 +1,5 @@
 import React from "react";
-import { YT_BACKEND, cloudToken, ytEnsureToken, ytGetTokens, ytIsConnected } from "./datos";
+import { YT_BACKEND, cloudToken, ytAddToPlaylist, ytEnsureToken, ytGetTokens, ytGetVideoDetails, ytIsConnected, ytListMyVideos, ytListPlaylists, ytSetThumbnail } from "./datos";
 import { cabecerasEquipo } from "./seguridad";
 const { useState, useEffect, useMemo, useCallback } = React;
 
@@ -64,6 +64,52 @@ function Cuentas({ est, leer, toast }) {
     </div>);
 }
 
+/* ---------- portada / miniatura (6/11, él: «poder subir las miniaturas desde RandomStudio, en YouTube y en Instagram»)
+   Sale sola la «<TÍTULO> - miniatura.png» que está junto al vídeo (la de las historias); si no, se elige un fotograma
+   del vídeo o una imagen del PC. */
+const urlLocal = (f) => "file:///" + encodeURI(String(f || "").replace(/\\/g, "/"));
+function Portada({ video, valor, onCambio, toast }) {
+  const [viendo, setViendo] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+  const ref = React.useRef(null);
+  const sf = window.studioFS || {};
+  const poner = async (o, origen) => {
+    if (!sf.redesPortada) return;
+    setOcupado(true);
+    try { const r = await sf.redesPortada(o); if (r.error) throw new Error(r.error); onCambio({ ...r, origen, segundo: o.segundo != null ? o.segundo : null }); setViendo(false); }
+    catch (e) { toast && toast("✕ " + e.message); } finally { setOcupado(false); }
+  };
+  const elegir = (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    const rd = new FileReader(); rd.onload = () => poner({ dataUrl: rd.result }, "archivo"); rd.readAsDataURL(f);
+  };
+  const boton = { fontSize: 12, padding: "5px 9px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--card-2)" };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+      <span>Miniatura</span>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        {valor ? <img src={valor.vista} alt="" style={{ width: 72, height: 128, objectFit: "cover", borderRadius: 8, border: "1px solid var(--border)" }} />
+          : <div style={{ width: 72, height: 128, borderRadius: 8, border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--text-3)", textAlign: "center" }}>Sin<br />miniatura</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+          {valor && <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>{valor.origen === "junto" ? "La de la carpeta del vídeo" : valor.origen === "fotograma" ? "Fotograma del segundo " + (valor.segundo || 0).toFixed(1) : "Imagen elegida"}</span>}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button disabled={ocupado} onClick={() => setViendo(v => !v)} style={boton}>🎞 Fotograma del vídeo</button>
+            <label style={{ ...boton, cursor: "pointer" }}>🖼 Elegir imagen…<input type="file" accept="image/png,image/jpeg" onChange={elegir} style={{ display: "none" }} /></label>
+            {valor && <button onClick={() => onCambio(null)} style={{ ...boton, color: "var(--text-3)" }}>Quitar</button>}
+          </div>
+          {ocupado && <span style={{ fontSize: 11.5, color: "var(--gold)" }}>Preparando la imagen…</span>}
+        </div>
+      </div>
+      {viendo && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+          <video ref={ref} src={urlLocal(video)} controls style={{ width: 160, borderRadius: 8, background: "#000" }} />
+          <button disabled={ocupado} className="grad-gold" onClick={() => poner({ video, segundo: ref.current ? ref.current.currentTime : 0 }, "fotograma")}
+            style={{ fontSize: 12, fontWeight: 700, padding: "6px 10px", borderRadius: 8, color: "#000" }}>Usar este fotograma</button>
+        </div>)}
+    </div>);
+}
+
 /* ---------- programar (el cuadro que sale al soltar un vídeo en un día) ---------- */
 function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
   const otra = red === "instagram" ? "tiktok" : "instagram";
@@ -73,9 +119,52 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
   const [horaOtra, setHoraOtra] = useState(() => ls("rds_redes_hora_" + otra, HORA_DEF[otra]));
   const [texto, setTexto] = useState(() => (video.nombre || "").replace(/^\d+\s*-\s*/, "") + (ls("rds_redes_coletilla", "") ? "\n\n" + ls("rds_redes_coletilla", "") : ""));
   const [paso, setPaso] = useState("");
-  const [tituloYt, setTituloYt] = useState(() => (video.nombre || "").replace(/^d+s*-s*/, ""));
+  // (6/11) arreglado: la expresión no tenía las barras y no quitaba el «94 - » del principio
+  const [tituloYt, setTituloYt] = useState(() => (video.nombre || "").replace(/^\d+\s*-\s*/, ""));
   const [pct, setPct] = useState(null);
   const esYt = red === "youtube";
+  // (6/11, él: «las miniaturas, copiar las descripciones de otros vídeos, esos detallitos que me gustan»)
+  const plantilla = (() => { try { return JSON.parse(ls("rds_yt_plantilla", "null")); } catch (e) { return null; } })();
+  const [portada, setPortada] = useState(null);
+  const [tags, setTags] = useState(() => esYt ? ls("rds_yt_tags", (plantilla && plantilla.tags) || "") : "");
+  const [categoria, setCategoria] = useState(() => ls("rds_yt_categoria", "20"));
+  const [lista, setLista] = useState(() => ls("rds_yt_lista", ""));
+  const [listas, setListas] = useState([]);
+  const [otros, setOtros] = useState(null);       // vídeos del canal (YouTube) o publicaciones (Instagram/TikTok) para copiar
+  const [copiando, setCopiando] = useState(false);
+  useEffect(() => {
+    const sf = window.studioFS || {};
+    if (sf.redesPortadaJunto && sf.redesPortada) sf.redesPortadaJunto(video.video).then(j => j && j.ruta ? sf.redesPortada({ ruta: j.ruta }) : null)
+      .then(r => { if (r && r.ok) setPortada(p => p || { ...r, origen: "junto" }); }).catch(() => {});
+    if (esYt) {
+      if (plantilla && plantilla.texto) setTexto(plantilla.texto);
+      ytEnsureToken().then(ok => ok && ytListPlaylists()).then(l => setListas(l || [])).catch(() => {});
+    }
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const cargarOtros = async () => {
+    if (otros) return;
+    try {
+      if (esYt) { await ytEnsureToken(); setOtros((await ytListMyVideos(30)).map(v => ({ id: v.id, titulo: v.title }))); }
+      else { const e = await socialApi("estadisticas", { red }); setOtros((Array.isArray(e.pubs) ? e.pubs : []).filter(x => x.texto).map(x => ({ id: x.id, titulo: x.texto.split("\n")[0].slice(0, 70), texto: x.texto }))); }
+    } catch (e) { toast && toast("✕ " + e.message); setOtros([]); }
+  };
+  const copiarDe = async (id) => {
+    const o = (otros || []).find(x => x.id === id);
+    if (!o) return;
+    setCopiando(true);
+    try {
+      if (esYt) {
+        const d = await ytGetVideoDetails(id);
+        if (!d) throw new Error("No pude leer ese vídeo");
+        setTexto(d.description || ""); setTags((d.tags || []).join(", ")); if (d.categoryId) setCategoria(d.categoryId);
+      } else setTexto(o.texto);
+      toast && toast("📋 Copiado de «" + o.titulo + "»");
+    } catch (e) { toast && toast("✕ " + e.message); } finally { setCopiando(false); }
+  };
+  const guardarPlantilla = () => {
+    lsSet("rds_yt_plantilla", JSON.stringify({ texto, tags }));
+    toast && toast("💾 Plantilla guardada: los próximos vídeos empezarán con esta descripción y etiquetas");
+  };
   /* (5/11, él: "en YouTube no me deja programar desde redes") YouTube: se sube YA desde el PC en privado con su fecha
      de publicación (publishAt) y YouTube lo publica solo a esa hora, como en la sección Vídeos. */
   const hechoYt = async () => {
@@ -90,11 +179,20 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
       let r;
       try {
         r = await window.studioFS.ytUpload({ filePath: video.video, token: tok.access_token,
-          meta: { snippet: { title: tituloYt.trim().slice(0, 100), description: texto, categoryId: "20" },
+          meta: { snippet: { title: tituloYt.trim().slice(0, 100), description: texto, categoryId: categoria || "20",
+            tags: tags.split(",").map(t => t.trim()).filter(Boolean).slice(0, 30) },
             status: { privacyStatus: "private", publishAt: cuando.toISOString(), selfDeclaredMadeForKids: false } } });
       } finally { if (off) off(); setPct(null); }
       if (!r || r.error || !r.videoId) throw new Error((r && r.error) || "YouTube no devolvió el vídeo");
-      toast && toast("📅 «" + tituloYt.trim() + "» programado en YouTube a las " + hora + " (aparece en el carril al sincronizar)");
+      lsSet("rds_yt_tags", tags); lsSet("rds_yt_categoria", categoria || "20"); lsSet("rds_yt_lista", lista || "");
+      const avisos = [];
+      if (portada && portada.vista) {
+        setPaso("Poniendo la miniatura…");
+        try { await ytSetThumbnail(r.videoId, await (await fetch(portada.vista)).blob()); } catch (e) { avisos.push("miniatura: " + e.message); }
+      }
+      if (lista) { try { await ytAddToPlaylist(lista, r.videoId); } catch (e) { avisos.push("lista: " + e.message); } }
+      if (avisos.length) toast && toast("⚠️ Subido, pero " + avisos.join(" · "));
+      toast && toast("📅 «" + tituloYt.trim() + "» programado en YouTube a las " + hora + (portada ? " con su miniatura" : "") + " (aparece en el carril al sincronizar)");
       onHecho();
     } catch (e) { toast && toast("✕ " + e.message); setPaso(""); }
   };
@@ -109,11 +207,21 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
       const sb = await socialApi("subida", { nombre: video.nombre + ".mp4", tam: pr.tam });
       const up = await window.studioFS.redesSubir(pr.ruta, sb.url, !!pr.temporal);
       if (up.error) throw new Error(up.error);
+      let portadaArchivo = null;
+      if (portada && portada.ruta) {
+        setPaso("Subiendo la portada…");
+        const sp = await socialApi("subida", { nombre: "portada.jpg", tam: portada.tam });
+        const upP = await window.studioFS.redesSubir(portada.ruta, sp.url, false);
+        if (upP.error) throw new Error(upP.error);
+        portadaArchivo = sp.archivo;
+      }
+      const portadaMs = portada && portada.origen === "fotograma" ? Math.round((portada.segundo || 0) * 1000) : null;
       setPaso("Programando…");
       const redes = [[red, hora], ...(tambien ? [[otra, horaOtra]] : [])];
       for (const [r, h] of redes) {
         const cuando = new Date(dia + "T" + h + ":00");
-        await socialApi("programar", { red: r, hora: cuando.toISOString(), titulo: video.nombre, caption: texto, archivo: sb.archivo, tam: pr.tam, video_ref: video.video });
+        await socialApi("programar", { red: r, hora: cuando.toISOString(), titulo: video.nombre, caption: texto, archivo: sb.archivo, tam: pr.tam, video_ref: video.video,
+          portada: portadaArchivo, portada_ms: portadaMs });
       }
       toast && toast("📅 «" + video.nombre + "» programado en " + redes.map(([r, h]) => RED[r].nombre + " a las " + h).join(" y "));
       onHecho();
@@ -122,7 +230,7 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
   const campo = { fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)" };
   return (
     <div onClick={onCerrar} style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 440, maxWidth: "92vw", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 480, maxWidth: "92vw", maxHeight: "92vh", overflowY: "auto", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16 }}><span style={{ color: RED[red].color }}>{RED[red].icono}</span> Programar en {RED[red].nombre}</div>
         <div style={{ fontSize: 13, color: "var(--text-2)" }}>«{video.nombre}» · {new Date(dia + "T12:00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}</div>
         <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>Hora <input type="time" value={hora} onChange={e => setHora(e.target.value)} style={campo} /></label>
@@ -131,8 +239,29 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
         {!esYt && conectada(otra) && <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
           <input type="checkbox" checked={tambien} onChange={e => setTambien(e.target.checked)} /> También en {RED[otra].nombre}
           {tambien && <input type="time" value={horaOtra} onChange={e => setHoraOtra(e.target.value)} style={campo} />}</label>}
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>Texto (descripción)
-          <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={4} maxLength={2200} style={{ ...campo, resize: "vertical" }} /></label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>Texto (descripción)
+            <select onFocus={cargarOtros} onMouseDown={cargarOtros} value="" disabled={copiando} onChange={e => copiarDe(e.target.value)}
+              style={{ ...campo, padding: "4px 6px", fontSize: 12, marginLeft: "auto", maxWidth: 230 }}>
+              <option value="">{copiando ? "Copiando…" : "📋 Copiar de otro " + (esYt ? "vídeo" : "post") + "…"}</option>
+              {(otros || []).map(o => <option key={o.id} value={o.id}>{o.titulo}</option>)}
+              {otros && !otros.length && <option disabled value="-">(no hay ninguno)</option>}
+            </select></span>
+          <textarea value={texto} onChange={e => setTexto(e.target.value)} rows={5} maxLength={esYt ? 5000 : 2200} style={{ ...campo, resize: "vertical" }} /></label>
+        {esYt && <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>Etiquetas <span style={{ fontSize: 11, color: "var(--text-3)" }}>(separadas por comas)</span>
+          <input value={tags} onChange={e => setTags(e.target.value)} placeholder="roblox, historias de roblox…" style={campo} /></label>}
+        {esYt && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, flex: 1 }}>Categoría
+            <select value={categoria} onChange={e => setCategoria(e.target.value)} style={campo}>
+              <option value="20">Videojuegos</option><option value="24">Entretenimiento</option><option value="22">Gente y blogs</option><option value="23">Comedia</option><option value="1">Cine y animación</option>
+            </select></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, flex: 1 }}>Lista de reproducción
+            <select value={lista} onChange={e => setLista(e.target.value)} style={campo}>
+              <option value="">(ninguna)</option>{listas.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
+            </select></label>
+        </div>}
+        {esYt && <button onClick={guardarPlantilla} style={{ alignSelf: "flex-start", fontSize: 12, color: "var(--text-2)", padding: "4px 8px", borderRadius: 8, border: "1px solid var(--border)" }}>💾 Guardar descripción y etiquetas como plantilla</button>}
+        <Portada video={video.video} valor={portada} onCambio={setPortada} toast={toast} />
         {esYt && <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>Se sube ahora en privado y YouTube lo publica solo a esa hora (con el PC apagado también).{pct != null ? " · " + pct + "%" : ""}</div>}
         {red === "tiktok" && <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>Mientras TikTok no apruebe la app, sale en privado (solo tú lo ves); cuando la apruebe, en público.</div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
