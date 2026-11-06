@@ -277,13 +277,47 @@ function videoLimpio(nn, t) {
   return { f: path.join(c, n, n + ".mp4"), limpio: false };
 }
 
+/* (6-11, Manu: descripción con los minutos, «Inicio» y «Despedida», y el mayor SEO posible). Lo que pesa en YouTube:
+ * las 2 primeras líneas (se ven sin desplegar) empiezan por lo que se busca («historias de Roblox»), los capítulos con
+ * 00:00 al principio (salen en la barra y en Google), palabras de lo que pasa en cada historia, y 3 hashtags (los 3
+ * primeros salen encima del título). Español neutro (el público es latino). Modelo: la de la 01 (.Recopilación 01\descripcion.txt). */
 function textosSubida(nn) {
   const r = leerRec(nn), fin = path.join(r.carpeta, ".Recopilación " + nn);
-  const caps = r.capitulos || "";
-  const titulo = `${r.historias.length} PUEBLOS CON REGLAS IMPOSIBLES (Recopilación ${nn})`;
-  const desc = `${r.historias.length} historias seguidas de los pueblos más raros a los que me he mudado.\n\n${caps.trim()}\n\n¿A qué pueblo me mudo ahora? Déjamelo en los comentarios.`;
-  const txt = `TÍTULO (propuesta, cámbialo si quieres)\n${titulo}\n\nDESCRIPCIÓN\n${desc}\n\nAJUSTES\n- Audiencia: no es para niños. Categoría: Videojuegos. Idioma: Español.\n- Miniatura: «Recopilación ${nn} - miniatura.png».\n- Pantalla final: los 20 s del outro (suscribirse + un vídeo).\n`;
+  const n = r.historias.length;
+  const frase = (t) => { t = String(t).trim().replace(/!+$/, ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); };
+  const ejemplos = r.historias.slice(0, 3).map(h => frase(h.titulo).replace(/^(En este pueblo|Aquí) /i, "").toLowerCase());
+  const titulo = `${n} PUEBLOS CON REGLAS IMPOSIBLES 😱 Historias de Roblox (Recopilación ${nn})`;
+  const desc = `${n} historias de Roblox seguidas: los pueblos más raros a los que me he mudado, cada uno con una regla imposible. ` +
+    `${ejemplos.length >= 2 ? "En uno " + ejemplos[0] + ", en otro " + ejemplos[1] + "… " : ""}y si rompes la regla, mejor no te cuento lo que pasa. 🏘️
+
+` +
+    `Recopilación ${nn} de historias animadas de Roblox en español: ${r.historias.slice(3, 7).map(h => frase(h.titulo).toLowerCase()).join(", ")} y mucho más. ` +
+    `Más de ${Math.floor((r.total + 45) / 60)} minutos de historias para ver de una vez.
+
+` +
+    `⏱️ CAPÍTULOS
+${(r.capitulos || "").trim()}
+
+` +
+    `💬 ¿A qué pueblo me mudo ahora? Déjamelo en los comentarios: igual la próxima historia es la tuya.
+🔔 Suscríbete para no perderte el siguiente pueblo.
+
+` +
+    `#Roblox #HistoriasDeRoblox #HistoriasAnimadas`;
+  const txt = `TÍTULO (propuesta, cámbialo si quieres)
+${titulo}
+
+DESCRIPCIÓN (pégala tal cual; repasa la segunda frase)
+${desc}
+
+AJUSTES
+- Audiencia: no es para niños. Categoría: Videojuegos. Idioma: Español.
+- Etiquetas: historias de roblox, historias animadas, roblox en español, recopilación.
+- Miniatura: «Recopilación ${nn} - miniatura.png».
+- Pantalla final: los 20 s del outro (suscribirse + un vídeo).
+`;
   fs.mkdirSync(fin, { recursive: true });
+  fs.writeFileSync(path.join(fin, "descripcion.txt"), desc + "\n", "utf-8");
   fs.writeFileSync(path.join(fin, "subida.txt"), txt, "utf-8");
 }
 
