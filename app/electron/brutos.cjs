@@ -86,7 +86,7 @@ ipcMain.handle("brutos-cambiar", async (e, cambio) => {
     const c = cambio.carpeta || {};
     const i = est.carpetas.findIndex(x => x.id === c.id);
     if (i >= 0) est.carpetas[i] = { ...est.carpetas[i], ...c };
-    else est.carpetas.unshift({ estado: "nuevo", creada: new Date().toISOString(), clips: [], nota: "", titulo_modo: "ia", ...c });
+    else est.carpetas.unshift({ estado: "nuevo", creada: new Date().toISOString(), clips: [], nota: "", titulo_modo: "ninguno", ...c });   // (7/11) el título lo pone él
   } else if (k === "quitar-carpeta") est.carpetas = est.carpetas.filter(x => x.id !== cambio.id);
   else return { error: "cambio no válido" };
   escribirJson(f, est);

@@ -326,7 +326,7 @@ function DetalleCarpeta({ c, porRel, ponerCar, montar, ocupado, montando, subirD
   const [tit, setTit] = useState({ titulo: c.titulo || "", blanco: c.titulo_blanco || "", rojo: c.titulo_rojo || "" });
   useEffect(() => { setNota(c.nota || ""); setTit({ titulo: c.titulo || "", blanco: c.titulo_blanco || "", rojo: c.titulo_rojo || "" }); }, [c.id]);
   const mover = (k, d) => { const cl = [...c.clips]; const j = k + d; if (j < 0 || j >= cl.length) return; [cl[k], cl[j]] = [cl[j], cl[k]]; ponerCar({ clips: cl }); };
-  const modo = c.titulo_modo || "ia";
+  const modo = c.titulo_modo || "ninguno";   // (7/11, él: «el título lo elijo yo»)
   const campo = { width: "100%", boxSizing: "border-box", background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 9, padding: "8px 10px", color: "var(--text)", fontSize: 13 };
   const r = c.resultado;
   return (
