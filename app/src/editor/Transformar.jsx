@@ -104,7 +104,8 @@ export function Transformador({ c, tRel, W, H, k, natural, onGesto, cambiarClip 
 // ---- en propiedades: transformar (con fotogramas clave y curvas) y la velocidad
 export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir }) {
   const [t, setT] = useState(reloj.t);
-  useEffect(()=>{ let ult = 0; return reloj.oir(x=>{ const a = performance.now(); if(a - ult > 90){ ult = a; setT(x); } }); },[reloj]);
+  // (8/11, fallo: tras moverse rápido, el ◆ se ponía en el instante de antes) + el último instante siempre llega
+  useEffect(()=>{ let ult = 0, tm = 0; const q = reloj.oir(x=>{ const a = performance.now(); clearTimeout(tm); if(a - ult > 90){ ult = a; setT(x); } else tm = setTimeout(()=>setT(reloj.t), 100); }); return ()=>{ clearTimeout(tm); q && q(); }; },[reloj]);
   const tRel = Math.max(0, Math.min(largo(c), t - c.en));
   const dentro = t >= c.en && t <= c.en + largo(c);
   const fila = { display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 };

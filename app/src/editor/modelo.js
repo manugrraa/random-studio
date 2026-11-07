@@ -72,7 +72,7 @@ export const nuevaPistaTexto = ps => ({ id:"t"+uid(), tipo:"texto", nombre:"Text
 // mete un clip donde quepa (en la pista pedida, en otra libre del mismo tipo o en una nueva)
 export function colocar(ps, c, preferida, tipo="audio") {
   const libre = ps.find(x=>x.id===preferida && x.tipo===tipo && !x.bloqueada && !solapa(x, c.en, largo(c)))
-    || ps.find(x=>x.tipo===tipo && !x.bloqueada && !solapa(x, c.en, largo(c)));
+    || ps.find(x=>x.tipo===tipo && !x.bloqueada && !(tipo === "video" && x.id === "v1") && !solapa(x, c.en, largo(c)));
   if(libre) return ps.map(x=>x.id!==libre.id ? x : {...x, clips:[...x.clips, c]});
   if(tipo === "texto"){ const n = nuevaPistaTexto(ps); const i = ps.findIndex(x=>x.tipo==="texto"); return i < 0 ? [{...n, clips:[c]}, ...ps] : [...ps.slice(0, i), {...n, clips:[c]}, ...ps.slice(i)]; }
   // 31/10: sin sitio en los subtítulos, otra pista de SUBTÍTULOS con su plantilla (antes caía en una de audio)
@@ -81,6 +81,8 @@ export function colocar(ps, c, preferida, tipo="audio") {
     const n = { id:"s"+uid(), tipo:"subtitulos", nombre:"Subtítulos", plantilla:ref.plantilla, estilo:ref.estilo || {}, clips:[c] };
     const i = ps.findIndex(x=>x.tipo==="subtitulos"); return i < 0 ? [n, ...ps] : [...ps.slice(0, i), n, ...ps.slice(i)];
   }
+  // (8/11, fallo: un clip de una pista SUPERPUESTA pegado sin sitio caía en la principal) → una superpuesta nueva encima
+  if(tipo === "video" && preferida && preferida !== "v1"){ const n = nuevaPistaVideo(ps), i = Math.max(0, ps.findIndex(x=>x.id===preferida)); return [...ps.slice(0, i), {...n, clips:[c]}, ...ps.slice(i)]; }
   if(tipo === "video") return ps.map(x=>x.id!=="v1" ? x : {...x, clips:[...x.clips, sinPisar(x, c)]});
   return [...ps, {...nuevaPistaAudio(ps), clips:[c]}];
 }
@@ -109,20 +111,41 @@ export function retextoTarjeta(c, texto) {
 export const nuevoTexto = (texto, estilo, en, dur, plantilla) => ({ id:uid(), tipo:"texto", texto, nombre:texto, estilo:{...estilo},
   plantilla: plantilla || null, desde:TEXTO0, hasta:TEXTO0 + dur, dur_src:1e9, en, vol:1, silencio:false });
 
+/* 8/11 (fallos): al partir un clip, cada trozo se queda con sus fotogramas clave Y el valor que había justo en el corte
+   (antes, un zoom partido por la mitad saltaba), y una tarjeta de subtítulos con SUS palabras (antes se repetían) */
+export function kfTramo(c, desde, hasta) {
+  if(!c.kf) return c.kf;
+  return Object.fromEntries(Object.entries(c.kf).map(([pr, l])=>{
+    l = (l || []).slice().sort((a,b)=>a[0]-b[0]);
+    if(!l.length) return [pr, l];
+    const val = t => pr === "vol" ? volEn(c, t) : valorEn(c, pr, t);
+    const dentro = l.filter(x=>x[0] >= desde && x[0] <= hasta).map(x=>[+(x[0] - desde).toFixed(4), x[1], x[2]]);
+    if(!dentro.length || dentro[0][0] > 1e-4) dentro.unshift([0, val(desde), "lineal"]);
+    if(hasta < 1e8 && dentro[dentro.length - 1][0] < hasta - desde - 1e-4) dentro.push([+(hasta - desde).toFixed(4), val(hasta), (l.find(x=>x[0] > hasta) || [])[2] || "lineal"]);
+    return [pr, dentro];
+  }));
+}
+export const palabrasDe = (c, desde, hasta) => !c.palabras ? {} : (()=>{
+  const ws = c.palabras.filter(w=>w[1] > desde + 0.02 && w[0] < hasta - 0.02).map(w=>{ const n = [+(Math.max(0, w[0] - desde)).toFixed(3), +(Math.min(hasta, w[1]) - desde).toFixed(3), w[2]]; if(w.length > 3) n.push(w[3]); return n; });
+  return { palabras: ws, texto: ws.map(w=>w[2]).join(" ") || c.texto };
+})();
+
 // dividir en `t` los clips con esos ids
 export const dividir = (p, ids, t) => ({...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.flatMap(c=>{
   if(!ids.has(c.id) || t <= c.en + 0.01 || t >= fin(c) - 0.01) return [c];
   const k = local(c, t), dt = t - c.en;
   // (los fotogramas clave se reparten: cada mitad se queda con los suyos, en su tiempo)
-  const kfDe = (desde, hasta) => c.kf ? Object.fromEntries(Object.entries(c.kf).map(([pr, l])=>[pr, (l||[]).filter(x=>x[0] >= desde && x[0] <= hasta).map(x=>[+(x[0] - desde).toFixed(4), x[1], x[2]])])) : c.kf;
-  return [{...c, hasta:k, fade_out:0, kf: kfDe(0, dt)}, {...c, id:uid(), desde:k, en:t, fade_in:0, kf: kfDe(dt, 1e9)}];
+  const kfDe = (desde, hasta) => kfTramo(c, desde, hasta);
+  return [{...c, hasta:k, fade_out:0, kf: kfDe(0, dt), ...palabrasDe(c, 0, dt)}, {...c, id:uid(), desde:k, en:t, fade_in:0, kf: kfDe(dt, 1e9), ...palabrasDe(c, dt, 1e9)}];
 })}))});
 
 // borrar a la izquierda (Q) o a la derecha (W) del cabezal
 export const borrarLado = (p, ids, t, izq) => ({...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>{
   if(!ids.has(c.id) || t <= c.en + 0.01 || t >= fin(c) - 0.01) return c;
   const k = local(c, t);
-  return izq ? {...c, desde:k, en: pi.id==="v1" && p.magnetica ? c.en : t} : {...c, hasta:k};
+  const dt = t - c.en;
+  return izq ? {...c, desde:k, en: pi.id==="v1" && p.magnetica ? c.en : t, kf: kfTramo(c, dt, 1e9), ...palabrasDe(c, dt, 1e9)}
+             : {...c, hasta:k, kf: kfTramo(c, 0, dt), ...palabrasDe(c, 0, dt)};
 })}))});
 
 export const eliminar = (p, ids) => ({...p, pistas: p.pistas.map(pi=> pi.bloqueada ? pi : {...pi, clips: pi.clips.filter(c=>!ids.has(c.id))})});
@@ -161,15 +184,17 @@ export function extraerAudio(p, ids) {
 
 // quitar el aire: fuera de la principal los silencios (en tiempo del archivo) de cada clip
 export function quitarAire(p, aires) {
-  let quitados = 0;
-  const q = {...p, pistas: p.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips: pi.clips.flatMap(c=>{
+  let quitados = 0, corrido = 0;
+  const q = {...p, pistas: p.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips: [...pi.clips].sort((a,b)=>a.en-b.en).flatMap(c=>{
     let trozos = [[c.desde, c.hasta]];
     (aires[c.ruta]||[]).forEach(([a,b])=>{
       trozos = trozos.flatMap(([x,y])=> (b<=x || a>=y) ? [[x,y]] : [[x,Math.max(x,a)],[Math.min(y,b),y]].filter(([u,v])=>v-u>0.05));
     });
     quitados += trozos.length - 1;
-    let en = c.en;
-    return trozos.map(([x,y],k)=>{ const n = {...c, id:k ? uid() : c.id, desde:x, hasta:y, en}; en += (y - x) / vel(c); return n; });
+    let en = c.en - corrido;
+    const res = trozos.map(([x,y],k)=>{ const d0 = (x - c.desde) / vel(c), n = {...c, id:k ? uid() : c.id, desde:x, hasta:y, en, kf: kfTramo(c, d0, d0 + (y - x) / vel(c))}; en += (y - x) / vel(c); return n; });
+    corrido += largo(c) - (en - (c.en - corrido));        // lo que se ha quitado de este clip: lo de detrás se corre
+    return res;
   })})};
   return [q, quitados];
 }
@@ -204,3 +229,55 @@ export const corto = t => { t = Math.max(0, Math.round(t||0)); return Math.floor
 // el contador grande, como Premiere/CapCut PC: hh:mm:ss:ff
 export const tcLargo = (t, fps=30) => { t = Math.max(0, t||0); const f = Math.round(t*fps), s = Math.floor(f / fps), d = n => String(n).padStart(2,"0");
   return d(Math.floor(s/3600)) + ":" + d(Math.floor(s/60)%60) + ":" + d(s%60) + ":" + d(f % fps); };
+
+/* 8/11 (él: «las propiedades de los textos mostrando el audio, los SFX apilados, el título apilado»): al ABRIR un
+   proyecto se ponen en orden (los que monta la IA o vienen de fuera): cada clip lleva el tipo de su pista (los textos,
+   su tramo virtual desde TEXTO0) y en una pista nunca hay dos clips a la vez: lo que se pisa va a otra pista del mismo
+   tipo (las de vídeo y texto, ENCIMA, para que se siga viendo igual). La principal no se toca. */
+export function normalizar(p) {
+  const out = [];
+  for(const pi of p.pistas || []){
+    const clips = (pi.clips || []).map(c=>{
+      if(pi.tipo === "texto" && c.tipo !== "texto"){ const d = c.desde < TEXTO0 / 2 ? TEXTO0 - c.desde : 0; return {...c, tipo:"texto", desde:c.desde + d, hasta:c.hasta + d, dur_src:1e9}; }
+      if(pi.tipo === "subtitulos" && !c.tipo) return {...c, tipo:"sub"};
+      return c;
+    });
+    if(pi.id === "v1"){ out.push({...pi, clips}); continue; }
+    if(pi.tipo === "subtitulos"){
+      const cs = [...clips].sort((a,b)=>a.en-b.en).filter(c=>largo(c) > 0.12);           // (las tarjetas de 0,1 s sobran)
+      out.push({...pi, clips: cs.map((c, k)=>{ const sig = cs[k + 1]; return sig && fin(c) > sig.en + 1e-6 ? {...c, hasta: +(c.desde + (sig.en - c.en) * vel(c)).toFixed(4)} : c; })});
+      continue;
+    }
+    const carriles = [];
+    [...clips].sort((a,b)=>a.en-b.en).forEach(c=>{
+      let l = carriles.find(l=>l.every(x=>c.en >= fin(x) - 1e-6 || fin(c) <= x.en + 1e-6));
+      if(!l){ l = []; carriles.push(l); }
+      l.push(c);
+    });
+    if(carriles.length <= 1){ out.push({...pi, clips}); continue; }
+    const nuevas = carriles.map((l, k)=>k === 0 ? {...pi, clips:l} : {...pi, id:pi.id + "_" + uid().slice(0, 4), nombre:(pi.nombre || "") + " " + (k + 1), clips:l});
+    out.push(...(pi.tipo === "video" || pi.tipo === "texto" ? nuevas.reverse() : nuevas));
+  }
+  return {...p, pistas: out};
+}
+
+// 8/11 (Premiere «Ripple Delete», Final Cut, CapCut): borrar lo elegido Y cerrar el hueco que deja en su pista
+export function borrarCerrando(p, ids) {
+  return {...p, pistas: p.pistas.map(pi=>{
+    if(pi.bloqueada) return pi;
+    const quitados = pi.clips.filter(c=>ids.has(c.id));
+    if(!quitados.length) return pi;
+    const resto = pi.clips.filter(c=>!ids.has(c.id));
+    return {...pi, clips: resto.map(c=>{ const antes = quitados.filter(q=>fin(q) <= c.en + 1e-6).reduce((s, q)=>s + largo(q), 0); return antes ? {...c, en: Math.max(0, +(c.en - antes).toFixed(4))} : c; })};
+  })};
+}
+// 8/11 (CapCut «Cerrar huecos», Premiere «Close Gap»): en las pistas elegidas (o todas) cada clip se pega al anterior
+export function cerrarHuecos(p, pistasIds) {
+  return {...p, pistas: p.pistas.map(pi=>{
+    if(pi.bloqueada || (pistasIds && !pistasIds.has(pi.id))) return pi;
+    let t = 0;
+    return {...pi, clips: [...pi.clips].sort((a,b)=>a.en-b.en).map(c=>{ const n = Math.abs(c.en - t) < 1e-6 ? c : {...c, en: +t.toFixed(4)}; t = fin(n); return n; })};
+  })};
+}
+// 8/11 (Premiere «Track Select Forward», tecla A): todo lo que empieza a partir de `t`, en todas las pistas sin bloquear
+export const desdeAqui = (p, t) => new Set(p.pistas.filter(pi=>!pi.bloqueada).flatMap(pi=>pi.clips.filter(c=>fin(c) > t + 1e-6).map(c=>c.id)));

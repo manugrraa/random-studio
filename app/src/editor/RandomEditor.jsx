@@ -62,10 +62,12 @@ export function RandomEditor({ toast }) {
   const pasado = useRef([]), futuro = useRef([]), sucio = useRef(false), gesto = useRef(null);
   const [, repintar] = useState(0);
   const p = pRef.current;
-  const poner = nuevo => { if(nuevo === pRef.current) return; pasado.current = [...pasado.current.slice(-150), pRef.current]; futuro.current = []; pRef.current = nuevo; sucio.current = true; repintar(x=>x+1); };
+  // (8/11, fallo: escribir un texto y luego pulsar un botón desordenaba el deshacer) un gesto abierto se cierra antes
+  const cerrarGesto = () => { const g = gesto.current; if(!g) return; gesto.current = null; if(g !== pRef.current){ pasado.current = [...pasado.current.slice(-150), g]; futuro.current = []; } };
+  const poner = nuevo => { if(nuevo === pRef.current) return; cerrarGesto(); pasado.current = [...pasado.current.slice(-150), pRef.current]; futuro.current = []; pRef.current = nuevo; sucio.current = true; repintar(x=>x+1); };
   const cambiar = f => poner(M.ordenar(f(pRef.current)));
-  const deshacer = () => { if(!pasado.current.length) return; futuro.current = [pRef.current, ...futuro.current]; pRef.current = pasado.current.pop(); sucio.current = true; repintar(x=>x+1); };
-  const rehacer = () => { if(!futuro.current.length) return; pasado.current = [...pasado.current, pRef.current]; pRef.current = futuro.current.shift(); sucio.current = true; repintar(x=>x+1); };
+  const deshacer = () => { cerrarGesto(); if(!pasado.current.length) return; futuro.current = [pRef.current, ...futuro.current]; pRef.current = pasado.current.pop(); sucio.current = true; repintar(x=>x+1); };
+  const rehacer = () => { cerrarGesto(); if(!futuro.current.length) return; pasado.current = [...pasado.current, pRef.current]; pRef.current = futuro.current.shift(); sucio.current = true; repintar(x=>x+1); };
   const alGesto = (fase, nuevo) => {
     if(fase === "inicio") gesto.current = pRef.current;
     else if(fase === "durante"){ pRef.current = M.ordenar(nuevo); sucio.current = true; repintar(x=>x+1); }
@@ -81,6 +83,8 @@ export function RandomEditor({ toast }) {
   const [zoom, setZoom] = useState(40);
   const [iman, setIman] = useState(true);
   const [herramienta, setHerramienta] = useState("sel");
+  const [skim, setSkim] = useAjuste("red_skim", false);
+  const [compacta, setCompacta] = useAjuste("red_compacta", false);
   const [guias, setGuias] = useState(false);
   const [completa, setCompleta] = useState(false);
   const [medios, setMedios] = useState(null);
@@ -102,7 +106,8 @@ export function RandomEditor({ toast }) {
   const [efectos, setEfectos] = useState(null);
   const [voces, setVoces] = useState(null);
   const [menuPortada, setMenuPortada] = useState(false);
-  const [eligiendoMini, setEligiendoMini] = useState(null);     // (4/11) «listos», «ruta» o «destino» mientras elige la miniatura
+  const [eligiendoMini, setEligiendoMini] = useState(null);
+  const [yaExiste, setYaExiste] = useState(null);         // (8/11) ya hay un vídeo con ese nombre: reemplazar o copia     // (4/11) «listos», «ruta» o «destino» mientras elige la miniatura
   const [pestInsp, setPestInsp] = useAjuste("red_pest_insp", "basico");
   // 28/10: los subtítulos (las plantillas, la elegida y cuántas palabras por tarjeta)
   const [subsInfo, setSubsInfo] = useState(null);
@@ -224,6 +229,10 @@ export function RandomEditor({ toast }) {
     return t;
   };
   const jugar = () => { if(jugandoRef.current) detener(); else setJugando(1); };
+  // 8/11 (skimming): el visor enseña otro instante sin mover el cabezal (null = vuelve al cabezal); uno por fotograma
+  const skimPend = useRef(null);
+  const verEn = t => { const prim = skimPend.current === null; skimPend.current = t == null ? -1 : t; if(!prim) return;
+    requestAnimationFrame(()=>{ const x = skimPend.current; skimPend.current = null; if(!vista.current || jugandoRef.current) return; vista.current.sincronizar(x < 0 ? reloj.t : x, 0); }); };
 
   // ---- meter medios
   const durDe = async m => {
@@ -235,6 +244,7 @@ export function RandomEditor({ toast }) {
     let info; try { info = await durDe(m); } catch(e){ toast(e.message); return; }
     if(info.video === false) tipo = "audio";
     const imagen = M.IMAGEN.test(m.ruta || "");
+    if(imagen) tipo = "video";                    // (8/11, fallo: soltada en una pista de audio quedaba muerta)
     const c = imagen ? { id:M.uid(), ruta:m.ruta, nombre:m.nombre, mini:m.ruta, desde:M.TEXTO0, hasta:M.TEXTO0 + 3, dur_src:1e9, en:0, vol:0, silencio:true, imagen:true }
                      : { id:M.uid(), ruta:m.ruta, nombre:m.nombre, mini:m.mini, desde:0, hasta:info.dur, dur_src:info.dur, en:0, vol:1, silencio:false };
     // 31/10: las IMÁGENES y lo que se suelta en una pista de vídeo superpuesta van a una superpuesta (encima)
@@ -242,7 +252,7 @@ export function RandomEditor({ toast }) {
     if(tipo === "video" && (imagen || destino)){
       cambiar(prev=>{
         let ps = prev.pistas, id = destino;
-        if(!id){ const hay = ps.find(x=>x.tipo==="video" && x.id!=="v1"); if(hay) id = hay.id; else { const n = M.nuevaPistaVideo(ps); const i = ps.findIndex(x=>x.id==="v1"); ps = [...ps.slice(0, i), n, ...ps.slice(i)]; id = n.id; } }
+        if(!id){ const hay = ps.find(x=>x.tipo==="video" && x.id!=="v1" && x.nombre!=="Efectos" && !x.bloqueada && x.clips.every(y=>imagen ? y.imagen : !y.imagen)); if(hay) id = hay.id; else { const n = M.nuevaPistaVideo(ps); const i = ps.findIndex(x=>x.id==="v1"); ps = [...ps.slice(0, i), n, ...ps.slice(i)]; id = n.id; } }
         return {...prev, pistas: M.colocar(ps, {...c, en: Math.max(0, en == null ? reloj.t : en)}, id, "video")};
       });
       return;
@@ -272,10 +282,12 @@ export function RandomEditor({ toast }) {
     setSel(new Set([c.id]));
     setTimeout(()=>{ const ta = document.querySelector(".rd-insp textarea"); if(ta){ ta.focus(); ta.select(); } }, 80);
   };
+  const meterRef = useRef(null); meterRef.current = meter;
+  const meterFijo = React.useCallback((m, tipo)=>meterRef.current(m, tipo),[]);
   const textosElegidos = () => todos.filter(c=>est.current.sel.has(c.id) && c.tipo === "texto");
   const cambiarEstilo = (patch, gesto) => {
     const ids = new Set(textosElegidos().map(c=>c.id)); if(!ids.size) return;
-    const f = q => ({...q, pistas: q.pistas.map(pi=>pi.tipo!=="texto" ? pi : {...pi, clips: pi.clips.map(c=>ids.has(c.id) ? {...c, estilo:{...c.estilo, ...patch}} : c)})});
+    const f = q => ({...q, pistas: q.pistas.map(pi=>pi.tipo!=="texto" || pi.bloqueada ? pi : {...pi, clips: pi.clips.map(c=>ids.has(c.id) ? {...c, estilo:{...c.estilo, ...patch}} : c)})});
     if(gesto) alGesto("durante", f(pRef.current)); else cambiar(f);
   };
   const cambiarTexto = v => {
@@ -319,25 +331,34 @@ export function RandomEditor({ toast }) {
     const ids = objetivos(); if(!ids.size) return;
     const c0 = todos.find(c=>ids.has(c.id) && c.pista==="v1");
     cambiar(q=>M.borrarLado(q, ids, M.cuantiza(reloj.t, fps), izq));
-    if(izq && c0) setTimeout(()=>ir(c0.en), 0);
+    if(izq && c0 && pRef.current.magnetica) setTimeout(()=>ir(c0.en), 0);
   };
   const eliminar = () => { const s = est.current.sel; if(!s.size) return; cambiar(q=>M.eliminar(q, s)); setSel(new Set()); };
+  // 8/11 (Premiere «Ripple Delete», CapCut): borrar y cerrar el hueco (Shift+Supr) · cerrar los huecos de una pista
+  const eliminarCerrando = () => { const s = est.current.sel; if(!s.size) return; cambiar(q=>M.borrarCerrando(q, s)); setSel(new Set()); };
+  const cerrarHuecos = ids => { cambiar(q=>M.cerrarHuecos(q, ids)); toast("Huecos cerrados (Ctrl+Z para deshacer)"); };
+  // 8/11 (Premiere «Track Select Forward», A): todo lo que hay del cabezal a la derecha, para correrlo de golpe
+  const elegirDesdeAqui = t => { const n = M.desdeAqui(pRef.current, t); setSel(n); toast(n.size + " elementos del cabezal en adelante: arrástralos o usa Alt+← →"); };
   const copiar = cortar => { const s = est.current.sel; if(!s.size) return; setPorta(todos.filter(c=>s.has(c.id)).sort((a,b)=>a.en-b.en)); if(cortar) eliminar(); };
   const pegar = (cs, tras) => { cs = cs || est.current.porta; if(!cs.length) return; let nuevos = []; cambiar(q=>{ const [r, n] = M.pegar(q, cs, reloj.t, tras); nuevos = n; return r; }); setSel(new Set(nuevos)); };
   const duplicar = () => { const s = est.current.sel; if(s.size) pegar(todos.filter(c=>s.has(c.id)).sort((a,b)=>a.en-b.en), true); };
   const silenciar = () => { const s = est.current.sel; if(!s.size) return; const m = todos.filter(c=>s.has(c.id)).every(c=>c.silencio);
-    cambiar(q=>({...q, pistas: q.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>s.has(c.id) ? {...c, silencio:!m} : c)}))})); };
+    cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.bloqueada ? pi : ({...pi, clips: pi.clips.map(c=>s.has(c.id) ? {...c, silencio:!m} : c)}))})); };
   const extraer = () => { const s = est.current.sel; if(s.size) { cambiar(q=>M.extraerAudio(q, s)); toast("Audio extraído a una pista (el vídeo se queda mudo)"); } };
   // v3.14.1: Alt+← / Alt+→ empujan lo elegido de las pistas de audio un fotograma (Shift: 10), para cuadrar un SFX
   const empujar = d => {
     const s = est.current.sel; if(!s.size) return;
     const q0 = pRef.current;
+    // (8/11, fallo: dos SFX elegidos y pegados se separaban) se comprueba solo contra los que NO se mueven
+    let cambio = false, choca = false;
     const nuevo = {...q0, pistas: q0.pistas.map(pi=>pi.id==="v1" || pi.bloqueada ? pi : {...pi, clips: pi.clips.map(c=>{
       if(!s.has(c.id)) return c;
       const en = Math.max(0, M.cuantiza(c.en + d, fps));
-      return M.solapa(pi, en, largo(c), c.id) ? c : {...c, en};
+      if(M.solapa({clips: pi.clips.filter(x=>!s.has(x.id))}, en, largo(c))) choca = true;
+      if(en !== c.en) cambio = true;
+      return {...c, en};
     })})};
-    if(JSON.stringify(nuevo.pistas) === JSON.stringify(q0.pistas)) return;
+    if(!cambio || choca) return;
     cambiar(()=>nuevo);
   };
   const marcador = () => { const t = M.cuantiza(reloj.t, fps), ms = pRef.current.marcadores||[], cerca = ms.find(m=>Math.abs(m-t) < 0.05);
@@ -381,8 +402,12 @@ export function RandomEditor({ toast }) {
     toast(n ? `Aire quitado en ${n} sitio${n!==1?"s":""} (Ctrl+Z para deshacer)` : "No hay silencios largos que quitar");
   };
   // 31/10: cambiar UN clip entero (transformar, velocidad, tiempos); con `gesto`, dentro de un arrastre
+  // (8/11) cambiar tiempos desde las propiedades: tampoco puede quedar encima de otro de su pista
+  const cambiarTiempos = n => { const pi = pRef.current.pistas.find(x=>x.clips.some(c=>c.id===n.id));
+    if(pi && !(pi.id==="v1" && pRef.current.magnetica) && M.solapa(pi, n.en, largo(n), n.id)){ toast("Ahí se monta encima de otro clip de su pista"); repintar(x=>x+1); return; }
+    cambiarClip(n); };
   const cambiarClip = (n, gesto) => {
-    const f = q => ({...q, pistas: q.pistas.map(pi=>pi.clips.some(c=>c.id===n.id) ? {...pi, clips: pi.clips.map(c=>{ if(c.id!==n.id) return c; const x = {...n}; delete x.pista; return x; })} : pi)});
+    const f = q => ({...q, pistas: q.pistas.map(pi=>!pi.bloqueada && pi.clips.some(c=>c.id===n.id) ? {...pi, clips: pi.clips.map(c=>{ if(c.id!==n.id) return c; const x = {...n}; delete x.pista; return x; })} : pi)});
     if(gesto) alGesto("durante", f(pRef.current)); else cambiar(f);
   };
   // ---- copiar y pegar atributos (Ctrl+Alt+C / Ctrl+Alt+V)
@@ -418,8 +443,9 @@ export function RandomEditor({ toast }) {
     const n = ya ? kf.filter(x=>x !== ya) : [...kf, [t, M.volEn(c, t), "lineal"]].sort((a,b)=>a[0]-b[0]);
     cambiarClip({...c, kf:{...(c.kf || {}), vol:n}, ...(n.length ? {} : { vol: M.volEn(c, t) })});
   };
-  const ponerEnElegidos = (campo, v) => { const s = est.current.sel;
-    alGesto("durante", {...pRef.current, pistas: pRef.current.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>s.has(c.id) ? {...c, [campo]:v} : c)}))}); };
+  const ponerEnElegidos = (campo, v, enGesto) => { const s = est.current.sel;
+    const f = q => ({...q, pistas: q.pistas.map(pi=>pi.bloqueada ? pi : ({...pi, clips: pi.clips.map(c=>s.has(c.id) ? {...c, [campo]:v} : c)}))});
+    if(enGesto && gesto.current) alGesto("durante", f(pRef.current)); else cambiar(f); };
 
   // ---- guardar / abrir / exportar / modo clip
   const guardar = async callado => {
@@ -432,7 +458,7 @@ export function RandomEditor({ toast }) {
     if(!callado) toast("Proyecto guardado");
     return r.ruta;
   };
-  const cargarProyecto = pr => { pRef.current = M.ordenar({...M.nuevoProyecto(), ...pr}); pasado.current = []; futuro.current = []; sucio.current = false; setSel(new Set()); repintar(x=>x+1); setTimeout(()=>{ ir(0); ajustar(); }, 60); };
+  const cargarProyecto = pr => { pRef.current = M.ordenar(M.normalizar({...M.nuevoProyecto(), ...pr})); pasado.current = []; futuro.current = []; sucio.current = false; setSel(new Set()); repintar(x=>x+1); setTimeout(()=>{ ir(0); ajustar(); }, 60); };
   const abrir = async nombre => {
     if(sucio.current && !window.confirm("Hay cambios sin guardar. ¿Abrir otro proyecto igualmente?")) return;
     const r = await window.studioFS.redAbrir(nombre); if(r.error){ toast(r.error); return; } cargarProyecto(r.proyecto);
@@ -461,8 +487,16 @@ export function RandomEditor({ toast }) {
     if(pRef.current.clip || !pRef.current.nombre.trim()){
       const r = await window.studioFS.redGuardarTmp({...pRef.current, nombre: pRef.current.nombre.trim() || "Sin título"}); if(r.error){ toast(r.error); return; } ruta = r.ruta;
     } else { ruta = await guardar(); if(!ruta) return; }
-    try { await lanzar(["exportar", ruta, como, ...(como==="clip" ? [pRef.current.nombre] : como==="ruta" ? [destino] : [])]); } catch(e){ toast(e.message); }
+    const args = ["exportar", ruta, como, ...(como==="clip" ? [pRef.current.nombre] : como==="ruta" ? [destino] : [])];
+    // 8/11, él: «al exportar un vídeo con el mismo nombre que otro, que dé la opción de reemplazarlo» (en «Exportar en…»
+    // ya lo pregunta Windows al elegir el archivo)
+    if(como === "listos" || como === "destino"){
+      try { const h = (await consultar(["redsalida", ruta, como])).find(e=>e.evento==="hecho") || {};
+        if(h.existe){ setYaExiste({ salida: h.salida, args }); return; } } catch(e){}
+    }
+    lanzarExport(args);
   };
+  const lanzarExport = async args => { try { await lanzar(args); } catch(e){ toast(e.message); } };
   const abrirClip = async (carpeta, archivo) => {
     if(sucio.current && !window.confirm("Hay cambios sin guardar. ¿Abrir el clip igualmente?")) return;
     try { const ev = await consultar(["redabrirclip", carpeta, archivo]); cargarProyecto(ev.find(e=>e.evento==="hecho").proyecto); }
@@ -525,7 +559,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(ctrl && K==="x"){ ok(); copiar(true); }
       else if(ctrl && K==="v"){ ok(); pegar(); }
       else if(ctrl && K==="d"){ ok(); duplicar(); }
-      else if(ctrl && K==="a"){ ok(); setSel(new Set(todos.map(c=>c.id))); }
+      else if(ctrl && K==="a"){ ok(); setSel(new Set(todos.filter(c=>!(pRef.current.pistas.find(x=>x.id===c.pista) || {}).bloqueada).map(c=>c.id))); }
       else if(ctrl && K==="s"){ ok(); pRef.current.clip ? guardarCambios() : guardar(); }
       else if(ctrl && e.shiftKey && K==="e"){ ok(); exportar("ruta"); }
       else if(ctrl && K==="e"){ ok(); exportar(pRef.current.destino ? "destino" : "listos"); }
@@ -536,7 +570,11 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(ctrl && k==="ArrowLeft"){ ok(); ir([...puntos].reverse().find(x=>x < t - 0.01) ?? 0); }
       else if(ctrl && k==="ArrowRight"){ ok(); ir(puntos.find(x=>x > t + 0.01) ?? M.total(pRef.current)); }
       else if(ctrl) return;
+      else if(e.shiftKey && (k==="Delete"||k==="Backspace")){ ok(); eliminarCerrando(); }
       else if(k==="Delete"||k==="Backspace"){ ok(); eliminar(); }
+      else if(K==="a"){ ok(); elegirDesdeAqui(t); }
+      else if(K==="s"){ ok(); setSkim(x=>{ toast(x ? "Previsualizar al pasar el ratón: apagado" : "Previsualizar al pasar el ratón: encendido (S)"); return !x; }); }
+      else if(K==="h"){ ok(); setCompacta(x=>!x); }
       else if(e.shiftKey && K==="z"){ ok(); ajustar(); }
       else if(e.shiftKey && K==="m"){ ok(); silenciar(); }
       else if(K==="q"){ ok(); borrarLado(true); }
@@ -574,7 +612,9 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:Math.min(menu.x, window.innerWidth-230), top:Math.min(menu.y, window.innerHeight-300)}}>
         {[["Dividir en el cabezal","Ctrl+B",dividir],["Copiar","Ctrl+C",()=>copiar(false)],["Cortar","Ctrl+X",()=>copiar(true)],["Duplicar","Ctrl+D",duplicar],
           ...(elegidos.some(c=>c.pista==="v1") ? [["Extraer audio","Ctrl+Shift+S",extraer]] : []),
-          [elegidos.every(c=>c.silencio) ? "Devolver el sonido" : "Silenciar","Shift+M",silenciar],["Eliminar","Supr",eliminar]].map(([n,k,f])=>
+          [elegidos.every(c=>c.silencio) ? "Devolver el sonido" : "Silenciar","Shift+M",silenciar],["Eliminar","Supr",eliminar],
+          ["Eliminar y cerrar el hueco","Shift+Supr",eliminarCerrando],["Cerrar los huecos de esta pista","",()=>cerrarHuecos(new Set([menu.pista]))],
+          ["Elegir todo del cabezal en adelante","A",()=>elegirDesdeAqui(reloj.t)]].map(([n,k,f])=>
           <button key={n} onClick={()=>{ setMenu(null); f(); }}><span>{n}</span><kbd>{k}</kbd></button>)}
       </div>
     </div>, document.body);
@@ -626,7 +666,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       {tarea && <div style={{padding:"0 10px"}}><PanelTarea tarea={tarea} onCerrar={cerrarTarea}/></div>}
       {/* biblioteca · previsualización · propiedades */}
       <div className="rd-medio-fila">
-        <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={(m,tipo)=>meter(m,tipo)} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
+        <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={meterFijo} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
           efectos={efectos} onEfecto={(e, s)=>meterEfecto(e, s)}
           panelVoces={<PanelVoces info={voces} generar={generarVoz} onMeter={meterVoz}/>}
           panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
@@ -687,20 +727,20 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           {uno && <div style={{color:"#aaa",lineHeight:1.7,fontFamily:"ui-monospace, Consolas, monospace",fontSize:11.5}}>
             {uno.ruta ? <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"4px 8px",alignItems:"center",fontFamily:"system-ui",fontSize:12,color:"#ccc"}}>
               {/* 31/10, él: "modificar los atributos de la música y los SFX, desde dónde empiezan y dónde acaban, o su volumen (como DaVinci)" */}
-              <span>Empieza en la línea</span><NumTiempo v={uno.en} fps={fps} onCambiar={x=>cambiarClip({...uno, en:Math.max(0, x)})}/>
-              <span>Desde (archivo)</span><NumTiempo v={uno.desde} fps={fps} onCambiar={x=>cambiarClip({...uno, desde:Math.max(0, Math.min(uno.hasta - 1/fps, x))})}/>
-              <span>Hasta (archivo)</span><NumTiempo v={uno.hasta} fps={fps} onCambiar={x=>cambiarClip({...uno, hasta:Math.max(uno.desde + 1/fps, Math.min(uno.dur_src ?? 1e9, x))})}/>
+              <span>Empieza en la línea</span><NumTiempo v={uno.en} fps={fps} onCambiar={x=>cambiarTiempos({...uno, en:Math.max(0, x)})}/>
+              <span>Desde (archivo)</span><NumTiempo v={uno.desde} fps={fps} onCambiar={x=>cambiarTiempos({...uno, desde:Math.max(0, Math.min(uno.hasta - 1/fps, x))})}/>
+              <span>Hasta (archivo)</span><NumTiempo v={uno.hasta} fps={fps} onCambiar={x=>cambiarTiempos({...uno, hasta:Math.max(uno.desde + 1/fps, Math.min(uno.dur_src ?? 1e9, x))})}/>
               <span style={{color:"#888"}}>Dura</span><span style={{fontFamily:"ui-monospace, Consolas, monospace",color:"#999"}}>{tc(largo(uno), fps)}</span>
             </div> : <>
             <div>Línea · {tc(uno.en, fps)} → {tc(fin(uno), fps)}</div>
             <div>Dura · {tc(largo(uno), fps)}</div></>}
           </div>}
-          {elegidos.length>0 && !elegidos.every(c=>c.tipo==="texto" || c.tipo==="sub") && <>
+          {elegidos.length>0 && !elegidos.every(c=>c.tipo==="texto" || c.tipo==="sub" || c.imagen || c.efecto) && <>
             {[["Volumen","vol",0,2,0.01,v=>(v <= 0.001 ? "−∞" : (20*Math.log10(v) >= 0 ? "+" : "") + (20*Math.log10(v)).toFixed(1)) + " dB · " + Math.round(v*100)+"%"],["Fundido de entrada","fade_in",0,3,0.05,v=>v.toFixed(2)+" s"],["Fundido de salida","fade_out",0,3,0.05,v=>v.toFixed(2)+" s"]].map(([n,campo,a,b,st,fmt])=>{
               const conKf = campo==="vol" && uno && ((uno.kf || {}).vol || []).length > 0;
               const v = campo==="vol" && uno ? M.volEn(uno, tRelDe(uno)) : (elegidos[0][campo] ?? (campo==="vol" ? 1 : 0));
               const tope = x => Math.max(a, Math.min(x, campo==="vol" ? 2 : (uno ? largo(uno)/2 : 3)));
-              const poner = (x, gesto) => campo==="vol" && uno ? ponerVol(uno, tope(x), gesto) : ponerEnElegidos(campo, tope(x));
+              const poner = (x, gesto) => campo==="vol" && uno ? ponerVol(uno, tope(x), gesto) : ponerEnElegidos(campo, tope(x), gesto);
               // (5/11, él: "que en las propiedades haya botones para subir o bajar las características, a parte de la barra"):
               // el volumen de 1 dB en 1 dB, los fundidos de 0,1 s en 0,1 s
               const paso = d => campo==="vol" ? (v <= 0.001 ? (d > 0 ? Math.pow(10, -40/20) : 0) : v * Math.pow(10, d/20)) : Math.round((v + d * 0.1) * 100) / 100;
@@ -731,7 +771,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               <button onClick={pegarAtributos} className="rd-ico" title="Pegar atributos en los clips elegidos (Ctrl+Alt+V)" style={{fontSize:12,width:"auto",padding:"0 8px",opacity: portaAtrib.current ? 1 : 0.55}}>📥 Pegar</button>
               <button onClick={eliminar} className="rd-ico peligro" title="Eliminar (Supr)">{I.borrar}</button>
             </div>
-            {uno && uno.ruta && !uno.imagen && !uno.efecto && <SeccionVoz c={uno} procesar={procesarVoz} cambiarClip={cambiarClip} toast={toast}/>}
+            {uno && uno.ruta && !uno.imagen && !uno.efecto && <SeccionVoz c={uno} procesar={procesarVoz} toast={toast}
+              cambiarClip={n=>{ const ya = M.todos(pRef.current).find(x=>x.id===n.id); if(ya) cambiarClip({...ya, voz:n.voz}); }}/>}
           </>}
           </>}
         </div>
@@ -760,6 +801,9 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           title={p.magnetica ? "Pista principal magnética: los clips se juntan solos (pulsa para moverlos libres)" : "Pista principal libre: cada clip donde lo sueltes (pulsa para que se junten solos)"}>{I.magnetica}</button>
         <button onClick={anadirPistaVideo} className="rd-ico" title="Pista de vídeo encima de la principal (superposición: vídeo dentro de vídeo, imágenes, máscaras)">{I.capa}</button>
         <button onClick={anadirPista} className="rd-ico" title="Pista de audio nueva">{I.pista}</button>
+        <span className="rd-sep"/>
+        <button onClick={()=>setSkim(x=>!x)} className={"rd-btn"+(skim?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Previsualizar al pasar el ratón por la línea de tiempo, sin mover el cabezal (S)">Ver al pasar</button>
+        <button onClick={()=>setCompacta(x=>!x)} className={"rd-btn"+(compacta?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Pistas más bajas para ver muchas a la vez (H)">Compactas</button>
         <span style={{flex:1}}/>
         <button onClick={()=>setZoom(z=>Math.max(0.5,z/1.4))} className="rd-ico" title="Alejar (Ctrl+-)">{I.menos}</button>
         <input type="range" min={0} max={1} step={0.001} value={Math.log(zoom/0.5)/Math.log(4000)} onChange={e=>setZoom(0.5*Math.pow(4000, Number(e.target.value)))} style={{width:150}}/>
@@ -776,12 +820,22 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           <button className="rd-btn" onClick={()=>{ const c = eligiendoMini; cambiar(q=>({...q, portada: null})); setEligiendoMini(null); exportarYa(c); }}>Sin miniatura</button>
           <button className="rd-btn" onClick={()=>setEligiendoMini(null)}>Cancelar</button>
         </div>)}
+      {yaExiste && (
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",background:"rgba(248,113,113,0.12)",borderTop:"1px solid #f87171",borderBottom:"1px solid #f87171",fontSize:12.5}}>
+          <span>Ya hay un vídeo con ese nombre: <b>{yaExiste.salida.split(/[\\/]/).slice(-2).join(" / ")}</b></span>
+          <span style={{flex:1}}/>
+          <button className="rd-btn primario" onClick={()=>{ const a = yaExiste.args; setYaExiste(null); lanzarExport([...a, "--reemplazar"]); }}>Reemplazarlo</button>
+          <button className="rd-btn" onClick={()=>{ const a = yaExiste.args; setYaExiste(null); lanzarExport([...a, "--copia"]); }}>Guardar una copia (2)</button>
+          <button className="rd-btn" onClick={()=>setYaExiste(null)}>Cancelar</button>
+        </div>)}
       <div className="rd-linea">
         <LineaTiempo proyecto={p} zoom={zoom} setZoom={setZoom} sel={sel} setSel={setSel} herramienta={herramienta} iman={iman}
           reloj={reloj} jugando={jugandoRef} tiras={tiras} ondas={ondas}
           onIr={t=>{ setJugando(0); ir(t); }} onGesto={alGesto} onDividirEn={dividirEn}
           onSoltarMedio={(m, pi, t)=>m.efecto ? meterEfecto((efectos || []).find(x=>x.id===m.efecto) || {id:m.efecto, nombre:m.nombre}, false, t, pi.id) : m.texto ? meterTexto(m.texto, t, pi.tipo==="texto" ? pi.id : null) : meter(m, pi.tipo==="video" ? "video" : "audio", t, pi.id)}
-          onMenu={(e, c, pi)=>{ e.preventDefault(); if(!sel.has(c.id)) setSel(new Set([c.id])); setMenu({x:e.clientX, y:e.clientY}); }}
+          onMenu={(e, c, pi)=>{ e.preventDefault(); if(!sel.has(c.id)) setSel(new Set([c.id])); setMenu({x:e.clientX, y:e.clientY, pista:pi.id}); }}
+          compacta={compacta} skim={skim} onSkim={verEn}
+          onDoble={(e, c, pi)=>{ setSel(new Set([c.id])); setJugando(0); if(pi.tipo==="texto" || pi.tipo==="subtitulos") setTimeout(()=>{ const ta = document.querySelector(".rd-insp textarea"); if(ta){ ta.focus(); ta.select(); } }, 60); else ir(Math.min(Math.max(reloj.t, c.en), fin(c) - 1/fps)); }}
           onPista={accionPista}/>
       </div>
       {menuEl}

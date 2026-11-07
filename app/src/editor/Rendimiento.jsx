@@ -58,8 +58,10 @@ export function Medidor({ reloj, proyecto, ondas }) {
       pRef.current.pistas.forEach(pi=>{
         if(pi.muda) return;
         const c = pi.clips.find(x=>t >= x.en && t < fin(x)); if(!c || c.silencio) return;
-        const od = oRef.current[c.ruta]; if(!od || !od.length) return;
-        const i = Math.floor((c.desde + (t - c.en) * (c.velocidad || 1)) / (c.dur_src || 1) * od.length);
+        // (8/11, fallo: el medidor no se movía desde que las ondas llevan su paso) {p, dt, inicio} o la lista vieja
+        const o = oRef.current[c.ruta], od = o && (Array.isArray(o) ? o : o.p); if(!od || !od.length) return;
+        const dt = (!Array.isArray(o) && o.dt) || (c.dur_src || 1) / od.length, ini = (!Array.isArray(o) && o.inicio) || 0;
+        const i = Math.floor((c.desde + (t - c.en) * (c.velocidad || 1) - ini) / dt);
         const v = (od[Math.max(0, Math.min(od.length - 1, i))] || 0) * (c.vol ?? 1);
         s += v * v;
       });

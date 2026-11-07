@@ -13,25 +13,35 @@ const { useEffect, useLayoutEffect, useRef, useState, useMemo, memo, useCallback
      Re Pág / Av Pág, botón central del ratón arrastrando, y el cabezal nunca se queda fuera de la vista */
 export const PAD = 16, ALTO_REGLA = 30;
 export const ALTO = { video: 100, audio: 58, texto: 34, subtitulos: 34 };
-const ALTO_FOTO = 58, CABECERA = 96, ALTO_BARRA = 16;
+const ALTO_FOTO = 58, CABECERA = 122, ALTO_BARRA = 16;
 const COL = { video:"#1d3557", audio:"#183a2b", texto:"#4c1d95", subtitulos:"#115e59", sel:"#D4AF37", borde:"rgba(255,255,255,0.16)" };
 const ZMIN = 0.5, ZMAX = 2000;
+// 8/11 (los «roles» de Final Cut): cada pista de audio con el color de lo que lleva, para encontrarlo de un vistazo
+const ROL = [[/m[uú]sica/i, "#1e3a5f", "rgba(96,165,250,0.95)"], [/sfx|efecto|sonido/i, "#4a2a12", "rgba(251,146,60,0.95)"], [/voz|locuci/i, "#183a2b", "rgba(74,222,128,0.95)"]];
+const rolDe = pi => pi.tipo === "audio" ? (ROL.find(r=>r[0].test(pi.nombre || "")) || null) : null;
 
 function pasoRegla(zoom, fps) {
   const opciones = [1/fps, 2/fps, 5/fps, 10/fps, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
   return opciones.find(s => s * zoom >= 80) || 600;
 }
 
-const Clip = memo(function Clip({ c, pista, zoom, elegido, cuchilla, onDown, onMenu }) {
-  const w = Math.max(3, largo(c) * zoom), h = ALTO[pista.tipo];
+const Clip = memo(function Clip({ c, pista, zoom, elegido, cuchilla, onDown, onMenu, onDoble, alto, af }) {
+  const w = Math.max(3, largo(c) * zoom), h = alto;
   return (
-    <div onMouseDown={e=>onDown(e, c, pista, "mover")} onContextMenu={e=>onMenu(e, c, pista)}
+    <div onMouseDown={e=>onDown(e, c, pista, "mover")} onContextMenu={e=>onMenu(e, c, pista)} onDoubleClick={e=>onDoble && onDoble(e, c, pista)}
       style={{position:"absolute",left:PAD + c.en*zoom,top:0,width:w,height:h,borderRadius:5,boxSizing:"border-box",
         border:`2px solid ${elegido ? COL.sel : COL.borde}`, boxShadow: elegido ? "0 0 0 1px rgba(212,175,55,0.35), 0 0 12px rgba(212,175,55,0.25)" : "none",
         cursor: cuchilla ? "crosshair" : "grab"}}>
       {w > 30 && <div style={{position:"absolute",left:5,top:pista.tipo==="texto"||pista.tipo==="subtitulos"?8:3,right:5,fontSize:10.5,fontWeight:700,color:"#fff",textShadow:"0 1px 3px #000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",pointerEvents:"none"}}>
         {c.tipo === "texto" || c.tipo === "sub" ? (c.tipo === "texto" ? "T  " : "") + (c.texto || "").split("\n").join(" ") : (c.efecto ? "✦ " : c.imagen ? "▣ " : c.silencio ? "🔇 " : "") + c.nombre}</div>}
-      {w > 60 && pista.tipo==="video" && <div style={{position:"absolute",right:6,top:ALTO_FOTO-15,fontSize:9.5,fontWeight:700,color:"#eee",textShadow:"0 1px 3px #000",pointerEvents:"none"}}>{corto(largo(c))}</div>}
+      {w > 60 && pista.tipo==="video" && <div style={{position:"absolute",right:6,top:af-15,fontSize:9.5,fontWeight:700,color:"#eee",textShadow:"0 1px 3px #000",pointerEvents:"none"}}>{corto(largo(c))}</div>}
+      {/* 8/11 (Vegas/CapCut): los fundidos se arrastran desde las bolitas de arriba del clip */}
+      {!cuchilla && (pista.tipo==="audio" || pista.tipo==="video") && pista.id !== "v1" && w > 44 && <>
+        <div onMouseDown={e=>onDown(e, c, pista, "fi")} title={"Arrastra: fundido de entrada (" + (c.fade_in || 0).toFixed(2) + " s)"}
+          style={{position:"absolute",left:Math.min(w / 2 - 6, (c.fade_in || 0) * zoom) + 2,top:2,width:9,height:9,borderRadius:"50%",background:"#fff",opacity:elegido ? 0.95 : 0.45,cursor:"ew-resize",zIndex:2,boxShadow:"0 0 3px #000"}}/>
+        <div onMouseDown={e=>onDown(e, c, pista, "fo")} title={"Arrastra: fundido de salida (" + (c.fade_out || 0).toFixed(2) + " s)"}
+          style={{position:"absolute",right:Math.min(w / 2 - 6, (c.fade_out || 0) * zoom) + 2,top:2,width:9,height:9,borderRadius:"50%",background:"#fff",opacity:elegido ? 0.95 : 0.45,cursor:"ew-resize",zIndex:2,boxShadow:"0 0 3px #000"}}/>
+      </>}
       {!cuchilla && <>
         <div onMouseDown={e=>onDown(e, c, pista, "izq")} title="Recortar el principio"
           style={{position:"absolute",left:-2,top:-2,bottom:-2,width:9,cursor:"ew-resize",borderRadius:"5px 0 0 5px",background:elegido?COL.sel:"transparent"}}/>
@@ -92,7 +102,11 @@ function Barra({ ancho, zoom, scroll, dur, marcadores, puntos, reloj, onVista })
 }
 
 export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta, iman, reloj, jugando, tiras, ondas,
-                              onIr, onGesto, onDividirEn, onSoltarMedio, onMenu, onPista }) {
+                              onIr, onGesto, onDividirEn, onSoltarMedio, onMenu, onPista, onDoble, compacta, skim, onSkim }) {
+  // 8/11 (DaVinci/Premiere: alto de pista ajustable): «compactas» para ver muchas pistas a la vez
+  const kAlto = compacta ? 0.55 : 1;
+  const AL = useMemo(()=>({ video: Math.round(ALTO.video * kAlto), audio: Math.round(ALTO.audio * kAlto), texto: Math.max(22, Math.round(ALTO.texto * kAlto)), subtitulos: Math.max(22, Math.round(ALTO.subtitulos * kAlto)) }),[kAlto]);
+  const AF = Math.round(ALTO_FOTO * kAlto);
   const caja = useRef(null), vertical = useRef(null), regla = useRef(null), cabezal = useRef(null), hover = useRef(null), hoverTxt = useRef(null), aviso = useRef(null), guia = useRef(null);
   const lienzos = useRef({});
   const [scroll, setScroll] = useState(0);
@@ -168,7 +182,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     const t0 = Math.max(0, (scroll - PAD) / zoom) - 1, t1 = (scroll + ancho) / zoom + 1;
     proyecto.pistas.forEach(pi=>{
       const cv = lienzos.current[pi.id]; if(!cv) return;
-      const H = ALTO[pi.tipo];
+      const H = AL[pi.tipo];
       const g = tam(cv, ancho, H);
       pi.clips.forEach(c=>{
         if(fin(c) < t0 || c.en > t1) return;
@@ -176,29 +190,29 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         const a = Math.max(0, x0), b = Math.min(ancho, x1);
         if(b <= a) return;
         g.save(); g.beginPath(); g.rect(a, 0, b - a, H); g.clip();
-        g.fillStyle = COL[pi.tipo] || COL.audio; g.fillRect(a, 0, b - a, H);
+        g.fillStyle = (rolDe(pi) || [])[1] || COL[pi.tipo] || COL.audio; g.fillRect(a, 0, b - a, H);
         if(pi.tipo === "texto" || pi.tipo === "subtitulos"){ g.restore(); return; }
         const gris = c.silencio || pi.muda;
         const tsrc = x => c.desde + ((x + scroll - PAD) / zoom - c.en) * vel(c);       // el segundo del archivo en esa x
         if(pi.tipo==="video"){
           const tr = tiras[c.ruta];
           if(tr && tr.img && tr.img.complete && tr.img.naturalWidth){
-            const tw = tr.fw * ALTO_FOTO / tr.fh;
+            const tw = tr.fw * AF / tr.fh;
             let x = x0 + Math.floor((a - x0) / tw) * tw;
             for(; x < b; x += tw){
               const i = Math.max(0, Math.min(tr.n - 1, Math.floor(tsrc(x + tw/2) / tr.dur * tr.n)));
-              g.drawImage(tr.img, i * tr.fw, 0, tr.fw, tr.fh, x, 0, tw, ALTO_FOTO);
+              g.drawImage(tr.img, i * tr.fw, 0, tr.fw, tr.fh, x, 0, tw, AF);
             }
           }
-          g.fillStyle = "rgba(5,10,18,0.92)"; g.fillRect(a, ALTO_FOTO, b - a, H - ALTO_FOTO);
+          g.fillStyle = "rgba(5,10,18,0.92)"; g.fillRect(a, AF, b - a, H - AF);
         }
         // la onda: de abajo hacia arriba, un pico por píxel
         // (5/11) cada pico dura «dt» segundos exactos desde «inicio» (antes se estiraban sobre la duración del vídeo)
         const ond = ondas[c.ruta], od = ond && (Array.isArray(ond) ? ond : ond.p);
         if(od && od.length){
-          const ytop = pi.tipo==="video" ? ALTO_FOTO + 3 : 16, hW = H - ytop - 3, base = H - 3, n = od.length;
+          const ytop = pi.tipo==="video" ? AF + 3 : 16, hW = H - ytop - 3, base = H - 3, n = od.length;
           const dt = (ond && ond.dt) || ((c.dur_src || 1) / n), ini = (ond && ond.inicio) || 0;
-          g.fillStyle = gris ? "rgba(150,150,150,0.55)" : (pi.tipo==="video" ? "rgba(96,165,250,0.95)" : "rgba(74,222,128,0.95)");
+          g.fillStyle = gris ? "rgba(150,150,150,0.55)" : (pi.tipo==="video" ? "rgba(96,165,250,0.95)" : (rolDe(pi) || [])[2] || "rgba(74,222,128,0.95)");
           const vf = Math.min(1.25, c.vol ?? 1);
           for(let x = Math.floor(a); x < b; x++){
             const s0 = tsrc(x) - ini, s1 = tsrc(x + 1) - ini;
@@ -216,7 +230,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         g.restore();
       });
     });
-  },[proyecto, zoom, scroll, ancho, tiras, ondas]);
+  },[proyecto, zoom, scroll, ancho, tiras, ondas, AL]);
 
   // ---- encajar (imán), con la línea amarilla donde engancha
   const encajado = useRef(null);
@@ -358,13 +372,19 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           }
         }
       }
-      let txt = destino !== pista.id && nueva && destino === nueva.pi.id ? "＋ Pista nueva" : "";
+      let txt = destino !== pista.id && nueva && destino === nueva.pi.id ? "＋ Pista nueva" : "", choca = false;
       const ps = base.map(pi=>{
         if(pi.id !== pista.id && pi.id !== destino) return pi;
         let clips = pi.clips;
         if(pi.id === pista.id) clips = clips.filter(y=>!(y.id===c.id && destino!==pista.id));
         if(pi.id === pista.id && destino === pista.id) clips = clips.map(y=>{
           if(y.id !== c.id) return y;
+          if(modo === "fi" || modo === "fo"){
+            const k = modo === "fi" ? "fade_in" : "fade_out";
+            const v = Math.max(0, Math.min(largo(y) / 2, (c[k] || 0) + (modo === "fi" ? dt : -dt)));
+            txt = (modo === "fi" ? "Fundido de entrada " : "Fundido de salida ") + v.toFixed(2) + " s";
+            return {...y, [k]: +v.toFixed(3)};
+          }
           if(modo === "izq"){
             const vy = vel(y);
             // (5/11, él: "que haya un límite al principio del timeline"): el clip no puede empezar antes del 0
@@ -372,27 +392,33 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
             let desde = Math.max(minDesde, Math.min(y.hasta - 1/fps, y.desde + dt * vy));
             const g = encaje(y.en + (desde - y.desde) / vy, y.id); desde = Math.max(minDesde, Math.min(y.hasta - 1/fps, y.desde + (g - y.en) * vy));
             desde = cuantiza(desde, fps);
+            // (8/11, fallo: recortando se montaba encima del de al lado) el principio no pasa del final del anterior
+            if(!(pi.id==="v1" && mag)){ const ant = Math.max(0, ...pi.clips.filter(x=>x.id!==y.id && fin(x) <= y.en + 1e-6).map(fin)); desde = Math.max(desde, y.desde - (y.en - ant) * vy); }
             txt = `${desde - y.desde >= 0 ? "−" : "+"}${tc(Math.abs(desde - y.desde) / vy, fps)}  ·  dura ${tc((y.hasta - desde) / vy, fps)}`;
             const n = {...y, desde, en: pi.id==="v1" && mag ? y.en : y.en + (desde - y.desde) / vy};
-            return pi.id==="v1" && !mag && solapa(pi, n.en, largo(n), n.id) ? y : n;
+            return !(pi.id==="v1" && mag) && solapa(pi, n.en, largo(n), n.id) ? y : n;
           }
           if(modo === "der"){
             const vy = vel(y);
             let hasta = Math.max(y.desde + 1/fps, Math.min(y.dur_src ?? 1e9, y.hasta + dt * vy));
             const f2 = encaje(y.en + (hasta - y.desde) / vy, y.id); hasta = Math.max(y.desde + 1/fps, Math.min(y.dur_src ?? 1e9, y.desde + (f2 - y.en) * vy));
             hasta = cuantiza(hasta, fps);
+            if(!(pi.id==="v1" && mag)){ const sig = Math.min(1e9, ...pi.clips.filter(x=>x.id!==y.id && x.en >= fin(y) - 1e-6).map(x=>x.en)); hasta = Math.min(hasta, y.desde + (sig - y.en) * vy); }
             txt = `${hasta - y.hasta >= 0 ? "+" : "−"}${tc(Math.abs(hasta - y.hasta) / vy, fps)}  ·  dura ${tc((hasta - y.desde) / vy, fps)}`;
             return {...y, hasta};
           }
           if(pi.id === "v1" && mag){ txt = ""; return {...y, en: y.en + dt + (dt > 0 ? 0.0005 : -0.0005)}; }
           let en = Math.max(0, encaje(y.en + dt, y.id));
           const f2 = encaje(en + largo(y), y.id); if(f2 !== en + largo(y)) en = Math.max(0, f2 - largo(y));
+          en = cuantiza(en, fps);                                            // (8/11: en un fotograma exacto, como los recortes)
           txt = tc(en, fps);
-          if(pi.id === "v1" && solapa(pi, en, largo(y), y.id)) return y;      // (la principal libre: sin montar un clip encima de otro)
+          // (8/11, fallo: los SFX y textos se podían soltar encima de otro de su pista) en NINGUNA pista se monta un clip
+          // encima de otro: se queda en el último sitio libre
+          if(solapa(pi, en, largo(y), y.id)){ choca = true; return y; }
           return {...y, en};
         });
         if(pi.id === destino && destino !== pista.id){
-          const en = Math.max(0, encaje(c.en + dt, c.id));
+          const en = cuantiza(Math.max(0, encaje(c.en + dt, c.id)), fps);
           if(!solapa(pi, en, largo(c), c.id)) clips = [...clips, {...c, en}];
           else return pi;
           if(!txt) txt = tc(en, fps);
@@ -400,6 +426,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         return {...pi, clips};
       });
       if(destino !== pista.id && !ps.find(x=>x.id===destino).clips.some(y=>y.id===c.id)) return;
+      if(choca){ avisar("Ocupado: suéltalo en un hueco o en otra pista", ev.clientX); return; }
       mostrarGuia(encajado.current);
       onGesto("durante", {...inicial, pistas: ps});
       avisar(txt, ev.clientX);
@@ -424,10 +451,11 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       }
       if(pegado != null) delta = Math.max(delta + mejor, -Math.min(...elegidos.map(y=>y.en)));
     }
+    delta = Math.max(cuantiza(delta, fps), -Math.min(...elegidos.map(y=>y.en)));
     const ps = inicial.pistas.map(pi=>!pi.clips.some(y=>grupo.has(y.id)) ? pi : {...pi, clips: pi.clips.map(y=>!grupo.has(y.id) ? y
       : {...y, en: Math.max(0, y.en + delta + (pi.id==="v1" && mag ? (delta > 0 ? 0.0005 : -0.0005) : 0))})});
-    const v1 = ps.find(x=>x.id==="v1");
-    if(v1 && !mag && v1.clips.some(y=>grupo.has(y.id) && solapa({clips: v1.clips.filter(x=>!grupo.has(x.id))}, y.en, largo(y)))) return;
+    // (8/11) ningún elegido se monta encima de uno que no se mueve, en ninguna pista (salvo la principal magnética)
+    if(ps.some(pi=>!(pi.id==="v1" && mag) && pi.clips.some(y=>grupo.has(y.id) && solapa({clips: pi.clips.filter(x=>!grupo.has(x.id))}, y.en, largo(y))))) return;
     encajado.current = pegado;
     mostrarGuia(pegado);
     onGesto("durante", {...inicial, pistas: ps});
@@ -438,6 +466,8 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
   const menuRef = useRef(onMenu); menuRef.current = onMenu;
   const onDownFijo = useCallback((...a)=>downRef.current(...a),[]);
   const onMenuFijo = useCallback((...a)=>menuRef.current(...a),[]);
+  const dobleRef = useRef(onDoble); dobleRef.current = onDoble;
+  const onDobleFijo = useCallback((...a)=>dobleRef.current && dobleRef.current(...a),[]);
 
   // ---- ratón por encima: una línea fina y su tiempo exacto (para cortar justo donde se quiere)
   const alMover = e => {
@@ -446,6 +476,8 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     if(herramienta === "cuchilla") t = cuantiza(encaje(t, null), fps);
     el.style.display = "block"; el.style.transform = `translateX(${PAD + t * zRef.current}px)`;
     if(hoverTxt.current) hoverTxt.current.textContent = tc(t, fps);
+    // 8/11 (Final Cut «skimming», tecla S): con el ratón por encima, el visor enseña ese fotograma sin mover el cabezal
+    if(skim && onSkim && !jugando.current && !arrastrando.current) onSkim(Math.min(t, durRef.current));
     el.style.background = herramienta === "cuchilla" ? "rgba(248,113,113,0.95)" : "rgba(255,255,255,0.35)";
   };
   // botón central del ratón (la rueda pulsada) arrastrando: mover la vista en las dos direcciones
@@ -493,15 +525,17 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
         <div style={{width:CABECERA,flexShrink:0,borderRight:"1px solid #2a2a2a",background:"#141414",height:"fit-content",minHeight:"100%"}}>
           <div style={{height:ALTO_REGLA,borderBottom:"1px solid #2a2a2a"}}/>
           {proyecto.pistas.map(pi=>(
-            <div key={pi.id} style={{height:ALTO[pi.tipo],marginTop:6,display:"flex",alignItems:"center",gap:4,padding:"0 6px"}}>
+            <div key={pi.id} style={{height:AL[pi.tipo],marginTop:6,display:"flex",alignItems:"center",gap:4,padding:"0 6px"}}>
               <span style={{fontSize:10.5,fontWeight:800,color:pi.tipo==="texto"?"#a78bfa":pi.tipo==="subtitulos"?"#5eead4":"#888",width:22}}>{pi.tipo==="video" ? "V" + (proyecto.pistas.filter(x=>x.tipo==="video").length - proyecto.pistas.filter(x=>x.tipo==="video").indexOf(pi)) : pi.tipo==="subtitulos" ? "SUB" : pi.tipo==="texto" ? "T"+(proyecto.pistas.filter(x=>x.tipo==="texto").indexOf(pi)+1) : "A"+(proyecto.pistas.filter(x=>x.tipo==="audio").indexOf(pi)+1)}</span>
               <button onClick={()=>onPista("muda", pi.id)} title={pi.muda ? "Pista silenciada" : "Silenciar la pista"} className={"rd-ico"+(pi.muda?" on":"")} style={{width:24,height:24}}>{pi.muda ? "🔇" : "🔊"}</button>
+              {pi.tipo==="audio" && <button onClick={()=>onPista("ducking", pi.id)} title={pi.ducking ? "Baja sola cuando se habla (auto ducking): pulsa para quitarlo" : "Bajar sola cuando se habla (auto ducking, para la música)"}
+                className={"rd-ico"+(pi.ducking?" on":"")} style={{width:24,height:24,fontSize:10.5,fontWeight:800}}>↘</button>}
               <button onClick={()=>onPista("bloqueada", pi.id)} title={pi.bloqueada ? "Pista bloqueada" : "Bloquear la pista"} className={"rd-ico"+(pi.bloqueada?" on":"")} style={{width:24,height:24}}>{pi.bloqueada ? "🔒" : "🔓"}</button>
               {pi.tipo!=="video" && !pi.clips.length && (pi.tipo==="texto" || pi.tipo==="subtitulos" || proyecto.pistas.filter(x=>x.tipo==="audio").length>1) &&
                 <button onClick={()=>onPista("quitar", pi.id)} title="Quitar la pista vacía" className="rd-ico" style={{width:20,height:24}}>×</button>}
             </div>))}
         </div>
-        <div ref={caja} onScroll={alDesplazar} onMouseMove={alMover} onMouseLeave={()=>{ if(hover.current) hover.current.style.display = "none"; }}
+        <div ref={caja} onScroll={alDesplazar} onMouseMove={alMover} onMouseLeave={()=>{ if(hover.current) hover.current.style.display = "none"; if(skim && onSkim) onSkim(null); }}
           style={{position:"relative",overflow:"hidden",flex:1,minWidth:0,background:"#101010",height:"fit-content",minHeight:"100%",paddingBottom:10}}>
           <div style={{position:"relative",width:anchoTotal,minHeight:"100%"}}>
             {/* regla */}
@@ -513,11 +547,11 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
               <div key={pi.id} ref={el=>{ filas.current[pi.id] = el; }} onMouseDown={seleccionCaja}
                 onDragOver={e=>{ e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
                 onDrop={e=>{ e.preventDefault(); try { onSoltarMedio(JSON.parse(e.dataTransfer.getData("application/x-randomeditor")), pi, cuantiza(encaje(tDeX(e.clientX), null), fps)); } catch(x){} }}
-                style={{position:"relative",height:ALTO[pi.tipo],marginTop:6,background:pi.bloqueada?"repeating-linear-gradient(135deg,#151515 0 8px,#1a1a1a 8px 16px)":"#161616",opacity:pi.muda?0.6:1}}>
-                <canvas ref={el=>{ lienzos.current[pi.id] = el; }} style={{position:"sticky",left:0,display:"block",width:ancho,height:ALTO[pi.tipo],pointerEvents:"none"}}/>
+                style={{position:"relative",height:AL[pi.tipo],marginTop:6,background:pi.bloqueada?"repeating-linear-gradient(135deg,#151515 0 8px,#1a1a1a 8px 16px)":"#161616",opacity:pi.muda?0.6:1}}>
+                <canvas ref={el=>{ lienzos.current[pi.id] = el; }} style={{position:"sticky",left:0,display:"block",width:ancho,height:AL[pi.tipo],pointerEvents:"none"}}/>
                 <div style={{position:"absolute",inset:0}}>
                   {pi.clips.filter(c=>fin(c) >= t0v && c.en <= t1v).map(c=>
-                    <Clip key={c.id} c={c} pista={pi} zoom={zoom} elegido={sel.has(c.id)} cuchilla={cuchilla} onDown={onDownFijo} onMenu={onMenuFijo}/>)}
+                    <Clip key={c.id} c={c} pista={pi} zoom={zoom} elegido={sel.has(c.id)} cuchilla={cuchilla} onDown={onDownFijo} onMenu={onMenuFijo} onDoble={onDobleFijo} alto={AL[pi.tipo]} af={AF}/>)}
                 </div>
                 {pi.id==="v1" && !pi.clips.length && <div style={{position:"absolute",left:PAD+8,top:38,fontSize:12,color:"#777",pointerEvents:"none"}}>Arrastra aquí clips de la biblioteca (o pulsa ＋)</div>}
               </div>))}

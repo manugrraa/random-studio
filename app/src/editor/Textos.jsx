@@ -88,7 +88,7 @@ export function CapaTextos({ proyecto, reloj, sel, onElegir, onGesto }) {
       }
     });
     mostrar(reloj.t);
-  });
+  },[textos, esc]);       // (8/11, fallo de fluidez: se medía cada texto en CADA fotograma de la reproducción)
   const pRef = useRef(proyecto); pRef.current = proyecto;
   const arrastrar = (e, c) => {
     if(e.button !== 0) return;

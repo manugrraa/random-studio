@@ -20,7 +20,10 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
   useEffect(()=>{ const el = lienzo.current; if(!el) return; const ro = new ResizeObserver(()=>{ kRef.current = el.clientWidth / (pRef.current.ancho || 1080); setK(kRef.current); }); ro.observe(el); return ()=>ro.disconnect(); },[]);
   // el instante (para el recuadro del clip elegido, que se anima con sus fotogramas clave)
   const [tv, setTv] = useState(0);
-  useEffect(()=>reloj ? reloj.oir(t=>setTv(x=>Math.abs(x - t) > 1/120 ? t : x)) : undefined,[reloj]);
+  // (8/11, fluidez) solo hace falta con un clip de vídeo elegido (su recuadro); si no, el visor no se repinta en cada fotograma
+  const selRef = useRef(sel); selRef.current = sel;
+  useEffect(()=>reloj ? reloj.oir(t=>{ if(selRef.current && selRef.current.size) setTv(x=>Math.abs(x - t) > 1/120 ? t : x); }) : undefined,[reloj]);
+  useEffect(()=>{ if(reloj) setTv(reloj.t); },[sel]);
   const [natural, setNatural] = useState(null);
   // 31/10: las capas de las pistas de vídeo superpuestas (un reproductor o imagen por pista)
   const capas = useRef({});
@@ -28,8 +31,10 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
     el.style.transform = transformCss(c, t - c.en, kRef.current);
     el.style.opacity = valorEn(c, "opacidad", t - c.en);
     // (7/11) + la entrada con desenfoque de Carental (su «Movimiento 1»): empieza borroso y queda nítido en `dur`
-    const e = c.entrada, u = e && e.tipo === "desenfoque" ? (t - c.en) / (e.dur || 0.3) : 1;
-    const fs = [conColor(c) ? `url(#rfc_${c.id})` : "", u >= 0 && u < 1 ? `blur(${(14 * (1 - u)).toFixed(1)}px)` : ""].filter(Boolean);
+    // (8/11) como al exportar: solo en la principal, y también el «golpe» (su desenfoque de movimiento, aproximado)
+    const e = c.entrada, v1p = pRef.current.pistas.find(x=>x.id==="v1"), enV1 = !!(v1p && v1p.clips.some(x=>x.id===c.id));
+    const u = enV1 && e && (e.tipo === "desenfoque" || e.tipo === "golpe") ? (t - c.en) / (e.dur || 0.3) : 1;
+    const fs = [conColor(c) ? `url(#rfc_${c.id})` : "", u >= 0 && u < 1 ? `blur(${((e.tipo === "golpe" ? 7 : 14) * (1 - u)).toFixed(1)}px)` : ""].filter(Boolean);
     el.style.filter = fs.length ? fs.join(" ") : "none";
     const m = mascaraCss(c, pRef.current.ancho, pRef.current.alto);
     el.style.webkitMaskImage = el.style.maskImage = m || "none";
@@ -130,8 +135,12 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
       }
     });
     // (31/10: «Mejorar voz» / «Aislar voz»: en las pistas de vídeo suena su audio limpio, que dura lo mismo que el vídeo)
+    // (8/11) «bajar al hablar»: mientras suena la principal, esas pistas bajan (al exportar, con la voz de verdad)
+    const vp = pr.pistas.find(x=>x.id==="v1"), habla = !!(vp && !vp.muda && vp.clips.some(x=>!x.silencio && t >= x.en && t < fin(x)));
+    const vistos = new Set();
     pr.pistas.filter(pi=>pi.tipo==="audio" || pi.tipo==="video").forEach(pi=>{
       const esV = pi.tipo === "video", id = esV ? "voz_" + pi.id : pi.id;
+      vistos.add(id);
       let a = auds.current[id]; if(!a){ a = new Audio(); auds.current[id] = a; }
       let c2 = clipEn(pi.clips, t);
       if(esV && c2 && !(c2.voz && c2.voz.ruta)) c2 = null;
@@ -142,10 +151,12 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
       if(Math.abs(a.currentTime - lc) > (adelante ? 0.25 : 0.03)) { try { a.currentTime = lc; } catch(e){} }
       a.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c2.velocidad || 1)));
       a.preservesPitch = !c2.tono;
-      a.volume = volumenEn(c2, t, false);
+      a.volume = volumenEn(c2, t, false) * (pi.ducking && habla ? 0.32 : 1);
       if(adelante && a.paused) a.play().catch(()=>{});
       if(!adelante && !a.paused) a.pause();
     });
+    // (8/11, fallo: la música de una pista quitada, o de otro proyecto, seguía sonando) los que ya no tienen pista, callados
+    Object.entries(auds.current).forEach(([id, a])=>{ if(!vistos.has(id) && !a.paused) a.pause(); });
     return medido;
   };
   const soltar = async () => {
