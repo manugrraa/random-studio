@@ -376,6 +376,8 @@ function DetalleCarpeta({ c, porRel, ponerCar, montar, ocupado, montando, subirD
             <div style={{ fontSize: 12.5, lineHeight: 1.5, minWidth: 0 }}>
               <b>{r.titulo}</b> · {mmss(r.dur)}<div style={{ color: "var(--text-3)", fontSize: 11.5 }}>{r.fecha}</div>
               {r.notas && <div style={{ color: "var(--text-2)", marginTop: 4 }}>{r.notas}</div>}
+              {/* (7/11, él: «pregúntame» cuando haya otra voz de fondo) lo que el montador NO ha puesto por si acaso */}
+              {(r.dudas || []).length > 0 && <div style={{ color: "var(--gold)", marginTop: 6 }}>Duda: no he puesto {r.dudas.map(x => "«" + x + "»").join(", ")} porque suena a otra voz de fondo. Si va, añádelo en el editor.</div>}
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

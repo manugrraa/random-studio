@@ -27,7 +27,10 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
   const aplicar = (el, c, t) => {
     el.style.transform = transformCss(c, t - c.en, kRef.current);
     el.style.opacity = valorEn(c, "opacidad", t - c.en);
-    el.style.filter = conColor(c) ? `url(#rfc_${c.id})` : "none";
+    // (7/11) + la entrada con desenfoque de Carental (su «Movimiento 1»): empieza borroso y queda nítido en `dur`
+    const e = c.entrada, u = e && e.tipo === "desenfoque" ? (t - c.en) / (e.dur || 0.3) : 1;
+    const fs = [conColor(c) ? `url(#rfc_${c.id})` : "", u >= 0 && u < 1 ? `blur(${(14 * (1 - u)).toFixed(1)}px)` : ""].filter(Boolean);
+    el.style.filter = fs.length ? fs.join(" ") : "none";
     const m = mascaraCss(c, pRef.current.ancho, pRef.current.alto);
     el.style.webkitMaskImage = el.style.maskImage = m || "none";
     el.style.webkitMaskSize = el.style.maskSize = "100% 100%";       // (la máscara, del tamaño del lienzo del clip)
