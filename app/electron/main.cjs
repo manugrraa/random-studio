@@ -472,6 +472,31 @@ ipcMain.handle("yt-elegir-carpeta", async () => {
 // v3.11: RandomEditor. Los proyectos son JSON en el clon (_trabajo/random_editor/proyectos)
 const RED_DIR = () => path.join(CLON_DIR, "_trabajo", "random_editor", "proyectos");
 const redNombre = n => String(n || "").replace(/[<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+// 4.3.11 (Manu 7-11: «haz un log en el Editor») registro de cambios de cada proyecto, para aprender de sus retoques:
+// registro/<proyecto>.original.json = la primera versión (la que montó la IA); registro/<proyecto>/<fecha>.json = cada
+// guardado distinto; registro/<proyecto>.jsonl = qué clips se añadieron, quitaron o cambiaron en cada guardado.
+const RED_REG = () => path.join(CLON_DIR, "_trabajo", "random_editor", "registro");
+function redRegistrar(n, f, nuevo) {
+  if (!fs.existsSync(f)) return;
+  const antes = JSON.parse(fs.readFileSync(f, "utf8"));
+  const limpio = o => JSON.stringify({ ...o, guardado: 0 });
+  if (limpio(antes) === limpio(nuevo)) return;
+  const d = RED_REG(); fs.mkdirSync(path.join(d, n), { recursive: true });
+  const orig = path.join(d, n + ".original.json");
+  if (!fs.existsSync(orig)) fs.writeFileSync(orig, JSON.stringify(antes, null, 1), "utf8");
+  const sello = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  fs.writeFileSync(path.join(d, n, sello + ".json"), JSON.stringify(nuevo), "utf8");
+  const clips = p => { const m = {}; (p.pistas || []).forEach(t => (t.clips || []).forEach(c => { m[c.id] = { pista: t.nombre || t.id, c }; })); return m; };
+  const a = clips(antes), b = clips(nuevo), cambios = [];
+  const nom = c => String(c.texto || c.nombre || path.basename(c.ruta || "") || c.id).slice(0, 60);
+  for (const id in b) {
+    if (!a[id]) { cambios.push({ que: "añadido", pista: b[id].pista, clip: nom(b[id].c), en: b[id].c.en }); continue; }
+    const campos = Object.keys({ ...a[id].c, ...b[id].c }).filter(k => JSON.stringify(a[id].c[k]) !== JSON.stringify(b[id].c[k]));
+    if (campos.length) cambios.push({ que: "cambiado", pista: b[id].pista, clip: nom(b[id].c), campos });
+  }
+  for (const id in a) if (!b[id]) cambios.push({ que: "quitado", pista: a[id].pista, clip: nom(a[id].c), en: a[id].c.en });
+  fs.appendFileSync(path.join(d, n + ".jsonl"), JSON.stringify({ fecha: new Date().toISOString(), copia: sello + ".json", cambios }) + "\n", "utf8");
+}
 ipcMain.handle("red-guardar", async (e, proyecto) => {
   try {
     const n = redNombre(proyecto && proyecto.nombre);
@@ -479,6 +504,7 @@ ipcMain.handle("red-guardar", async (e, proyecto) => {
     fs.mkdirSync(RED_DIR(), { recursive: true });
     const p = { ...proyecto, nombre: n, guardado: new Date().toISOString() };
     const f = path.join(RED_DIR(), n + ".json");
+    try { redRegistrar(n, f, p); } catch (x) {}   // el registro nunca impide guardar
     fs.writeFileSync(f + ".tmp", JSON.stringify(p, null, 1), "utf8"); fs.renameSync(f + ".tmp", f);
     return { ok: true, ruta: f, nombre: n };
   } catch (x) { return { error: x.message }; }
