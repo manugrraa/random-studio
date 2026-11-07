@@ -126,7 +126,7 @@ export function kfTramo(c, desde, hasta) {
   }));
 }
 export const palabrasDe = (c, desde, hasta) => !c.palabras ? {} : (()=>{
-  const ws = c.palabras.filter(w=>w[1] > desde + 0.02 && w[0] < hasta - 0.02).map(w=>{ const n = [+(Math.max(0, w[0] - desde)).toFixed(3), +(Math.min(hasta, w[1]) - desde).toFixed(3), w[2]]; if(w.length > 3) n.push(w[3]); return n; });
+  const ws = c.palabras.filter(w=>{ const m = (w[0] + w[1]) / 2; return m >= desde && m < hasta; }).map(w=>{ const n = [+(Math.max(0, w[0] - desde)).toFixed(3), +(Math.min(hasta, w[1]) - desde).toFixed(3), w[2]]; if(w.length > 3) n.push(w[3]); return n; });
   return { palabras: ws, texto: ws.map(w=>w[2]).join(" ") || c.texto };
 })();
 
@@ -219,7 +219,7 @@ export function volumenEn(c, t, pistaMuda) {
   let v = volEn(c, d);
   if(c.fade_in > 0 && d < c.fade_in) v *= Math.max(0, d / c.fade_in);
   if(c.fade_out > 0 && L - d < c.fade_out) v *= Math.max(0, (L - d) / c.fade_out);
-  return Math.max(0, Math.min(1, v));
+  return Math.max(0, Math.min(2, v));       // (8/11: hasta +6 dB; el visor lo amplifica)
 }
 
 // tiempos: m:ss:ff (fotogramas) y m:ss
@@ -234,8 +234,8 @@ export const tcLargo = (t, fps=30) => { t = Math.max(0, t||0); const f = Math.ro
    proyecto se ponen en orden (los que monta la IA o vienen de fuera): cada clip lleva el tipo de su pista (los textos,
    su tramo virtual desde TEXTO0) y en una pista nunca hay dos clips a la vez: lo que se pisa va a otra pista del mismo
    tipo (las de vídeo y texto, ENCIMA, para que se siga viendo igual). La principal no se toca. */
-export function normalizar(p) {
-  const out = [];
+export function normalizar(p, limpiarSubs = true) {
+  const out = [], usados = new Set((p.pistas || []).map(x=>x.id));
   for(const pi of p.pistas || []){
     const clips = (pi.clips || []).map(c=>{
       if(pi.tipo === "texto" && c.tipo !== "texto"){ const d = c.desde < TEXTO0 / 2 ? TEXTO0 - c.desde : 0; return {...c, tipo:"texto", desde:c.desde + d, hasta:c.hasta + d, dur_src:1e9}; }
@@ -244,7 +244,15 @@ export function normalizar(p) {
     });
     if(pi.id === "v1"){ out.push({...pi, clips}); continue; }
     if(pi.tipo === "subtitulos"){
-      const cs = [...clips].sort((a,b)=>a.en-b.en).filter(c=>largo(c) > 0.12);           // (las tarjetas de 0,1 s sobran)
+      // (las tarjetas de 0,1 s sueltas se juntan con la de antes, con sus palabras: no se pierde nada)
+      const cs = [];
+      [...clips].sort((a,b)=>a.en-b.en).forEach(c=>{
+        const ant = cs[cs.length - 1];
+        if(limpiarSubs && ant && largo(c) <= 0.12){
+          const d = c.en - ant.en, ws = [...(ant.palabras || []), ...(c.palabras || []).map(w=>[+(w[0] + d).toFixed(3), +(w[1] + d).toFixed(3), ...w.slice(2)])];
+          cs[cs.length - 1] = {...ant, hasta: +(ant.desde + Math.max(largo(ant), fin(c) - ant.en) * vel(ant)).toFixed(4), palabras: ws, texto: ws.map(w=>w[2]).join(" ") || ant.texto};
+        } else cs.push(c);
+      });
       out.push({...pi, clips: cs.map((c, k)=>{ const sig = cs[k + 1]; return sig && fin(c) > sig.en + 1e-6 ? {...c, hasta: +(c.desde + (sig.en - c.en) * vel(c)).toFixed(4)} : c; })});
       continue;
     }
@@ -255,7 +263,8 @@ export function normalizar(p) {
       l.push(c);
     });
     if(carriles.length <= 1){ out.push({...pi, clips}); continue; }
-    const nuevas = carriles.map((l, k)=>k === 0 ? {...pi, clips:l} : {...pi, id:pi.id + "_" + uid().slice(0, 4), nombre:(pi.nombre || "") + " " + (k + 1), clips:l});
+    const idNuevo = k => { let id = pi.id + "_" + k; while(usados.has(id)) id += "b"; usados.add(id); return id; };     // (fijos: no cambian en cada arrastre)
+    const nuevas = carriles.map((l, k)=>k === 0 ? {...pi, clips:l} : {...pi, id:idNuevo(k), nombre:(pi.nombre || "") + " " + (k + 1), clips:l});
     out.push(...(pi.tipo === "video" || pi.tipo === "texto" ? nuevas.reverse() : nuevas));
   }
   return {...p, pistas: out};
@@ -274,13 +283,13 @@ export function borrarCerrando(p, ids) {
 // 8/11 (CapCut «Cerrar huecos», Premiere «Close Gap»): en las pistas elegidas (o todas) cada clip se pega al anterior
 export function cerrarHuecos(p, pistasIds) {
   return {...p, pistas: p.pistas.map(pi=>{
-    if(pi.bloqueada || (pistasIds && !pistasIds.has(pi.id))) return pi;
-    let t = 0;
+    if(pi.bloqueada || (pistasIds && !pistasIds.has(pi.id)) || !pi.clips.length) return pi;
+    let t = pi.id === "v1" ? 0 : Math.min(...pi.clips.map(c=>c.en));
     return {...pi, clips: [...pi.clips].sort((a,b)=>a.en-b.en).map(c=>{ const n = Math.abs(c.en - t) < 1e-6 ? c : {...c, en: +t.toFixed(4)}; t = fin(n); return n; })};
   })};
 }
 // 8/11 (Premiere «Track Select Forward», tecla A): todo lo que empieza a partir de `t`, en todas las pistas sin bloquear
-export const desdeAqui = (p, t) => new Set(p.pistas.filter(pi=>!pi.bloqueada).flatMap(pi=>pi.clips.filter(c=>fin(c) > t + 1e-6).map(c=>c.id)));
+export const desdeAqui = (p, t) => new Set(p.pistas.filter(pi=>!pi.bloqueada && !(pi.id==="v1" && p.magnetica)).flatMap(pi=>pi.clips.filter(c=>c.en >= t - 1e-6).map(c=>c.id)));
 
 /* ===== 8/11 · fase 2 ===== */
 // los marcadores pueden ser un número (los de antes) o { t, nombre, color }
@@ -293,7 +302,11 @@ export function conectar(antes, despues) {
   const pa = antes.pistas.find(x=>x.id==="v1"), pd = despues.pistas.find(x=>x.id==="v1");
   if(!pa || !pd || pa === pd) return despues;
   const nuevos = new Map(pd.clips.map(c=>[c.id, c]));
-  const deltas = pa.clips.map(c=>{ const d = nuevos.get(c.id); return d && Math.abs(d.en - c.en) > 1e-6 ? [c.en, fin(c), d.en - c.en] : null; }).filter(Boolean);
+  // (lo que cuenta es dónde queda el CONTENIDO: con el mismo archivo, en − desde/velocidad; un rodillo o un recorte por
+  // delante cambian «en» pero el contenido no se mueve, y lo de encima tampoco)
+  const ancla = c => c.en - c.desde / vel(c);
+  const deltas = pa.clips.map(c=>{ const d = nuevos.get(c.id); if(!d || Math.abs(d.en - c.en) < 1e-6) return null;
+    const dd = d.ruta === c.ruta ? ancla(d) - ancla(c) : d.en - c.en; return Math.abs(dd) > 1e-6 ? [c.en, fin(c), dd] : null; }).filter(Boolean);
   if(!deltas.length) return despues;
   const enAntes = new Map(antes.pistas.flatMap(pi=>pi.id==="v1" ? [] : pi.clips.map(c=>[c.id, c.en])));
   let cambio = false;
@@ -306,12 +319,13 @@ export function conectar(antes, despues) {
   })})};
   if(!cambio) return despues;
   // (si al correrse algo cae encima de otro de su pista, pasa a otra pista: nunca dos a la vez)
-  return r.pistas.some(pi=>pi.id!=="v1" && pi.tipo!=="subtitulos" && pi.clips.some(c=>solapa(pi, c.en, largo(c), c.id))) ? normalizar(r) : r;
+  return r.pistas.some(pi=>pi.id!=="v1" && pi.tipo!=="subtitulos" && pi.clips.some(c=>solapa(pi, c.en, largo(c), c.id))) ? normalizar(r, false) : r;
 }
 
 /* QUITAR TRAMOS de la línea de tiempo (editar por texto, muletillas — Descript): cada [a, b] sale de la principal
    y todo lo de detrás se corre; en los subtítulos se quitan esas palabras. */
 export function quitarTramos(p, rangos) {
+  if((p.pistas.find(x=>x.id==="v1") || {}).bloqueada) return p;
   rangos = [...rangos].map(([a, b])=>[Math.max(0, a), b]).filter(([a, b])=>b - a > 0.02).sort((x, y)=>y[0] - x[0]);
   for(const [a, b] of rangos){
     const L = b - a, v1 = p.pistas.find(x=>x.id==="v1"); if(!v1) break;
@@ -333,7 +347,7 @@ export function quitarTramos(p, rangos) {
       return {...pi, clips: pi.clips.map(c=>c.en >= b - 0.01 ? {...c, en: +(c.en - L).toFixed(4)} : c.en > a ? {...c, en: a} : c)};
     })};
   }
-  return p;
+  return normalizar(p, false);          // (lo que queda pisándose en una pista pasa a otra)
 }
 // las palabras de los subtítulos, en tiempo de la línea: [{ a, b, w, id }]
 export const palabrasLinea = p => p.pistas.filter(pi=>pi.tipo==="subtitulos" && !pi.muda).flatMap(pi=>pi.clips.flatMap(c=>(c.palabras || []).map((w, k)=>({ a: c.en + w[0], b: c.en + w[1], w: w[2], id: c.id + ":" + k }))))
@@ -414,4 +428,40 @@ export function zoomCortes(p, k = 1.07) {
     if(cerca && !propia){ nuevos.set(c.id, {...c, transform: {...(c.transform || {}), escala: k}, zoom_corte: true}); n++; }
   });
   return [{...p, pistas: p.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips: pi.clips.map(c=>nuevos.get(c.id) || c)})}, quitar ? -1 : n];
+}
+
+/* 8/11 (fase 3, «audiciones» de Final Cut): VARIAS TOMAS en el mismo hueco. Se eligen 2 o más clips con «Juntar como
+   tomas»: el primero se queda en su sitio y los demás se guardan dentro (salen de la línea de tiempo); en Propiedades se
+   cambia de toma con un clic. Cada toma conserva su propio recorte. */
+const CAMPOS_TOMA = ["ruta", "nombre", "desde", "hasta", "dur_src", "mini", "voz", "velocidad", "flujo", "silencio"];
+const tomaDe = c => Object.fromEntries(CAMPOS_TOMA.filter(k=>c[k] !== undefined).map(k=>[k, c[k]]));
+export function juntarTomas(p, ids) {
+  const cs = todos(p).filter(c=>ids.has(c.id) && c.ruta && !c.imagen && !c.efecto && !(p.pistas.find(x=>x.id===c.pista) || {}).bloqueada).sort((a,b)=>a.en-b.en);
+  if(cs.length < 2) return [p, 0];
+  const tipoDe = c => (p.pistas.find(x=>x.id===c.pista) || {}).tipo;
+  if(cs.some(c=>tipoDe(c) !== tipoDe(cs[0]))) return [p, 0];          // (un vídeo y una música no son tomas de lo mismo)
+  const slot = cs[0], resto = cs.slice(1);
+  const tomas = [...(slot.tomas || [tomaDe(slot)]), ...resto.flatMap(c=>c.tomas || [tomaDe(c)])];
+  const fuera = new Set(resto.map(c=>c.id));
+  return [{...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.filter(c=>!fuera.has(c.id)).map(c=>c.id!==slot.id ? c : {...c, tomas, toma: slot.toma || 0})}))}, tomas.length];
+}
+export function elegirToma(p, id, k) {
+  return {...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>{
+    if(c.id !== id || !c.tomas || !c.tomas[k] || (c.toma || 0) === k) return c;
+    const tomas = c.tomas.map((t, j)=>j === (c.toma || 0) ? tomaDe(c) : t);       // (lo que recortaste de la toma actual se guarda)
+    const n = {...c}; CAMPOS_TOMA.forEach(f=>{ delete n[f]; });
+    let r = {...n, ...tomas[k], tomas, toma: k};
+    if(solapa({clips: pi.clips.filter(x=>x.id!==id)}, r.en, largo(r))){           // (si no cabe, se queda del largo del hueco)
+      const L = largo(c) * vel(r); r = {...r, hasta: Math.min(r.dur_src ?? 1e9, +(r.desde + L).toFixed(4))};
+    }
+    return r;
+  })}))};
+}
+export function quitarToma(p, id, k) {
+  return {...p, pistas: p.pistas.map(pi=>({...pi, clips: pi.clips.map(c=>{
+    if(c.id !== id || !c.tomas || c.tomas.length < 2 || (c.toma || 0) === k) return c;
+    const tomas = c.tomas.filter((t, j)=>j !== k), toma = (c.toma || 0) > k ? c.toma - 1 : (c.toma || 0);
+    if(tomas.length < 2){ const n = {...c}; delete n.tomas; delete n.toma; return n; }
+    return {...c, tomas, toma};
+  })}))};
 }

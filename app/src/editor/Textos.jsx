@@ -66,6 +66,9 @@ export function CapaTextos({ proyecto, reloj, sel, onElegir, onGesto }) {
   // de arriba abajo en la línea de tiempo = de encima a debajo: se pintan al revés
   const textos = useMemo(()=>[...proyecto.pistas].reverse().filter(p=>p.tipo==="texto" && !p.muda).flatMap(p=>p.clips),[proyecto]);
   const tRef = useRef(textos); tRef.current = textos;
+  // (8/11) y otra vez cuando acaba de cargar una fuente (si no, un texto medido con la de reserva se salía)
+  const [fuentesListas, setFuentesListas] = useState(0);
+  useEffect(()=>{ const f = document.fonts; if(!f) return; const h = ()=>setFuentesListas(x=>x + 1); f.addEventListener("loadingdone", h); return ()=>f.removeEventListener("loadingdone", h); },[]);
   const mostrar = t => tRef.current.forEach(c=>{ const el = els.current[c.id]; if(!el) return; const vis = t >= c.en && t < fin(c);
     el.style.visibility = vis ? "visible" : "hidden";
     const e = c.estilo || {};
@@ -88,7 +91,7 @@ export function CapaTextos({ proyecto, reloj, sel, onElegir, onGesto }) {
       }
     });
     mostrar(reloj.t);
-  },[textos, esc]);       // (8/11, fallo de fluidez: se medía cada texto en CADA fotograma de la reproducción)
+  },[textos, esc, fuentesListas]);       // (8/11, fallo de fluidez: se medía cada texto en CADA fotograma de la reproducción)
   const pRef = useRef(proyecto); pRef.current = proyecto;
   const arrastrar = (e, c) => {
     if(e.button !== 0) return;

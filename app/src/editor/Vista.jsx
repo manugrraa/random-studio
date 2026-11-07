@@ -13,6 +13,20 @@ const { useEffect, useRef, useState, forwardRef, useImperativeHandle } = React;
    (antes, en cada corte había que cargar el vídeo de cero). Los audios, uno por pista. */
 export const fileUrl = p => p ? "file:///" + p.replace(/\\/g,"/").split("/").map(encodeURIComponent).join("/").replace(/^([A-Za-z])%3A/,"$1:") : null;
 
+/* 8/11 (fase 3): el visor también suena por encima del 100 % (hasta +6 dB, como al exportar). Un reproductor solo pasa
+   por el amplificador (WebAudio) la primera vez que hace falta; desde entonces su volumen lo lleva la ganancia. */
+let CTX_AUDIO = null;
+function ponerVolumen(el, v) {
+  v = Math.max(0, Math.min(2, v || 0));
+  if(!el._gain){
+    if(v <= 1){ if(Math.abs(el.volume - v) > 1e-3) el.volume = v; return; }
+    try { CTX_AUDIO = CTX_AUDIO || new AudioContext(); const s = CTX_AUDIO.createMediaElementSource(el), g = CTX_AUDIO.createGain(); s.connect(g); g.connect(CTX_AUDIO.destination); el._gain = g; el.volume = 1; }
+    catch(e){ el.volume = Math.min(1, v); return; }
+  }
+  if(CTX_AUDIO.state === "suspended") CTX_AUDIO.resume().catch(()=>{});
+  if(Math.abs(el._gain.gain.value - v) > 1e-3) el._gain.gain.value = v;
+}
+
 export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip, editarMascara, ondas }, ref) {
   const ondasRef = useRef(ondas); ondasRef.current = ondas;
   // 31/10 (v3.18): escala de la pantalla (px de pantalla por px del lienzo), para mover/escalar el vídeo
@@ -101,7 +115,7 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
       if(Math.abs(v.currentTime - local) > (adelante ? 0.2 : 0.005) || (!adelante && v._pend != null)) saltar(v, local);
       v.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c.velocidad || 1)));
       v.preservesPitch = !c.tono;
-      v.volume = c.voz && c.voz.ruta ? 0 : volumenEn(c, t, v1.muda);
+      ponerVolumen(v, c.voz && c.voz.ruta ? 0 : volumenEn(c, t, v1.muda));
       // (mover, escalar, girar y opacidad, con sus fotogramas clave)
       v.style.transform = transformCss(c, t - c.en, kRef.current);
       aplicar(v, c, t); o.style.opacity = 0;
@@ -130,7 +144,7 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
         const lc = local(c2, t);
         if(Math.abs(el.currentTime - lc) > (adelante ? 0.2 : 0.01)) { try { el.currentTime = lc + 0.001; } catch(e){} }
         el.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c2.velocidad || 1)));
-        el.preservesPitch = !c2.tono; el.volume = c2.voz && c2.voz.ruta ? 0 : volumenEn(c2, t, false);
+        el.preservesPitch = !c2.tono; ponerVolumen(el, c2.voz && c2.voz.ruta ? 0 : volumenEn(c2, t, false));
         if(adelante && el.paused) el.play().catch(()=>{});
         if(!adelante && !el.paused) el.pause();
       }
@@ -158,7 +172,7 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
       if(Math.abs(a.currentTime - lc) > (adelante ? 0.25 : 0.03)) { try { a.currentTime = lc; } catch(e){} }
       a.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c2.velocidad || 1)));
       a.preservesPitch = !c2.tono;
-      a.volume = volumenEn(c2, t, false) * (pi.ducking && habla ? 0.32 : 1);
+      ponerVolumen(a, volumenEn(c2, t, false) * (pi.ducking && habla ? 0.32 : 1));
       if(adelante && a.paused) a.play().catch(()=>{});
       if(!adelante && !a.paused) a.pause();
     });

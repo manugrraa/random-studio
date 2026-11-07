@@ -38,7 +38,7 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 - 🆕 4.5 Marcadores con **nombre y color**, y lista de marcadores — Premiere/DaVinci
 - 🆕 4.5 **Historial de deshacer** visible (volver a cualquier punto) — DaVinci/Kdenlive
 - 🆕 4.6 Atajos **personalizables** (⚙ del editor → Atajos propios) — Premiere
-- 🧭 **Audiciones**: varias tomas en el mismo hueco y elegir la buena — Final Cut
+- 🆕 4.7 **Audiciones**: varias tomas en el mismo hueco y elegir la buena — Final Cut
 
 ### Sonido
 - ✅ Mejorar voz (estilo CapCut) · aislar voz · fundidos · puntos de volumen · ondas reales · medidor
@@ -52,16 +52,16 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 - 🆕 4.5 **Editar por texto** (pestaña Guion): la transcripción al lado, borrar una frase borra su trozo — Descript/Premiere
 - 🆕 4.6 Palabras destacadas en color (Guion) y **zoom en los cortes de salto** (sin zoom constante) al ritmo de la voz — Submagic
 - 🆕 4.6 **Biblioteca de estilos de texto** propios (las fichas de Carental en un clic) — CapCut
-- 🧭 **Rastreo de movimiento** (un texto que sigue a algo) — After Effects
-- 🧭 Editor de **curvas de animación** — After Effects
+- 🆕 4.7 **Rastreo de movimiento** (para clips superpuestos: logos, imágenes, vídeo) (un texto que sigue a algo) — After Effects
+- 🆕 4.7 Editor de **curvas de animación** — After Effects
 
 ### Visor, rendimiento y exportación
 - ✅ Proxies · contador de FPS · guías de Shorts · portada al exportar · pantalla completa
 - 🆕 **Al exportar con un nombre que ya existe: reemplazarlo o guardar una copia (2)**
 - 🆕 **Registro de cambios** de cada proyecto (para aprender de tus retoques)
 - ✅ **Exportar en segundo plano** y seguir editando, con cola — DaVinci/Kdenlive
-- ⏭ Medidores de **color** (forma de onda) — DaVinci
-- 🧭 Exportar y **programar** directamente en YouTube, Instagram y TikTok desde el editor — Edits/CapCut
+- 🆕 4.7 Medidores de **color** (forma de onda e histograma, ya con el color aplicado) — DaVinci
+- 🆕 4.7 Exportar y **programar** directamente en YouTube, Instagram y TikTok desde el editor — Edits/CapCut
 
 ## 3. Fallos corregidos en la 4.4.0 (tu aviso + revisión completa del código)
 - Las propiedades de un texto enseñaban volumen y fundidos (los textos que monta la IA no iban marcados como texto).
@@ -88,4 +88,8 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 
 **Hecho en la 4.6.0 (fase 3):** deslizar y rodillo, atajos propios, palabras destacadas, zoom en los cortes de salto, estilos de texto propios.
 
-**Lo que queda (lo más grande):** medidores de color (forma de onda) · audiciones (varias tomas en un hueco) · rastreo de movimiento · editor de curvas de animación · exportar y programar en redes desde el propio editor · que el visor suene por encima del 100 %.
+**Hecho en la 4.7.0 (lo más grande):** audiciones (varias tomas en un hueco), editor de curvas, medidores de color, rastreo de movimiento para superpuestos, «Programar en redes» tras exportar, y el visor ya suena por encima del 100 %.
+
+**Revisión de conflictos de la 4.7.0 (16 puntos, todos corregidos):** el aviso de «reemplazar» de la 4.4 no llegaba a salir (RandomStudio no dejaba pasar esa consulta) y ahora sí; los clips conectados ya no se corren con el rodillo ni recortando por delante; «A» no arrastra la principal magnética; «Quitar lo elegido» no hace nada con la principal bloqueada y no deja nada pisándose; las tomas tienen que ser del mismo tipo (vídeo con vídeo, audio con audio); al partir una tarjeta, cada palabra va a una sola mitad; las tarjetas sueltas de 0,1 s se juntan con la anterior sin perder palabras; «Cerrar huecos» en una pista de SFX o textos ya no lo lleva todo al segundo 0; Alt+letra ya no dispara atajos; al apagar «Ver al pasar» el visor vuelve al cabezal; el aviso de reemplazar exporta lo último que hayas cambiado; los textos se vuelven a medir al cargar sus fuentes.
+
+**Límites que quedan:** el rastreo sirve para clips superpuestos (logos, imágenes, vídeo), todavía no para textos; los medidores miden el clip elegido con su color, no la mezcla de todas las capas; «Programar en redes» te lleva al programador con el vídeo resaltado (el día y la red los eliges tú arrastrándolo).

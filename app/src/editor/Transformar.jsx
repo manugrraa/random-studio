@@ -102,7 +102,7 @@ export function Transformador({ c, tRel, W, H, k, natural, onGesto, cambiarClip 
 }
 
 // ---- en propiedades: transformar (con fotogramas clave y curvas) y la velocidad
-export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir }) {
+export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir, onRastrear, rastreando }) {
   const [t, setT] = useState(reloj.t);
   // (8/11, fallo: tras moverse rápido, el ◆ se ponía en el instante de antes) + el último instante siempre llega
   useEffect(()=>{ let ult = 0, tm = 0; const q = reloj.oir(x=>{ const a = performance.now(); clearTimeout(tm); if(a - ult > 90){ ult = a; setT(x); } else tm = setTimeout(()=>setT(reloj.t), 100); }); return ()=>{ clearTimeout(tm); q && q(); }; },[reloj]);
@@ -139,10 +139,57 @@ export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir }) {
                 {Object.keys(CURVAS).map(x=><option key={x} value={x}>{NOMBRE_CURVA[x]}</option>)}</select></label>}
           </div>);
       })}
+      <Curvas c={c} tRel={tRel} alGesto={alGesto} cambiarClip={cambiarClip}/>
+      {onRastrear && <button onClick={onRastrear} disabled={rastreando} className="rd-btn" style={{justifyContent:"center"}}
+        title="Pon el centro de este clip encima de lo que quieres seguir (al principio del clip) y pulsa: se moverá con ello">{rastreando ? "Siguiendo…" : "Seguir lo de debajo (rastreo)"}</button>}
       <div style={{display:"flex",gap:6}}>
         <button onClick={()=>cambiarClip({...c, transform:{...TRANS0}, kf:{}})} className="rd-btn" style={{flex:1,justifyContent:"center"}}>Restablecer</button>
       </div>
     </div>);
+}
+
+/* 8/11 (fase 3, el editor de gráficas de After Effects/DaVinci): la CURVA de cada propiedad animada a lo largo del clip.
+   Cada ◆ se arrastra: a los lados cambia CUÁNDO, arriba y abajo cambia el VALOR; doble clic lo quita. La forma de cada
+   tramo (lineal, acelera, frena, las dos) se elige debajo de su deslizador. */
+function Curvas({ c, tRel, alGesto, cambiarClip }) {
+  const animadas = PROPS.filter(([pr])=>((c.kf || {})[pr] || []).length > 1);
+  const [prSel, setPrSel] = useState(null);
+  const caja = useRef(null);
+  if(!animadas.length) return null;
+  const fila = animadas.find(x=>x[0]===prSel) || animadas[0], [pr, n, a0, b0, , fmt] = fila;
+  const lista = (c.kf[pr] || []).slice().sort((x, y)=>x[0]-y[0]), L = Math.max(0.05, largo(c));
+  const vals = lista.map(x=>x[1]), lo = Math.min(a0, ...vals), hi = Math.max(b0, ...vals);
+  const W = 220, H = 110, P = 8;
+  const X = t => P + t / L * (W - 2 * P), Y = v => H - P - (v - lo) / Math.max(1e-6, hi - lo) * (H - 2 * P);
+  const puntos = Array.from({length:81}, (_, i)=>{ const t = i / 80 * L; return `${X(t).toFixed(1)},${Y(valorEn(c, pr, t)).toFixed(1)}`; }).join(" ");
+  const arrastrar = (e, i) => {
+    e.preventDefault(); e.stopPropagation();
+    const r = caja.current.getBoundingClientRect(), k = W / r.width;
+    alGesto("inicio");
+    const mover = ev => {
+      const x = (ev.clientX - r.left) * k, y = (ev.clientY - r.top) * k;
+      const tMin = i > 0 ? lista[i - 1][0] + 0.01 : 0, tMax = i < lista.length - 1 ? lista[i + 1][0] - 0.01 : L;
+      const t = +Math.max(tMin, Math.min(tMax, (x - P) / (W - 2 * P) * L)).toFixed(4);
+      const v = +Math.max(lo, Math.min(hi, lo + (H - P - y) / (H - 2 * P) * (hi - lo))).toFixed(4);
+      const nl = lista.map((q, j)=>j === i ? [t, v, q[2]] : q);
+      cambiarClip({...c, kf:{...c.kf, [pr]: nl}}, true);
+    };
+    const soltar = () => { window.removeEventListener("pointermove", mover); window.removeEventListener("pointerup", soltar); alGesto("fin"); };
+    window.addEventListener("pointermove", mover); window.addEventListener("pointerup", soltar);
+  };
+  return <div style={{display:"flex",flexDirection:"column",gap:5,borderTop:"1px solid #222",paddingTop:8}}>
+    <span style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12}}><b>Curva</b>
+      <span style={{display:"flex",gap:3}}>{animadas.map(([p2, n2])=><button key={p2} className={"rd-chip"+(p2===pr ? " on" : "")} onClick={()=>setPrSel(p2)}>{n2}</button>)}</span></span>
+    <svg ref={caja} viewBox={`0 0 ${W} ${H}`} style={{width:"100%",background:"#0b0b0b",border:"1px solid #222",borderRadius:5,touchAction:"none"}}>
+      <line x1={X(Math.min(L, tRel))} x2={X(Math.min(L, tRel))} y1={0} y2={H} stroke="rgba(255,255,255,0.35)"/>
+      <polyline points={puntos} fill="none" stroke="#D4AF37" strokeWidth="1.6"/>
+      {lista.map((q, i)=><g key={i}>
+        <circle cx={X(q[0])} cy={Y(q[1])} r="5" fill="#111" stroke="#D4AF37" strokeWidth="2" style={{cursor:"move"}}
+          onPointerDown={e=>arrastrar(e, i)} onDoubleClick={()=>lista.length > 1 && cambiarClip({...c, kf:{...c.kf, [pr]: lista.filter((x, j)=>j !== i)}})}>
+          <title>{`${q[0].toFixed(2)} s · ${fmt(q[1])} (arrastra; doble clic: quitar)`}</title></circle></g>)}
+    </svg>
+    <span style={{fontSize:10.5,color:"#888"}}>{n}: arrastra los ◆ (a los lados = cuándo; arriba/abajo = valor)</span>
+  </div>;
 }
 
 export function PanelVelocidad({ c, alGesto, cambiarClip }) {

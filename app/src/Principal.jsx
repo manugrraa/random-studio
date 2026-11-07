@@ -91,6 +91,9 @@ export function App() {
   const [cardsExpanded, setCardsExpanded] = useState(()=>{ try { return localStorage.getItem("rds_cards_exp")==="1"; } catch(e){ return false; } });
   useEffect(()=>{ try { localStorage.setItem("rds_cards_exp", cardsExpanded?"1":"0"); } catch(e){} },[cardsExpanded]);
   const [calView, setCalView] = useState("week"); // month | week | day
+  // 8/11 (fase 3): el editor pide «Programar en redes» → al programador, con ese vídeo resaltado en la bandeja
+  useEffect(()=>{ if(!window.studioFS || !window.studioFS.onIrAProgramar) return;
+    return window.studioFS.onIrAProgramar(ruta=>{ setView("calendar"); setCalView("redes"); window.__rsResaltar = ruta; setTimeout(()=>window.dispatchEvent(new CustomEvent("rs-resaltar", {detail: ruta})), 200); }); },[]);
   const [editing, setEditing] = useState(null);
   const [showFormats, setShowFormats] = useState(false);
   const [weekOffset, setWeekOffset] = useState(0);

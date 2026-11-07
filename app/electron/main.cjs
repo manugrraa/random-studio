@@ -361,7 +361,7 @@ ipcMain.handle("ranking-abrir", async (e, carpeta) => {
 // montaje sin CapCut. Las consultas rápidas devuelven sus eventos; las tareas
 // largas (preparar, clipear, montar) van de una en una y mandan su progreso.
 const CLON_PY = () => path.join(CLON_DIR, "clon.py");
-const CONSULTAS = new Set(["estado", "brutos", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "redefectos", "redefecto", "pesoclips", "borrarclips", "borrardescartados", "borrarshorts", "oficializar", "mover", "redvoces", "redtts", "redvozproc", "redsubsguardar", "redsubsborrar", "retencion", "aprender"]);
+const CONSULTAS = new Set(["redsalida", "redrastreo", "estado", "brutos", "vods", "clips", "cribar", "renombrar", "nota", "excluir", "edit", "voces", "titulo", "orden", "anadir", "tira", "aire", "editar", "original", "nuevarecop", "redmedios", "redinfo", "redbiblio", "redonda", "redabrirclip", "redaire", "redtira", "redproxy", "redfuentes", "redrecop", "redsubsplant", "redefectos", "redefecto", "pesoclips", "borrarclips", "borrardescartados", "borrarshorts", "oficializar", "mover", "redvoces", "redtts", "redvozproc", "redsubsguardar", "redsubsborrar", "retencion", "aprender"]);
 const TAREAS = new Set(["brutosmontar", "preparar", "clipear", "montar", "rehacer", "mejorar", "criba", "revoz", "retitular", "exportar", "guardarclip", "redsubs"]);
 let tarea = null;          // { proc, args, eventos: [] }
 
@@ -591,6 +591,13 @@ function abrirEditor(req) {
   return editorWin;
 }
 ipcMain.handle("editor-abrir", async (e, req) => { abrirEditor(req); return true; });
+// 8/11 (fase 3): «Programar en redes» desde el editor: la ventana principal va al programador con ese vídeo resaltado
+ipcMain.handle("editor-programar", async (e, ruta) => {
+  if (!mainWindow) return false;
+  try { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); } catch (x) {}
+  mainWindow.webContents.send("ir-a-programar", String(ruta || ""));
+  return true;
+});
 ipcMain.handle("editor-listo", async () => {
   editorListo = true;
   if (editorPendiente && editorWin) { editorWin.webContents.send("editor-peticion", editorPendiente); editorPendiente = null; }

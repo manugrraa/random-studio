@@ -120,7 +120,8 @@ export function RandomEditor({ toast }) {
   const [voces, setVoces] = useState(null);
   const [menuPortada, setMenuPortada] = useState(false);
   const [eligiendoMini, setEligiendoMini] = useState(null);
-  const [yaExiste, setYaExiste] = useState(null);         // (8/11) ya hay un vídeo con ese nombre: reemplazar o copia     // (4/11) «listos», «ruta» o «destino» mientras elige la miniatura
+  const [yaExiste, setYaExiste] = useState(null);
+  const [exportado, setExportado] = useState(null);       // (8/11) el último vídeo exportado: «Programar en redes»         // (8/11) ya hay un vídeo con ese nombre: reemplazar o copia     // (4/11) «listos», «ruta» o «destino» mientras elige la miniatura
   const [pestInsp, setPestInsp] = useAjuste("red_pest_insp", "basico");
   // 28/10: los subtítulos (las plantillas, la elegida y cuántas palabras por tarjeta)
   const [subsInfo, setSubsInfo] = useState(null);
@@ -148,7 +149,7 @@ export function RandomEditor({ toast }) {
       vista.current && vista.current.sincronizar(reloj.t, 0);
       return;
     }
-    if(!ev.codigo){ const f = (tareaClonRef.current && tareaClonRef.current.eventos || []).find(e=>e.evento==="fin"); toast("Exportado" + (f && f.salida ? ": " + f.salida : "")); }
+    if(!ev.codigo){ const f = (tareaClonRef.current && tareaClonRef.current.eventos || []).find(e=>e.evento==="fin"); toast("Exportado" + (f && f.salida ? ": " + f.salida : "")); if(f && f.salida) setExportado(f.salida); }
   });
 
   const tareaClonRef = useRef(null); tareaClonRef.current = tareaClon;
@@ -352,7 +353,7 @@ export function RandomEditor({ toast }) {
   const eliminarCerrando = () => { const s = est.current.sel; if(!s.size) return; cambiar(q=>M.borrarCerrando(q, s)); setSel(new Set()); };
   const cerrarHuecos = ids => { cambiar(q=>M.cerrarHuecos(q, ids)); toast("Huecos cerrados (Ctrl+Z para deshacer)"); };
   // 8/11 (Premiere «Track Select Forward», A): todo lo que hay del cabezal a la derecha, para correrlo de golpe
-  const elegirDesdeAqui = t => { const n = M.desdeAqui(pRef.current, t); setSel(n); toast(n.size + " elementos del cabezal en adelante: arrástralos o usa Alt+← →"); };
+  const elegirDesdeAqui = t => { const n = M.desdeAqui(pRef.current, t); setSel(n); toast(n.size + " elementos del cabezal en adelante: arrástralos" + (pRef.current.magnetica ? " (la principal magnética se queda)" : "")); };
   const copiar = cortar => { const s = est.current.sel; if(!s.size) return; setPorta(todos.filter(c=>s.has(c.id)).sort((a,b)=>a.en-b.en)); if(cortar) eliminar(); };
   const pegar = (cs, tras) => { cs = cs || est.current.porta; if(!cs.length) return; let nuevos = []; cambiar(q=>{ const [r, n] = M.pegar(q, cs, reloj.t, tras); nuevos = n; return r; }); setSel(new Set(nuevos)); };
   const duplicar = () => { const s = est.current.sel; if(s.size) pegar(todos.filter(c=>s.has(c.id)).sort((a,b)=>a.en-b.en), true); };
@@ -427,6 +428,32 @@ export function RandomEditor({ toast }) {
     const f = q => ({...q, pistas: q.pistas.map(pi=>!pi.bloqueada && pi.clips.some(c=>c.id===n.id) ? {...pi, clips: pi.clips.map(c=>{ if(c.id!==n.id) return c; const x = {...n}; delete x.pista; return x; })} : pi)});
     if(gesto) alGesto("durante", f(pRef.current)); else cambiar(f);
   };
+  /* 8/11 (fase 3, RASTREO de movimiento, After Effects/DaVinci): un clip superpuesto (logo, imagen, vídeo) sigue lo que
+     tiene debajo en la principal: se pone encima de la cosa al principio del clip y se pulsa «Seguir lo de debajo»; sus
+     fotogramas clave de posición (x, y) salen del rastreo (clon/rastreo.py). */
+  const [rastreando, setRastreando] = useState(false);
+  const rastrear = async c => {
+    const q = pRef.current, W = q.ancho || 1080, H = q.alto || 1920, v1p = q.pistas.find(x=>x.id==="v1");
+    const cv = v1p && v1p.clips.find(x=>c.en >= x.en - 0.01 && c.en < fin(x) - 0.05);
+    if(!cv || cv.imagen){ toast("Al principio de este clip no hay vídeo en la pista principal que seguir"); return; }
+    let info; try { info = ((await consultar(["redinfo", cv.ruta])).find(e=>e.evento==="hecho") || {}).archivos[0]; } catch(e){ toast(e.message); return; }
+    const sw = info && info.ancho, sh = info && info.alto; if(!sw || !sh){ toast("No sé el tamaño de ese vídeo"); return; }
+    const base = tRelV => { const f = Math.min(W / sw, H / sh) * M.valorEn(cv, "escala", tRelV); return { f, ox: W / 2 + M.valorEn(cv, "x", tRelV), oy: H / 2 + M.valorEn(cv, "y", tRelV) }; };
+    const tA = c.en, tB = Math.min(fin(c), fin(cv)), b0 = base(tA - cv.en);
+    const sx = (W / 2 + M.valorEn(c, "x", 0) - b0.ox) / b0.f + sw / 2, sy = (H / 2 + M.valorEn(c, "y", 0) - b0.oy) / b0.f + sh / 2;
+    if(sx < 0 || sy < 0 || sx > sw || sy > sh){ toast("El centro del clip está fuera del vídeo de debajo: ponlo encima de lo que quieras seguir"); return; }
+    setRastreando(true); toast("Siguiendo el movimiento…");
+    try {
+      const r = await deHecho(["redrastreo", cv.ruta, String(M.local(cv, tA)), String(M.local(cv, tB)), String(sx), String(sy)]);
+      const kx = [], ky = [], ps = r.puntos || [];
+      ps.forEach(([st, px, py], i)=>{ if(i % 2 && i !== ps.length - 1) return;            // (unos 7 por segundo: de sobra y editable)
+        const t = cv.en + (st - cv.desde) / M.vel(cv), b = base(t - cv.en), rel = +(t - c.en).toFixed(4);
+        kx.push([rel, +(b.ox + (px - sw / 2) * b.f - W / 2).toFixed(1), "lineal"]); ky.push([rel, +(b.oy + (py - sh / 2) * b.f - H / 2).toFixed(1), "lineal"]); });
+      const ya = M.todos(pRef.current).find(x=>x.id===c.id);
+      if(ya && kx.length > 1){ cambiarClip({...ya, kf:{...(ya.kf || {}), x:kx, y:ky}}); const flojos = ps.filter(x=>x[3] < 0.5).length;
+        toast(`Rastreo hecho: ${kx.length} puntos de posición${flojos ? ` (en ${flojos} momentos se perdió y se quedó quieto; retócalo en la curva)` : ""}. Ctrl+Z para deshacer`); }
+    } catch(e){} finally { setRastreando(false); }
+  };
   // ---- copiar y pegar atributos (Ctrl+Alt+C / Ctrl+Alt+V)
   const portaAtrib = useRef(null);
   const copiarAtributos = () => {
@@ -491,7 +518,7 @@ export function RandomEditor({ toast }) {
     if(pRef.current.portada != null) ir(pRef.current.portada);
     setEligiendoMini(como);
   };
-  const exportarYa = async como => {
+  const exportarYa = async (como, decision) => {        // (decision: «--reemplazar» / «--copia», ya elegida)
     setMenuExp(false);
     if(!v1 || !v1.clips.length){ toast("La pista principal está vacía"); return; }
     let destino = null;
@@ -504,12 +531,12 @@ export function RandomEditor({ toast }) {
     if(pRef.current.clip || !pRef.current.nombre.trim()){
       const r = await window.studioFS.redGuardarTmp({...pRef.current, nombre: pRef.current.nombre.trim() || "Sin título"}); if(r.error){ toast(r.error); return; } ruta = r.ruta;
     } else { ruta = await guardar(); if(!ruta) return; }
-    const args = ["exportar", ruta, como, ...(como==="clip" ? [pRef.current.nombre] : como==="ruta" ? [destino] : [])];
+    const args = ["exportar", ruta, como, ...(como==="clip" ? [pRef.current.nombre] : como==="ruta" ? [destino] : []), ...(decision ? [decision] : [])];
     // 8/11, él: «al exportar un vídeo con el mismo nombre que otro, que dé la opción de reemplazarlo» (en «Exportar en…»
     // ya lo pregunta Windows al elegir el archivo)
-    if(como === "listos" || como === "destino"){
+    if(!decision && (como === "listos" || como === "destino")){
       try { const h = (await consultar(["redsalida", ruta, como])).find(e=>e.evento==="hecho") || {};
-        if(h.existe){ setYaExiste({ salida: h.salida, args }); return; } } catch(e){}
+        if(h.existe){ setYaExiste({ salida: h.salida, como }); return; } } catch(e){}
     }
     lanzarExport(args);
   };
@@ -590,9 +617,9 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(ctrl) return;
       else if(e.shiftKey && (k==="Delete"||k==="Backspace")){ ok(); eliminarCerrando(); }
       else if(k==="Delete"||k==="Backspace"){ ok(); eliminar(); }
-      else if(K==="a"){ ok(); elegirDesdeAqui(t); }
-      else if(K==="s"){ ok(); setSkim(x=>{ toast(x ? "Previsualizar al pasar el ratón: apagado" : "Previsualizar al pasar el ratón: encendido (S)"); return !x; }); }
-      else if(K==="h"){ ok(); setCompacta(x=>!x); }
+      else if(K==="a" && !e.altKey){ ok(); elegirDesdeAqui(t); }
+      else if(K==="s" && !e.altKey){ ok(); const on = !skim; setSkim(on); if(!on) verEn(null); toast(on ? "Previsualizar al pasar el ratón: encendido (S)" : "Previsualizar al pasar el ratón: apagado"); }
+      else if(K==="h" && !e.altKey){ ok(); setCompacta(x=>!x); }
       else if(e.shiftKey && K==="z"){ ok(); ajustar(); }
       else if(e.shiftKey && K==="m"){ ok(); silenciar(); }
       else if(K==="q"){ ok(); borrarLado(true); }
@@ -602,8 +629,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(K==="g"){ ok(); setGuias(x=>!x); }
       else if(K==="v"){ ok(); setHerramienta("sel"); }
       else if(K==="b"){ ok(); setHerramienta("cuchilla"); }
-      else if(K==="y"){ ok(); setHerramienta("deslizar"); }
-      else if(K==="r"){ ok(); setHerramienta("rodillo"); }
+      else if(K==="y" && !e.altKey){ ok(); setHerramienta("deslizar"); }
+      else if(K==="r" && !e.altKey){ ok(); setHerramienta("rodillo"); }
       else if(K==="k"){ ok(); }
       else if(K==="l"){ ok(); setJugando(j=>j>0 ? Math.min(4, j*2) : 1); }
       else if(K==="j"){ ok(); setJugando(j=>j<0 ? Math.max(-4, j*2) : -1); }
@@ -634,7 +661,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           ...(elegidos.some(c=>c.pista==="v1") ? [["Extraer audio","Ctrl+Shift+S",extraer]] : []),
           [elegidos.every(c=>c.silencio) ? "Devolver el sonido" : "Silenciar","Shift+M",silenciar],["Eliminar","Supr",eliminar],
           ["Eliminar y cerrar el hueco","Shift+Supr",eliminarCerrando],["Cerrar los huecos de esta pista","",()=>cerrarHuecos(new Set([menu.pista]))],
-          ["Elegir todo del cabezal en adelante","A",()=>elegirDesdeAqui(reloj.t)]].map(([n,k,f])=>
+          ["Elegir todo del cabezal en adelante","A",()=>elegirDesdeAqui(reloj.t)],
+          ...(elegidos.filter(c=>c.ruta && !c.imagen && !c.efecto).length > 1 ? [["Juntar como tomas (audición)","",()=>{ let n = 0; cambiar(q=>{ const [r, k] = M.juntarTomas(q, est.current.sel); n = k; return r; }); toast(n ? `Audición con ${n} tomas: cámbialas en Propiedades` : "Elige 2 o más clips de vídeo o audio"); setSel(new Set([elegidos.slice().sort((a,b)=>a.en-b.en)[0].id])); }]] : [])].map(([n,k,f])=>
           <button key={n} onClick={()=>{ setMenu(null); f(); }}><span>{n}</span><kbd>{k}</kbd></button>)}
       </div>
     </div>, document.body);
@@ -686,6 +714,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
                 <span>{p.lufs ? "✓ " : ""}Volumen de YouTube (−14 LUFS)</span><kbd>{p.lufs ? "sí" : "no"}</kbd></button>
             </div></div>, document.body)}
         </div>
+        {exportado && !p.clip && <button className="rd-btn on" title={"Abre el programador de RandomStudio con «" + exportado.split(/[\\/]/).pop() + "» resaltado: arrástralo al día y la red"}
+          onClick={()=>{ window.studioFS.editorProgramar && window.studioFS.editorProgramar(exportado); }}>📅 Programar en redes</button>}
         {p.clip && <button onClick={guardarCambios} disabled={ocupado} className="rd-btn primario" title="Ctrl+S · rehace el clip con estos cambios, en su sitio">Guardar cambios</button>}
       </div>
       {tarea && <div style={{padding:"0 10px"}}><PanelTarea tarea={tarea} onCerrar={cerrarTarea}/></div>}
@@ -761,9 +791,19 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
             {[["basico","Básico"], ...(esVideo ? [["transformar","Transformar"],["color","Color"],["mascara","Máscara"]] : []), ...(uno.imagen ? [] : [["velocidad","Velocidad"]])].map(([k2, l])=>
               <button key={k2} onClick={()=>setPestInsp(k2)} className={"rd-tab"+(pestInsp===k2 || (!["transformar","velocidad","color","mascara"].includes(pestInsp) && k2==="basico") ? " on" : "")} style={{fontSize:11.5,padding:"5px 0"}}>{l}</button>)}
           </div>}
-          {uno && uno.ruta && pestInsp==="transformar" && esVideo && <PanelTransformar c={uno} reloj={reloj} alGesto={alGesto} cambiarClip={cambiarClip} ir={t=>{ setJugando(0); ir(t); }}/>}
+          {uno && uno.tomas && uno.tomas.length > 1 && <div style={{display:"flex",flexDirection:"column",gap:5,border:"1px solid rgba(212,175,55,0.35)",borderRadius:7,padding:7}}>
+            <b style={{fontSize:12}}>Audición · {uno.tomas.length} tomas</b>
+            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+              {uno.tomas.map((t, k)=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:2}}>
+                <button className={"rd-chip"+((uno.toma || 0)===k ? " on" : "")} title={t.nombre} onClick={()=>cambiar(q=>M.elegirToma(q, uno.id, k))}>Toma {k + 1}</button>
+                {(uno.toma || 0)!==k && <button className="rd-ico" style={{width:16,height:18,fontSize:11}} title="Quitar esta toma de la audición" onClick={()=>cambiar(q=>M.quitarToma(q, uno.id, k))}>×</button>}</span>)}
+            </div>
+            <span style={{fontSize:10.5,color:"#888"}}>{(uno.tomas[uno.toma || 0] || {}).nombre} · al exportar sale la elegida</span>
+          </div>}
+          {uno && uno.ruta && pestInsp==="transformar" && esVideo && <PanelTransformar c={uno} reloj={reloj} alGesto={alGesto} cambiarClip={cambiarClip} ir={t=>{ setJugando(0); ir(t); }}
+            onRastrear={uno.pista !== "v1" ? ()=>rastrear(uno) : null} rastreando={rastreando}/>}
           {uno && uno.ruta && pestInsp==="velocidad" && <PanelVelocidad c={uno} alGesto={alGesto} cambiarClip={cambiarClip}/>}
-          {uno && uno.ruta && pestInsp==="color" && esVideo && <PanelColor c={uno} alGesto={alGesto} cambiarClip={cambiarClip}/>}
+          {uno && uno.ruta && pestInsp==="color" && esVideo && <PanelColor c={uno} alGesto={alGesto} cambiarClip={cambiarClip} reloj={reloj}/>}
           {uno && uno.ruta && pestInsp==="mascara" && esVideo && <PanelMascara c={uno} W={p.ancho} H={p.alto} alGesto={alGesto} cambiarClip={cambiarClip}/>}
           {(!uno || !uno.ruta || !["transformar","velocidad","color","mascara"].includes(pestInsp) || (["transformar","color","mascara"].includes(pestInsp) && !esVideo) || (pestInsp==="velocidad" && uno.imagen)) && <>
           {uno && <div style={{color:"#aaa",lineHeight:1.7,fontFamily:"ui-monospace, Consolas, monospace",fontSize:11.5}}>
@@ -789,8 +829,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               const enKf = conKf && ((uno.kf.vol || []).some(x=>Math.abs(x[0] - tRelDe(uno)) < 0.02));
               const bt = { padding:"0 8px", height:24, borderRadius:6, border:"1px solid #333", background:"#1a1a1a", color:"#ddd", cursor:"pointer", fontSize:14, lineHeight:"22px" };
               return <div key={campo} style={{display:"flex",flexDirection:"column",gap:4}}><span style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>{n}
-                  <span style={{display:"flex",gap:6,alignItems:"center"}}><span style={{color:"#999"}} title={campo==="vol" && v > 1.001 ? "El visor no puede sonar por encima del 100 %: al exportar sí sale con este volumen" : undefined}>{fmt(v)}{campo==="vol" && v > 1.001 ? " ·" : ""}</span>
-                    {campo==="vol" && v > 1.001 && <span style={{fontSize:10,color:"#b9a35a"}}>(visor: 100 %)</span>}
+                  <span style={{display:"flex",gap:6,alignItems:"center"}}><span style={{color:"#999"}}>{fmt(v)}</span>
                     {campo==="vol" && uno && <button onClick={()=>alternarKfVol(uno)} title={enKf ? "Quitar el punto del cabezal" : "Poner un punto de volumen en el cabezal (para que suba o baje en un trozo)"}
                       style={{...bt, height:20, lineHeight:"18px", padding:"0 6px", color: enKf ? "#D4AF37" : conKf ? "#b9a35a" : "#888", fontSize:12}}>◆</button>}</span></span>
                 <span style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -859,7 +898,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <button onClick={anadirPistaVideo} className="rd-ico" title="Pista de vídeo encima de la principal (superposición: vídeo dentro de vídeo, imágenes, máscaras)">{I.capa}</button>
         <button onClick={anadirPista} className="rd-ico" title="Pista de audio nueva">{I.pista}</button>
         <span className="rd-sep"/>
-        <button onClick={()=>setSkim(x=>!x)} className={"rd-btn"+(skim?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Previsualizar al pasar el ratón por la línea de tiempo, sin mover el cabezal (S)">Ver al pasar</button>
+        <button onClick={()=>{ if(skim) verEn(null); setSkim(x=>!x); }} className={"rd-btn"+(skim?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Previsualizar al pasar el ratón por la línea de tiempo, sin mover el cabezal (S)">Ver al pasar</button>
         <button onClick={()=>setConectados(x=>!x)} className={"rd-btn"+(conectadosOn?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Clips conectados: al mover o quitar un clip de la principal, los SFX, textos y subtítulos que tiene encima van con él">Conectados</button>
         <button onClick={()=>setCompacta(x=>!x)} className={"rd-btn"+(compacta?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Pistas más bajas para ver muchas a la vez (H)">Compactas</button>
         <span style={{flex:1}}/>
@@ -882,8 +921,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",background:"rgba(248,113,113,0.12)",borderTop:"1px solid #f87171",borderBottom:"1px solid #f87171",fontSize:12.5}}>
           <span>Ya hay un vídeo con ese nombre: <b>{yaExiste.salida.split(/[\\/]/).slice(-2).join(" / ")}</b></span>
           <span style={{flex:1}}/>
-          <button className="rd-btn primario" onClick={()=>{ const a = yaExiste.args; setYaExiste(null); lanzarExport([...a, "--reemplazar"]); }}>Reemplazarlo</button>
-          <button className="rd-btn" onClick={()=>{ const a = yaExiste.args; setYaExiste(null); lanzarExport([...a, "--copia"]); }}>Guardar una copia (2)</button>
+          <button className="rd-btn primario" onClick={()=>{ const c = yaExiste.como; setYaExiste(null); exportarYa(c, "--reemplazar"); }}>Reemplazarlo</button>
+          <button className="rd-btn" onClick={()=>{ const c = yaExiste.como; setYaExiste(null); exportarYa(c, "--copia"); }}>Guardar una copia (2)</button>
           <button className="rd-btn" onClick={()=>setYaExiste(null)}>Cancelar</button>
         </div>)}
       <div className="rd-linea">

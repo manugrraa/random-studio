@@ -1,12 +1,14 @@
 import React from "react";
 import { AJUSTES, COLOR0, FILTROS, colorDe } from "./color";
+import { Medidores } from "./Medidores";
 
 /* RandomEditor · la pestaña COLOR de propiedades: los filtros (con su intensidad) y todos los ajustes */
-export function PanelColor({ c, alGesto, cambiarClip }) {
+export function PanelColor({ c, alGesto, cambiarClip, reloj }) {
   const e = {...COLOR0, ...(c.color || {})}, f = c.filtro || null;
   const fila = { display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 };
   return (
     <div style={{display:"flex",flexDirection:"column",gap:9}}>
+      {reloj && !c.imagen && <Medidores c={c} reloj={reloj}/>}
       <div style={{fontSize:10.5,fontWeight:700,color:"#888",letterSpacing:0.4}}>FILTROS</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:5}}>
         <button onClick={()=>cambiarClip({...c, filtro:null})} className={"rd-chip"+(!f ? " on" : "")} style={{padding:"6px 2px"}}>Ninguno</button>

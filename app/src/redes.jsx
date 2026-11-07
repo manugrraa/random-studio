@@ -274,6 +274,7 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
 }
 
 /* ---------- la vista de carriles ---------- */
+const mismaRuta = (a, b) => !!a && !!b && String(a).split("/").join("\\").toLowerCase() === String(b).split("/").join("\\").toLowerCase();
 export function CarrilesView({ videos, weekOffset, setWeekOffset, setCalView, onOpen, toast }) {
   const [est, leer, error] = useSocial();
   const [bandeja, setBandeja] = useState(null);
@@ -281,7 +282,12 @@ export function CarrilesView({ videos, weekOffset, setWeekOffset, setCalView, on
   const [soltando, setSoltando] = useState(null);       // { video, dia, red }
   const [encima, setEncima] = useState(null);
   const [chip, setChip] = useState(null);               // programado elegido (menú)
-  useEffect(() => { window.studioFS && window.studioFS.terminadosLista && window.studioFS.terminadosLista().then(r => setBandeja((r && r.lista) || [])); }, []);
+  const leerBandeja = () => { window.studioFS && window.studioFS.terminadosLista && window.studioFS.terminadosLista().then(r => setBandeja((r && r.lista) || [])); };
+  useEffect(leerBandeja, []);
+  // (8/11) el vídeo que se acaba de exportar en el RandomEditor sale resaltado (arrástralo a un día)
+  const [resaltar, setResaltar] = useState(() => window.__rsResaltar || null);
+  useEffect(() => { const h = e => { setResaltar(e.detail); leerBandeja(); }; window.addEventListener("rs-resaltar", h); return () => window.removeEventListener("rs-resaltar", h); }, []);
+  useEffect(() => { if (!resaltar || !bandeja) return; const el = document.querySelector('[data-resaltado="1"]'); if (el) el.scrollIntoView({ block: "center" }); }, [resaltar, bandeja]);
   const base = new Date(); base.setHours(12, 0, 0, 0); base.setDate(base.getDate() - ((base.getDay() + 6) % 7) + weekOffset * 7);
   const dias = Array.from({ length: 7 }, (_, i) => { const d = new Date(base); d.setDate(base.getDate() + i); return d; });
   const hoy = isoDia(new Date());
@@ -335,8 +341,9 @@ export function CarrilesView({ videos, weekOffset, setWeekOffset, setCalView, on
           {(bandeja || []).map(v => {
             const ya = redesDe(v);
             return (
-              <div key={v.id} draggable onDragStart={() => setArrastrado(v)} onDragEnd={() => setArrastrado(null)}
-                style={{ display: "flex", gap: 8, alignItems: "center", padding: 6, borderRadius: 10, background: "var(--card)", border: "1px solid var(--border)", cursor: "grab" }}>
+              <div key={v.id} draggable onDragStart={() => setArrastrado(v)} onDragEnd={() => setArrastrado(null)} data-resaltado={mismaRuta(v.video, resaltar) ? "1" : undefined}
+                title={mismaRuta(v.video, resaltar) ? "Recién exportado: arrástralo a un día" : undefined}
+                style={{ display: "flex", gap: 8, alignItems: "center", padding: 6, borderRadius: 10, background: mismaRuta(v.video, resaltar) ? "rgba(212,175,55,0.16)" : "var(--card)", border: "1px solid " + (mismaRuta(v.video, resaltar) ? "var(--gold)" : "var(--border)"), cursor: "grab" }}>
                 {v.miniatura ? <img src={fileUrl(v.miniatura)} alt="" style={{ width: 30, height: 46, objectFit: "cover", borderRadius: 5, flex: "none" }} />
                   : <span style={{ width: 30, height: 46, borderRadius: 5, background: "#111", flex: "none" }} />}
                 <div style={{ minWidth: 0 }}>

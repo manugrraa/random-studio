@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   redElegirDestino: (nombre) => ipcRenderer.invoke("red-elegir-destino", nombre),
   // v3.14: el RandomEditor en su propia ventana
   abrirEditor: (req) => ipcRenderer.invoke("editor-abrir", req || {}),
+  editorProgramar: (ruta) => ipcRenderer.invoke("editor-programar", ruta),
+  onIrAProgramar: (cb) => { const h = (e, r) => cb(r); ipcRenderer.on("ir-a-programar", h); return () => ipcRenderer.removeListener("ir-a-programar", h); },
   editorListo: () => ipcRenderer.invoke("editor-listo"),
   // v3.14.1: el modo de rendimiento (gráfica dedicada, etc.) y reiniciar para aplicarlo
   rendimientoLeer: () => ipcRenderer.invoke("rendimiento-leer"),
