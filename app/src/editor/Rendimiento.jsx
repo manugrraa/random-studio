@@ -1,4 +1,5 @@
 import React from "react";
+import { ACCIONES, combo, comboBonito, leerPropios, ponerPropios } from "./atajos";
 import { createPortal } from "react-dom";
 import { fin } from "./modelo";
 const { useState, useEffect, useRef } = React;
@@ -81,6 +82,30 @@ export function Medidor({ reloj, proyecto, ondas }) {
 }
 
 // los ajustes del editor: rendimiento (gráfica dedicada, etc.), proxies y el contador
+// 8/11 (fase 3, Premiere): tus atajos. Pulsa la tecla nueva en el recuadro y elige qué hace (lo mismo que una del editor)
+function AtajosPropios() {
+  const [prop, setProp] = useState(leerPropios);
+  const [nueva, setNueva] = useState("");
+  const [accion, setAccion] = useState(ACCIONES[0][0]);
+  const guardar = o => { ponerPropios(o); setProp(o); };
+  const nombre = c => (ACCIONES.find(a=>a[0]===c) || [c, comboBonito(c)])[1];
+  return <div style={{display:"flex",flexDirection:"column",gap:7}}>
+    <b style={{fontSize:13.5}}>Atajos propios</b>
+    <span style={{fontSize:11,color:"#888"}}>Una tecla tuya que hace lo mismo que otra del editor (la de siempre sigue funcionando).</span>
+    {Object.entries(prop).map(([k, v])=><div key={k} style={{display:"flex",alignItems:"center",gap:6,fontSize:12}}>
+      <kbd style={{padding:"2px 6px",border:"1px solid #444",borderRadius:4,fontFamily:"ui-monospace, Consolas, monospace"}}>{comboBonito(k)}</kbd>
+      <span style={{flex:1,color:"#bbb"}}>→ {nombre(v)}</span>
+      <button className="rd-ico peligro" style={{width:22,height:22}} title="Quitar" onClick={()=>{ const o = {...prop}; delete o[k]; guardar(o); }}>×</button></div>)}
+    <div style={{display:"flex",gap:5}}>
+      <input readOnly value={nueva ? comboBonito(nueva) : ""} placeholder="Pulsa la tecla…" className="rd-input" style={{width:96,padding:"4px 7px"}}
+        onKeyDown={e=>{ e.preventDefault(); e.stopPropagation(); if(["Control","Shift","Alt","Meta"].includes(e.key)) return; setNueva(combo(e)); }}/>
+      <select value={accion} onChange={e=>setAccion(e.target.value)} className="rd-input" style={{flex:1,minWidth:0,padding:"4px 5px"}}>
+        {ACCIONES.map(([c, n])=><option key={c} value={c}>{n} ({comboBonito(c)})</option>)}</select>
+      <button className="rd-btn" style={{padding:"4px 8px"}} disabled={!nueva || nueva === accion} onClick={()=>{ guardar({...prop, [nueva]: accion}); setNueva(""); }}>Añadir</button>
+    </div>
+  </div>;
+}
+
 export function AjustesEditor({ abierto, onCerrar, usarProxies, setUsarProxies, verFps, setVerFps, verMedidor, setVerMedidor, proxiesListos, proxiesTotal, toast }) {
   const [r, setR] = useState(null);
   const [cambiado, setCambiado] = useState(false);
@@ -111,6 +136,8 @@ export function AjustesEditor({ abierto, onCerrar, usarProxies, setUsarProxies, 
           proxiesTotal ? `Copias ligeras para que cortar y saltar no dé tirones (${proxiesListos}/${proxiesTotal} listas). Al exportar se usa el original.` : "Copias ligeras para que cortar y saltar no dé tirones. Al exportar se usa el original.")}
         {casilla(verFps, setVerFps, "Contador de FPS", "En la esquina del reproductor. No resta rendimiento: se actualiza una vez por segundo.")}
         {casilla(verMedidor, setVerMedidor, "Medidor de volumen", "A la derecha del reproductor.")}
+        <div style={{height:1,background:"#2a2a2a"}}/>
+        <AtajosPropios/>
       </div>
     </div>, document.body);
 }

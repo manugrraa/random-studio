@@ -150,9 +150,10 @@ function BotonFuente({ f, elegida, onElegir }) {
 }
 
 // ---- el inspector de un texto
-export function InspectorTexto({ c, fuentes, presets, alGesto, cambiarEstilo, cambiarTexto, W = 1080, H = 1920 }) {
+export function InspectorTexto({ c, fuentes, presets, alGesto, cambiarEstilo, cambiarTexto, W = 1080, H = 1920, estilos = [], setEstilos }) {
   const e = c.estilo || {};
   const [busca, setBusca] = useState("");
+  const [nomEst, setNomEst] = useState("");
   const fam = useMemo(()=>{
     const q = busca.trim().toLowerCase();
     return (fuentes || []).filter(f=>!q || f.familia.toLowerCase().includes(q)).slice(0, 400);
@@ -167,6 +168,20 @@ export function InspectorTexto({ c, fuentes, presets, alGesto, cambiarEstilo, ca
     <div style={{display:"flex",flexDirection:"column",gap:10}}>
       <textarea value={c.texto} rows={3} className="rd-input" style={{resize:"vertical",fontFamily:"inherit",lineHeight:1.4}}
         onFocus={()=>alGesto("inicio")} onBlur={()=>alGesto("fin")} onChange={ev=>cambiarTexto(ev.target.value)} placeholder="Escribe el texto…"/>
+      {/* 8/11 (fase 3, CapCut «Mis estilos»): guardar el estilo de este texto y ponerlo en otros con un clic */}
+      {setEstilos && <div style={{display:"flex",flexDirection:"column",gap:5,border:"1px solid #262626",borderRadius:7,padding:7}}>
+        <span style={fila}><b style={{fontSize:12}}>Mis estilos</b><span style={{color:"#777",fontSize:10.5}}>clic = ponérselo a lo elegido</span></span>
+        {!!estilos.length && <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+          {estilos.map(x=><span key={x.id} style={{display:"inline-flex",alignItems:"center",gap:2}}>
+            <button className="rd-chip" onClick={()=>cambiarEstilo({...x.estilo})} title="Poner este estilo (fuente, tamaño, color, sombras, sitio y animación)"
+              style={{fontFamily:familiaCss(x.estilo.fuente),color:x.estilo.color || "#fff"}}>{x.nombre}</button>
+            <button className="rd-ico" style={{width:16,height:18,fontSize:11}} title="Quitar este estilo" onClick={()=>setEstilos(estilos.filter(y=>y.id!==x.id))}>×</button></span>)}
+        </div>}
+        <div style={{display:"flex",gap:5}}>
+          <input value={nomEst} onChange={ev=>setNomEst(ev.target.value)} placeholder="Nombre (p. ej. «Ficha roja»)" className="rd-input" style={{flex:1,minWidth:0,padding:"4px 7px"}}/>
+          <button className="rd-btn" style={{padding:"4px 8px"}} disabled={!nomEst.trim()} onClick={()=>{ setEstilos([...estilos.filter(y=>y.nombre!==nomEst.trim()), {id:Date.now().toString(36), nombre:nomEst.trim(), estilo:{...e}}]); setNomEst(""); }}>Guardar</button>
+        </div>
+      </div>}
       <div style={{display:"flex",flexDirection:"column",gap:4}}>
         <span style={fila}>Fuente<span style={{color:"#999",fontSize:11}}>{actual ? `${actual.familia}${actual.estilo !== "Regular" ? " · " + actual.estilo : ""}` : ""}</span></span>
         <input value={busca} onChange={ev=>setBusca(ev.target.value)} placeholder="Buscar fuente…" className="rd-input"/>

@@ -352,6 +352,30 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       if(!desdeAuto) autoDesplazar(ev, mover);
       encajado.current = null;
       const dt = (ev.clientX - x0 + caja.current.scrollLeft - s0) / zRef.current;
+      // 8/11 (fase 3, Premiere/Avid) DESLIZAR (Y): el clip se queda en su sitio y con su largo; cambia QUÉ trozo del
+      // archivo enseña (arrastrar a la derecha = antes en el archivo)
+      if(herramienta === "deslizar" && modo === "mover" && c.dur_src && c.dur_src < 1e8){
+        const vy = vel(c), L = c.hasta - c.desde;
+        const desde = cuantiza(Math.max(0, Math.min(c.dur_src - L, c.desde - dt * vy)), fps);
+        onGesto("durante", {...inicial, pistas: inicial.pistas.map(pi=>pi.id!==pista.id ? pi : {...pi, clips: pi.clips.map(x=>x.id!==c.id ? x : {...x, desde, hasta: +(desde + L).toFixed(4)})})});
+        avisar(`Contenido ${desde - c.desde >= 0 ? "+" : "−"}${tc(Math.abs(desde - c.desde), fps)}  ·  empieza en ${tc(desde, fps)} del archivo`, ev.clientX);
+        return;
+      }
+      // RODILLO (R): el corte entre dos clips seguidos se mueve, uno se alarga y el otro se acorta (el total no cambia)
+      if(herramienta === "rodillo" && (modo === "izq" || modo === "der")){
+        const cs = inicial.pistas.find(x=>x.id===pista.id).clips;
+        const A = modo === "der" ? c : cs.find(x=>x.id!==c.id && Math.abs(fin(x) - c.en) < 0.02);
+        const B = modo === "der" ? cs.find(x=>x.id!==c.id && Math.abs(x.en - fin(c)) < 0.02) : c;
+        if(A && B){
+          const va = vel(A), vb = vel(B), f = 1 / fps;
+          let d = Math.max((A.desde + f - A.hasta) / va, -B.desde / vb, Math.min(dt, ((A.dur_src ?? 1e9) - A.hasta) / va, (B.hasta - f - B.desde) / vb));
+          d = cuantiza(fin(A) + d, fps) - fin(A);
+          onGesto("durante", {...inicial, pistas: inicial.pistas.map(pi=>pi.id!==pista.id ? pi : {...pi, clips: pi.clips.map(x=>
+            x.id===A.id ? {...x, hasta: +(A.hasta + d * va).toFixed(4)} : x.id===B.id ? {...x, desde: +(B.desde + d * vb).toFixed(4), en: +(B.en + d).toFixed(4)} : x)})});
+          avisar(`Corte ${d >= 0 ? "+" : "−"}${tc(Math.abs(d), fps)}  ·  en ${tc(fin(A) + d, fps)}`, ev.clientX);
+          return;
+        }
+      }
       if(grupo && grupo.size > 1){ moverGrupo(inicial, grupo, dt, ev.clientX, ev.altKey); return; }
       let destino = pista.id, base = inicial.pistas;
       // 5/11, él: "que se puedan crear nuevos canales, tanto visual como de audio, simplemente moviendo el clip a la

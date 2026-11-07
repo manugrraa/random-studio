@@ -8,7 +8,7 @@ const { useState, useEffect, useRef, useMemo } = React;
    - «Quitar lo elegido»: esas palabras salen de la pista principal y lo de detrás se corre (con todo lo conectado)
    - «Quitar muletillas»: los «eh», «em», «mmm», «o sea» sueltos, de golpe (Ctrl+Z lo deshace)
    La palabra que suena se ilumina mientras se reproduce. */
-export function PanelGuion({ proyecto, reloj, onIr, onQuitar }) {
+export function PanelGuion({ proyecto, reloj, onIr, onQuitar, onDestacar }) {
   const ws = useMemo(()=>M.palabrasLinea(proyecto), [proyecto]);
   const mul = useMemo(()=>M.muletillas(proyecto), [proyecto]);
   const [sel, setSel] = useState(null);          // [i, j] (índices de palabras)
@@ -50,6 +50,7 @@ export function PanelGuion({ proyecto, reloj, onIr, onQuitar }) {
         <button className="rd-btn" disabled={!sel} onClick={quitarElegido} title="Esas palabras salen del vídeo y lo de detrás se corre (Ctrl+Z lo deshace)">Quitar lo elegido</button>
         <button className="rd-btn" disabled={!mul.length} onClick={()=>onQuitar(mul, `${mul.length} muletilla${mul.length > 1 ? "s" : ""} quitada${mul.length > 1 ? "s" : ""}`)}
           title="Los «eh», «em», «mmm» y «o sea» sueltos (en rojo), fuera de golpe">Quitar muletillas ({mul.length})</button>
+        {onDestacar && <button className="rd-btn" onClick={onDestacar} title="Una palabra por tarjeta en amarillo: números y precios, nombres, o palabras fuertes («gratis», «nuevo»…). Otra vez: quitarlo">Destacar palabras</button>}
         {sel && <span style={{fontSize:11,color:"#aaa"}}>{j0 - i0 + 1} elegida{j0 > i0 ? "s" : ""} · {M.tc(ws[j0].b - ws[i0].a)}</span>}
       </div>
       <div style={{fontSize:11,color:"#777",padding:"0 10px 6px"}}>Clic: ir ahí · Shift+clic o arrastrar: elegir varias</div>

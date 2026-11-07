@@ -53,11 +53,13 @@ function Carpeta({ r, onAbrir, fav, onFav }) {
 }
 
 // los textos que se pueden meter: el normal y el de los títulos de los Shorts
-function Textos({ presets, onTexto, favs, onFav, soloFavs, vacio }) {
+function Textos({ presets, onTexto, favs, onFav, soloFavs, vacio, estilos = [] }) {
   if(!presets) return <div style={{fontSize:12.5,color:"#888",padding:8}}>Cargando…</div>;
   const todos = [
     { id:"titulo", nombre:"Título", ayuda:"Como los títulos de los Shorts: en la línea cámara/juego, una línea, contorno y sombra", estilo:presets.titulo, muestra:"Título del Short 😭" },
     { id:"normal", nombre:"Texto", ayuda:"Un texto normal en el centro (cámbiale lo que quieras)", estilo:presets.normal, muestra:"Texto" },
+    // (8/11, fase 3) los estilos que guardaste tú, desde las propiedades de un texto
+    ...estilos.map(x=>({ id:"est:" + x.id, nombre:x.nombre, ayuda:"Tu estilo guardado", estilo:{color_borde:"#000", borde:0, ...x.estilo}, muestra:x.nombre })),
   ];
   const items = soloFavs ? todos.filter(it=>favs.includes(it.id)) : todos;
   if(!items.length) return vacio;
@@ -92,7 +94,7 @@ function Efectos({ efectos, onEfecto }) {
     </div>));
 }
 
-export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs, panelVoces, panelGuion, efectos, onEfecto }) {
+export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs, panelVoces, panelGuion, efectos, onEfecto, estilosTexto }) {
   const [pestana, setPestana] = useState(()=>{ try { return localStorage.getItem("red_pestana") || "clips"; } catch(e){ return "clips"; } });
   const [cat, setCat] = useState("");
   const [busca, setBusca] = useState("");
@@ -153,7 +155,7 @@ export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTex
         {cats.map(x=><button key={x} onClick={()=>setCat(x)} className={"rd-chip"+(cat===x?" on":"")}>{x} · {(lista||[]).filter(m=>m.categoria===x).length}</button>)}
       </div>}
       <div style={{overflowY:"auto",flex:1,padding:"4px 8px 8px",display:"flex",flexDirection:"column",gap:4}}>
-        {pestana==="texto" && <Textos presets={presets} onTexto={onTexto} favs={favsAqui} onFav={alternarFav} soloFavs={soloFavs} vacio={sinFavs}/>}
+        {pestana==="texto" && <Textos presets={presets} onTexto={onTexto} favs={favsAqui} onFav={alternarFav} soloFavs={soloFavs} vacio={sinFavs} estilos={estilosTexto}/>}
         {pestana==="subtitulos" && panelSubs && React.cloneElement(panelSubs, { favs: favsAqui, onFav: id=>alternarFav("subtitulos", id), soloFavs, vacioFavs: sinFavs })}
         {pestana==="voces" && panelVoces}
         {pestana==="guion" && panelGuion}

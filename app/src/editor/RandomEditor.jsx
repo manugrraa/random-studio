@@ -20,6 +20,7 @@ import { PanelGuion } from "./Guion";
 // (5/11, él: "poder copiar atributos de un clip a otro, como la mejora de voz, el audio, etc. Como en CapCut y DaVinci")
 const ATRIBUTOS = ["vol", "fade_in", "fade_out", "silencio", "voz", "velocidad", "tono", "flujo", "filtro", "color", "mascara", "transform", "kf"];
 export { ATAJOS_EDITOR } from "./atajos";
+import { remapear } from "./atajos";
 const { useState, useEffect, useRef, useMemo } = React;
 const { fin, largo, tc, tcLargo } = M;
 
@@ -95,6 +96,7 @@ export function RandomEditor({ toast }) {
   const [skim, setSkim] = useAjuste("red_skim", false);
   const [compacta, setCompacta] = useAjuste("red_compacta", false);
   const [conectadosOn, setConectados] = useAjuste("red_conectados", true);
+  const [estilosTexto, setEstilosTexto] = useAjuste("red_estilos_texto", []);
   conectadosRef.current = conectadosOn;
   const [guias, setGuias] = useState(false);
   const [completa, setCompleta] = useState(false);
@@ -284,11 +286,12 @@ export function RandomEditor({ toast }) {
     if(!presets){ toast("Cargando los estilos de texto…"); return; }
     const titulo = cual === "titulo";
     const W = pRef.current.ancho || 1080, H = pRef.current.alto || 1920;
-    const estilo = {...(titulo ? presets.titulo : presets.normal), x: W / 2, ...(titulo && H > W ? {} : {y: H / 2})};
+    const propio = String(cual || "").startsWith("est:") ? estilosTexto.find(x=>"est:" + x.id === cual) : null;
+    const estilo = propio ? {x: W / 2, y: H / 2, ...propio.estilo} : {...(titulo ? presets.titulo : presets.normal), x: W / 2, ...(titulo && H > W ? {} : {y: H / 2})};
     const t0 = M.cuantiza(en == null ? reloj.t : en, fps);
     const tot = M.total(pRef.current);
     const dur = titulo && tot - t0 > 1 ? tot - t0 : 3;
-    const c = M.nuevoTexto(titulo ? "Título del Short" : "Texto", estilo, t0, dur, titulo ? "titulo" : null);
+    const c = M.nuevoTexto(propio ? propio.nombre : titulo ? "Título del Short" : "Texto", estilo, t0, dur, titulo ? "titulo" : null);
     cambiar(q=>({...q, pistas: M.colocar(q.pistas, c, pistaId, "texto")}));
     setSel(new Set([c.id]));
     setTimeout(()=>{ const ta = document.querySelector(".rd-insp textarea"); if(ta){ ta.focus(); ta.select(); } }, 80);
@@ -551,7 +554,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
 
   // ---- atajos (CapCut PC + lo mejor de los demás)
   useEffect(()=>{
-    const h = e => {
+    const h = e0 => {
+      const e = remapear(e0);          // (8/11, fase 3) tus atajos propios
       const ae = document.activeElement;
       if(ae && (ae.tagName==="TEXTAREA" || ae.tagName==="SELECT" || (ae.tagName==="INPUT" && !["range","checkbox","button"].includes(ae.type)))) return;
       if(ae && ae !== document.body && (ae.tagName==="INPUT" || ae.tagName==="BUTTON")) ae.blur();
@@ -598,6 +602,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(K==="g"){ ok(); setGuias(x=>!x); }
       else if(K==="v"){ ok(); setHerramienta("sel"); }
       else if(K==="b"){ ok(); setHerramienta("cuchilla"); }
+      else if(K==="y"){ ok(); setHerramienta("deslizar"); }
+      else if(K==="r"){ ok(); setHerramienta("rodillo"); }
       else if(K==="k"){ ok(); }
       else if(K==="l"){ ok(); setJugando(j=>j>0 ? Math.min(4, j*2) : 1); }
       else if(K==="j"){ ok(); setJugando(j=>j<0 ? Math.max(-4, j*2) : -1); }
@@ -651,6 +657,9 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         {Object.entries(M.LIENZOS).map(([k,[w,h,et]])=><button key={k} onClick={()=>formato(k)} className={"rd-btn"+(p.formato===k?" on":"")}>{et}</button>)}
         <span style={{flex:1}}/>
         <button onClick={()=>setAjustesAb(x=>!x)} className={"rd-ico"+(ajustesAb?" on":"")} title="Rendimiento, proxies y contador de FPS">{I.ajustes}</button>
+        <button onClick={()=>{ let n = 0; cambiar(q=>{ const [r, k] = M.zoomCortes(q); n = k; return r; });
+            toast(n < 0 ? "Zoom de los cortes quitado" : n ? `Zoom en ${n} corte${n > 1 ? "s" : ""} de salto (×1,07, uno sí y otro no). Otra vez: quitarlo` : "No hay cortes de salto (dos trozos seguidos del mismo vídeo)"); }}
+          className="rd-btn" title="Cortes de salto: el trozo que sigue entra un poco más cerca y el siguiente vuelve (tapa el salto, sin zoom constante)">Zoom en cortes</button>
         <button onClick={quitarAire} className="rd-btn" title="Quita los silencios largos de la pista principal (Ctrl+Z para deshacer)">{I.aire} Quitar el aire</button>
         {/* 31/10, él: "que se pueda seleccionar la miniatura del timeline, como en CapCut": la PORTADA */}
         <div style={{position:"relative"}}>
@@ -683,10 +692,11 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       {/* biblioteca · previsualización · propiedades */}
       <div className="rd-medio-fila">
         <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={meterFijo} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
-          efectos={efectos} onEfecto={(e, s)=>meterEfecto(e, s)}
+          efectos={efectos} onEfecto={(e, s)=>meterEfecto(e, s)} estilosTexto={estilosTexto}
           panelVoces={<PanelVoces info={voces} generar={generarVoz} onMeter={meterVoz}/>}
           panelGuion={<PanelGuion proyecto={p} reloj={reloj} onIr={t=>{ setJugando(0); ir(t); }}
-            onQuitar={(rangos, aviso)=>{ setJugando(0); cambiar(q=>M.quitarTramos(q, rangos)); toast(aviso + " (Ctrl+Z para deshacer)"); }}/>}
+            onQuitar={(rangos, aviso)=>{ setJugando(0); cambiar(q=>M.quitarTramos(q, rangos)); toast(aviso + " (Ctrl+Z para deshacer)"); }}
+            onDestacar={()=>{ let n = 0; cambiar(q=>{ const [r, k] = M.destacarPalabras(q); n = k; return r; }); toast(n < 0 ? "Colores de las palabras destacadas quitados" : `${n} palabra${n !== 1 ? "s" : ""} destacada${n !== 1 ? "s" : ""} en los subtítulos`); }}/>}
           panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
             onGenerar={generarSubs} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
             ia={subsIa} setIa={setSubsIa} contexto={subsCtx} setContexto={setSubsCtx}
@@ -744,7 +754,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           {uno && uno.tipo === "sub" && <InspectorSub c={uno} alGesto={alGesto} cambiar={cambiarTarjeta}
             onColor={(k, col)=>cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.tipo!=="subtitulos" ? pi : {...pi, clips: pi.clips.map(x=>x.id!==uno.id ? x : {...x,
               palabras: x.palabras.map((pp, j)=>j!==k ? pp : (col ? [pp[0], pp[1], pp[2], col] : [pp[0], pp[1], pp[2]]))})})}))}/>}
-          {uno && uno.tipo === "texto" && <InspectorTexto c={uno} fuentes={fuentes} presets={presets} alGesto={alGesto} cambiarEstilo={cambiarEstilo} cambiarTexto={cambiarTexto} W={p.ancho} H={p.alto}/>}
+          {uno && uno.tipo === "texto" && <InspectorTexto c={uno} fuentes={fuentes} presets={presets} alGesto={alGesto} cambiarEstilo={cambiarEstilo} cambiarTexto={cambiarTexto} W={p.ancho} H={p.alto}
+            estilos={estilosTexto} setEstilos={setEstilosTexto}/>}
           {/* 31/10 (v3.18): propiedades por pestañas, como CapCut: Básico · Transformar · Velocidad */}
           {uno && uno.ruta && <div style={{display:"flex",gap:3}}>
             {[["basico","Básico"], ...(esVideo ? [["transformar","Transformar"],["color","Color"],["mascara","Máscara"]] : []), ...(uno.imagen ? [] : [["velocidad","Velocidad"]])].map(([k2, l])=>
@@ -813,6 +824,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       <div className="rd-herr">
         <button onClick={()=>setHerramienta("sel")} className={"rd-ico"+(herramienta==="sel"?" on":"")} title="Selección (V)">{I.seleccion}</button>
         <button onClick={()=>setHerramienta("cuchilla")} className={"rd-ico"+(herramienta==="cuchilla"?" on":"")} title="Cuchilla: clic en un clip = cortar ahí (B)">{I.cuchilla}</button>
+        <button onClick={()=>setHerramienta("deslizar")} className={"rd-ico"+(herramienta==="deslizar"?" on":"")} style={{fontSize:15}} title="Deslizar (Y): arrastrar un clip cambia qué trozo del archivo enseña, sin moverlo ni cambiar su largo">⇆</button>
+        <button onClick={()=>setHerramienta("rodillo")} className={"rd-ico"+(herramienta==="rodillo"?" on":"")} style={{fontSize:15}} title="Rodillo (R): arrastrar el borde entre dos clips seguidos mueve el corte (uno crece, el otro encoge)">⇹</button>
         <span className="rd-sep"/>
         <button onClick={deshacer} disabled={!pasado.current.length} className="rd-ico" title="Deshacer (Ctrl+Z)">{I.deshacer}</button>
         <button onClick={rehacer} disabled={!futuro.current.length} className="rd-ico" title="Rehacer (Ctrl+Shift+Z)">{I.rehacer}</button>

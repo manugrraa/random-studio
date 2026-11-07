@@ -3,6 +3,8 @@ export const ATAJOS_EDITOR = [
   ["Espacio", "Reproducir / pausar"],
   ["J / K / L", "Atrás / pausa / adelante (L otra vez: más rápido)"],
   ["V / B", "Herramienta selección / cuchilla (con la cuchilla, clic = cortar ahí)"],
+  ["Y", "Deslizar: arrastrar un clip cambia qué trozo del archivo enseña, sin moverlo ni cambiar su largo (Premiere)"],
+  ["R", "Rodillo: arrastrar el borde entre dos clips seguidos mueve el corte; uno crece y el otro encoge (Premiere/Avid)"],
   ["Ctrl+B", "Dividir en el cabezal (lo elegido, o la pista principal)"],
   ["Q / W", "Borrar a la izquierda / derecha del cabezal"],
   ["Supr / Retroceso", "Eliminar lo elegido (la principal se cierra sola)"],
@@ -10,6 +12,10 @@ export const ATAJOS_EDITOR = [
   ["A", "Elegir todo lo que hay del cabezal en adelante, en todas las pistas (para correrlo de golpe)"],
   ["S", "Previsualizar al pasar el ratón por la línea de tiempo, sin mover el cabezal (como Final Cut)"],
   ["H", "Pistas compactas: más bajas, para ver muchas a la vez"],
+  ["⚙ del editor → Atajos propios", "Pon tus teclas: una tecla tuya que hace lo mismo que otra del editor"],
+  ["Zoom en cortes (barra de arriba)", "En los cortes de salto (dos trozos seguidos del mismo vídeo), uno sí y otro no entra a ×1,07; otra vez lo quita"],
+  ["Guion → Destacar palabras", "Una palabra por tarjeta de subtítulos en amarillo (números, nombres, palabras fuertes); otra vez lo quita"],
+  ["Propiedades de un texto → Mis estilos", "Guarda el estilo de un texto con un nombre; luego, un clic se lo pone a otro (también sale en la pestaña Texto)"],
   ["☰ junto a deshacer", "Historial: vuelve de golpe a cualquier paso (y adelante otra vez)"],
   ["Pestaña Guion", "Lo que se dice, como un texto: clic = ir ahí; Shift+clic o arrastrar = elegir; «Quitar lo elegido» lo saca del vídeo; «Quitar muletillas» quita los «eh», «em», «mmm»"],
   ["Conectados (barra de la línea de tiempo)", "Al mover o quitar un clip de la principal, los SFX, textos y subtítulos que tiene encima van con él"],
@@ -50,3 +56,30 @@ export const ATAJOS_EDITOR = [
   ["☆ en la biblioteca", "Favorito: sale en «★ Favoritos», el primer apartado de cada pestaña"],
   ["Arrastrar de la biblioteca", "Meterlo justo donde lo sueltes"],
 ];
+
+/* 8/11 (fase 3, Premiere: atajos PERSONALIZABLES): una tecla tuya que hace lo mismo que otra del editor.
+   Se guardan en este PC: { "tu combinación": "la del editor" } (p. ej. "c" → "b": la C también es la cuchilla). */
+export const ACCIONES = [
+  [" ", "Reproducir / pausar"], ["j", "Atrás"], ["k", "Pausa"], ["l", "Adelante"],
+  ["v", "Herramienta selección"], ["b", "Herramienta cuchilla"], ["y", "Herramienta deslizar"], ["r", "Herramienta rodillo"],
+  ["ctrl|b", "Dividir en el cabezal"], ["q", "Borrar a la izquierda"], ["w", "Borrar a la derecha"],
+  ["Delete", "Eliminar"], ["shift|Delete", "Eliminar y cerrar el hueco"], ["a", "Elegir del cabezal en adelante"],
+  ["ctrl|c", "Copiar"], ["ctrl|x", "Cortar"], ["ctrl|v", "Pegar"], ["ctrl|d", "Duplicar"],
+  ["ctrl|z", "Deshacer"], ["ctrl|shift|z", "Rehacer"], ["ctrl|s", "Guardar"], ["ctrl|e", "Exportar"],
+  ["ctrl|t", "Texto nuevo"], ["ctrl|i", "Meter archivos"], ["ctrl|shift|s", "Extraer el audio"], ["shift|m", "Silenciar"],
+  ["m", "Marcador"], ["n", "Imán"], ["g", "Guías de Shorts"], ["s", "Ver al pasar el ratón"], ["h", "Pistas compactas"],
+  ["ArrowLeft", "Un fotograma atrás"], ["ArrowRight", "Un fotograma adelante"], ["ArrowUp", "Corte anterior"], ["ArrowDown", "Corte siguiente"],
+  ["alt|ArrowLeft", "Mover lo elegido un fotograma atrás"], ["alt|ArrowRight", "Mover lo elegido un fotograma adelante"],
+  ["shift|z", "Ver toda la línea de tiempo"], ["Home", "Al principio"], ["End", "Al final"],
+];
+export const combo = e => [(e.ctrlKey || e.metaKey) && "ctrl", e.altKey && "alt", e.shiftKey && "shift", e.key.length === 1 ? e.key.toLowerCase() : e.key].filter(Boolean).join("|");
+export const comboBonito = c => c.split("|").map(x=>({ctrl:"Ctrl", alt:"Alt", shift:"Shift", " ":"Espacio", Delete:"Supr", ArrowLeft:"←", ArrowRight:"→", ArrowUp:"↑", ArrowDown:"↓", Home:"Inicio", End:"Fin"}[x] || (x.length === 1 ? x.toUpperCase() : x))).join("+");
+export const leerPropios = () => { try { return JSON.parse(localStorage.getItem("red_atajos_propios") || "{}"); } catch(x){ return {}; } };
+export const ponerPropios = o => { try { localStorage.setItem("red_atajos_propios", JSON.stringify(o)); } catch(x){} };
+// la tecla pulsada, convertida en la del editor si es uno de tus atajos
+export function remapear(e) {
+  const m = leerPropios()[combo(e)]; if(!m) return e;
+  const ps = m.split("|"), key = ps[ps.length - 1];
+  return { key, ctrlKey: ps.includes("ctrl"), metaKey: false, altKey: ps.includes("alt"), shiftKey: ps.includes("shift"), repeat: e.repeat,
+    preventDefault: ()=>e.preventDefault(), stopPropagation: ()=>e.stopPropagation(), stopImmediatePropagation: ()=>e.stopImmediatePropagation() };
+}

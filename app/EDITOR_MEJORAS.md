@@ -33,11 +33,11 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 - 🆕 **H: pistas compactas** para ver muchas a la vez (DaVinci)
 - 🆕 Doble clic en un clip: lo elige; en un texto, a escribir directamente
 - 🆕 4.5 Clips **conectados**: el SFX y el texto pegados a su clip de la principal (se mueven con él) — Final Cut
-- ⏭ Recorte de **rodillo** y de **deslizar** (slip/slide) con Alt y Ctrl en los bordes — Premiere/Avid
+- 🆕 4.6 Recorte de **rodillo** (R) y de **deslizar** (Y) (slip/slide) con Alt y Ctrl en los bordes — Premiere/Avid
 - 🆕 4.4 **Roles por colores**: voz, música, SFX, títulos, fichas (y silenciar un rol entero) — Final Cut
 - 🆕 4.5 Marcadores con **nombre y color**, y lista de marcadores — Premiere/DaVinci
 - 🆕 4.5 **Historial de deshacer** visible (volver a cualquier punto) — DaVinci/Kdenlive
-- ⏭ Atajos **personalizables** — Premiere
+- 🆕 4.6 Atajos **personalizables** (⚙ del editor → Atajos propios) — Premiere
 - 🧭 **Audiciones**: varias tomas en el mismo hueco y elegir la buena — Final Cut
 
 ### Sonido
@@ -50,8 +50,8 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 ### Texto, subtítulos y efectos
 - ✅ Subtítulos automáticos con plantillas y corrección con IA · textos con estilos, sombras y animación de entrada · efectos · máscaras · color · fotogramas clave con curvas
 - 🆕 4.5 **Editar por texto** (pestaña Guion): la transcripción al lado, borrar una frase borra su trozo — Descript/Premiere
-- ⏭ Palabras destacadas en color y **zooms automáticos** al ritmo de la voz — Submagic
-- ⏭ **Biblioteca de estilos de texto** propios (las fichas de Carental en un clic) — CapCut
+- 🆕 4.6 Palabras destacadas en color (Guion) y **zoom en los cortes de salto** (sin zoom constante) al ritmo de la voz — Submagic
+- 🆕 4.6 **Biblioteca de estilos de texto** propios (las fichas de Carental en un clic) — CapCut
 - 🧭 **Rastreo de movimiento** (un texto que sigue a algo) — After Effects
 - 🧭 Editor de **curvas de animación** — After Effects
 
@@ -86,4 +86,6 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 
 **Hechos en la 4.5.0 (fase 2):** el «fundido» de entrada de los textos ya dura lo que dice; el «bajar al hablar» del visor usa la voz real; el visor avisa cuando el volumen pasa del 100 % (no puede sonar más alto; al exportar sí).
 
-**Lo que queda (fase 3):** recorte de rodillo y deslizar · atajos personalizables · palabras destacadas y zooms automáticos al ritmo de la voz · biblioteca de estilos de texto propios · medidores de color · audiciones · rastreo de movimiento · curvas de animación · exportar y programar desde el editor.
+**Hecho en la 4.6.0 (fase 3):** deslizar y rodillo, atajos propios, palabras destacadas, zoom en los cortes de salto, estilos de texto propios.
+
+**Lo que queda (lo más grande):** medidores de color (forma de onda) · audiciones (varias tomas en un hueco) · rastreo de movimiento · editor de curvas de animación · exportar y programar en redes desde el propio editor · que el visor suene por encima del 100 %.

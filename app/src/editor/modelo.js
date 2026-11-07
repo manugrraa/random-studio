@@ -373,3 +373,45 @@ export function resumenCambio(a, b) {
   if(a.pistas.length !== b.pistas.length) return a.pistas.length < b.pistas.length ? "Pista nueva" : "Quitar pista";
   return "Ajuste del proyecto";
 }
+
+/* 8/11 (fase 3, Submagic/CapCut): PALABRAS DESTACADAS en los subtítulos: como mucho una por tarjeta, la que más pesa
+   (un número o precio; si no, un nombre propio; si no, una palabra fuerte). Otra vez = quitar los colores. */
+const FUERTES = /^(gratis|nuevo|nueva|nunca|mejor|peor|unico|unica|increible|oferta|barato|barata|precio|garantia|perfecto|perfecta|ahorra|ahorro|rapido|rapida|potente|lujo|exclusivo|exclusiva|imposible|secreto|verdad|todo|nada|millon|millones|euros?)$/;
+export function destacarPalabras(p, color = "#FFD23F") {
+  const subs = p.pistas.filter(pi=>pi.tipo==="subtitulos");
+  const yaHay = subs.some(pi=>pi.clips.some(c=>(c.palabras || []).some(w=>w[3] === color)));
+  let n = 0;
+  const pistas = p.pistas.map(pi=>pi.tipo!=="subtitulos" ? pi : {...pi, clips: pi.clips.map(c=>{
+    if(!c.palabras) return c;
+    if(yaHay) return {...c, palabras: c.palabras.map(w=>w[3] === color ? w.slice(0, 3) : w)};
+    const nota = (w, k) => { const l = limpiaPalabra(w[2]); if(!l || l.length < 2) return 0;
+      if(/\d/.test(w[2]) || /€|\$/.test(w[2])) return 3;
+      if(k > 0 && /^[A-ZÁÉÍÓÚÑ]/.test(w[2])) return 2;
+      return FUERTES.test(l) ? 1 : 0; };
+    let mejor = -1, mn = 0;
+    c.palabras.forEach((w, k)=>{ const x = nota(w, k); if(x > mn){ mn = x; mejor = k; } });
+    if(mejor < 0) return c;
+    n++;
+    return {...c, palabras: c.palabras.map((w, k)=>k === mejor ? [w[0], w[1], w[2], color] : w)};
+  })});
+  return [{...p, pistas}, yaHay ? -1 : n];
+}
+
+/* ZOOM EN LOS CORTES DE SALTO (los «jump cuts» de los Shorts): cuando dos clips seguidos de la principal son del mismo
+   archivo, el segundo entra un poco más cerca (×1,07) y el siguiente vuelve: tapa el salto sin zoom constante. Solo
+   en los clips sin escala propia. Otra vez = quitarlo. */
+export function zoomCortes(p, k = 1.07) {
+  const v1 = p.pistas.find(x=>x.id==="v1"); if(!v1) return [p, 0];
+  const cs = [...v1.clips].sort((a,b)=>a.en-b.en);
+  const quitar = cs.some(c=>c.zoom_corte);
+  let n = 0, cerca = false;
+  const nuevos = new Map();
+  cs.forEach((c, i)=>{
+    if(quitar){ if(c.zoom_corte){ const t = {...(c.transform || {})}; delete t.escala; const x = {...c, transform: t}; delete x.zoom_corte; nuevos.set(c.id, x); } return; }
+    const ant = cs[i - 1], salto = ant && ant.ruta === c.ruta && Math.abs(fin(ant) - c.en) < 0.05;
+    cerca = salto ? !cerca : false;
+    const propia = (c.transform || {}).escala != null && (c.transform || {}).escala !== 1 || ((c.kf || {}).escala || []).length;
+    if(cerca && !propia){ nuevos.set(c.id, {...c, transform: {...(c.transform || {}), escala: k}, zoom_corte: true}); n++; }
+  });
+  return [{...p, pistas: p.pistas.map(pi=>pi.id!=="v1" ? pi : {...pi, clips: pi.clips.map(c=>nuevos.get(c.id) || c)})}, quitar ? -1 : n];
+}
