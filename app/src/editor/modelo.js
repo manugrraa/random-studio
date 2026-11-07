@@ -59,7 +59,7 @@ export const solapa = (pi, en, d, ignorar) => pi.clips.some(x=>x.id!==ignorar &&
 export const total = p => Math.max(0, ...p.pistas.flatMap(pi=>pi.clips.map(fin)));
 export const todos = p => p.pistas.flatMap(pi=>pi.clips.map(c=>({...c, pista:pi.id})));
 export const cuantiza = (t, fps) => Math.round(t * fps) / fps;          // los cortes caen en un fotograma exacto
-export const puntosDeCorte = p => [...new Set([0, ...p.pistas.flatMap(pi=>pi.clips.flatMap(c=>[c.en, fin(c)])), ...(p.marcadores||[])])].sort((a,b)=>a-b);
+export const puntosDeCorte = p => [...new Set([0, ...p.pistas.flatMap(pi=>pi.clips.flatMap(c=>[c.en, fin(c)])), ...(p.marcadores||[]).map(m=>typeof m === "number" ? m : m.t)])].sort((a,b)=>a-b);
 
 export const nuevaPistaAudio = ps => ({ id:"a"+uid(), tipo:"audio", nombre:"Audio "+(ps.filter(x=>x.tipo==="audio").length+1), clips:[] });
 // 28/10: las pistas de TEXTO van ENCIMA de la principal (como en CapCut): la primera de la lista es la de arriba
@@ -281,3 +281,95 @@ export function cerrarHuecos(p, pistasIds) {
 }
 // 8/11 (Premiere «Track Select Forward», tecla A): todo lo que empieza a partir de `t`, en todas las pistas sin bloquear
 export const desdeAqui = (p, t) => new Set(p.pistas.filter(pi=>!pi.bloqueada).flatMap(pi=>pi.clips.filter(c=>fin(c) > t + 1e-6).map(c=>c.id)));
+
+/* ===== 8/11 · fase 2 ===== */
+// los marcadores pueden ser un número (los de antes) o { t, nombre, color }
+export const mt = m => typeof m === "number" ? m : (m && m.t) || 0;
+
+/* CLIPS CONECTADOS (Final Cut): si un clip de la principal se mueve, lo que empieza encima de él en las demás pistas
+   (SFX, textos, fichas, subtítulos, planos) se mueve con él. Se compara el antes y el después de un cambio: solo se
+   corre lo que el cambio NO ha movido ya. */
+export function conectar(antes, despues) {
+  const pa = antes.pistas.find(x=>x.id==="v1"), pd = despues.pistas.find(x=>x.id==="v1");
+  if(!pa || !pd || pa === pd) return despues;
+  const nuevos = new Map(pd.clips.map(c=>[c.id, c]));
+  const deltas = pa.clips.map(c=>{ const d = nuevos.get(c.id); return d && Math.abs(d.en - c.en) > 1e-6 ? [c.en, fin(c), d.en - c.en] : null; }).filter(Boolean);
+  if(!deltas.length) return despues;
+  const enAntes = new Map(antes.pistas.flatMap(pi=>pi.id==="v1" ? [] : pi.clips.map(c=>[c.id, c.en])));
+  let cambio = false;
+  const r = {...despues, pistas: despues.pistas.map(pi=>pi.id==="v1" || pi.bloqueada ? pi : {...pi, clips: pi.clips.map(c=>{
+    const e0 = enAntes.get(c.id);
+    if(e0 == null || Math.abs(e0 - c.en) > 1e-6) return c;
+    const d = deltas.find(([a, b])=>e0 >= a - 1e-6 && e0 < b - 1e-6);
+    if(!d) return c;
+    cambio = true; return {...c, en: Math.max(0, +(c.en + d[2]).toFixed(4))};
+  })})};
+  if(!cambio) return despues;
+  // (si al correrse algo cae encima de otro de su pista, pasa a otra pista: nunca dos a la vez)
+  return r.pistas.some(pi=>pi.id!=="v1" && pi.tipo!=="subtitulos" && pi.clips.some(c=>solapa(pi, c.en, largo(c), c.id))) ? normalizar(r) : r;
+}
+
+/* QUITAR TRAMOS de la línea de tiempo (editar por texto, muletillas — Descript): cada [a, b] sale de la principal
+   y todo lo de detrás se corre; en los subtítulos se quitan esas palabras. */
+export function quitarTramos(p, rangos) {
+  rangos = [...rangos].map(([a, b])=>[Math.max(0, a), b]).filter(([a, b])=>b - a > 0.02).sort((x, y)=>y[0] - x[0]);
+  for(const [a, b] of rangos){
+    const L = b - a, v1 = p.pistas.find(x=>x.id==="v1"); if(!v1) break;
+    const bajo = t => new Set(v1.clips.filter(c=>t > c.en + 0.01 && t < fin(c) - 0.01).map(c=>c.id));
+    p = dividir(p, bajo(a), a);
+    const v1b = p.pistas.find(x=>x.id==="v1");
+    p = dividir(p, new Set(v1b.clips.filter(c=>b > c.en + 0.01 && b < fin(c) - 0.01).map(c=>c.id)), b);
+    p = {...p, pistas: p.pistas.map(pi=>{
+      if(pi.bloqueada) return pi;
+      if(pi.id === "v1") return {...pi, clips: pi.clips.filter(c=>!(c.en >= a - 0.01 && fin(c) <= b + 0.01)).map(c=>c.en >= b - 0.01 ? {...c, en: +(c.en - L).toFixed(4)} : c)};
+      if(pi.tipo === "subtitulos") return {...pi, clips: pi.clips.flatMap(c=>{
+        if(c.en >= b - 0.01) return [{...c, en: +(c.en - L).toFixed(4)}];
+        if(fin(c) <= a + 0.01 || !c.palabras) return [c];
+        const ws = c.palabras.filter(w=>!(c.en + w[0] >= a - 0.02 && c.en + w[1] <= b + 0.02)).map(w=>c.en + w[0] >= b - 0.02 ? [+(w[0] - L).toFixed(3), +(w[1] - L).toFixed(3), ...w.slice(2)] : w);
+        if(!ws.length) return [];
+        const quitado = Math.max(0, Math.min(fin(c), b) - Math.max(c.en, a));
+        return [{...c, palabras: ws, texto: ws.map(w=>w[2]).join(" "), nombre: ws.map(w=>w[2]).join(" "), hasta: +(c.hasta - quitado * vel(c)).toFixed(4)}];
+      })};
+      return {...pi, clips: pi.clips.map(c=>c.en >= b - 0.01 ? {...c, en: +(c.en - L).toFixed(4)} : c.en > a ? {...c, en: a} : c)};
+    })};
+  }
+  return p;
+}
+// las palabras de los subtítulos, en tiempo de la línea: [{ a, b, w, id }]
+export const palabrasLinea = p => p.pistas.filter(pi=>pi.tipo==="subtitulos" && !pi.muda).flatMap(pi=>pi.clips.flatMap(c=>(c.palabras || []).map((w, k)=>({ a: c.en + w[0], b: c.en + w[1], w: w[2], id: c.id + ":" + k }))))
+  .sort((x, y)=>x.a - y.a);
+// muletillas que se quitan sin dudar (las de verdad dudosas, como «este» o «bueno», no: cambian el sentido)
+const MULETILLAS = /^(e+h+|e+m+|e+h+m+|m+|h?m+h?|a+h+|uh+m*|ehm+)$/i;
+export const limpiaPalabra = w => String(w || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zñ0-9]/g, "");
+export function muletillas(p) {
+  const ws = palabrasLinea(p), out = [];
+  ws.forEach((x, k)=>{
+    const l = limpiaPalabra(x.w);
+    if(MULETILLAS.test(l)) out.push([x.a, x.b]);
+    else if(l === "o" && ws[k + 1] && limpiaPalabra(ws[k + 1].w) === "sea" && (!ws[k + 2] || ws[k + 2].a - ws[k + 1].b > 0.15)) out.push([x.a, ws[k + 1].b]);
+  });
+  return out;
+}
+
+// HISTORIAL (DaVinci): qué cambió de un estado al siguiente, en pocas palabras
+export function resumenCambio(a, b) {
+  if(!a || !b) return "Cambio";
+  const ca = new Map(a.pistas.flatMap(pi=>pi.clips.map(c=>[c.id, c]))), cb = new Map(b.pistas.flatMap(pi=>pi.clips.map(c=>[c.id, c])));
+  const nom = c => String(c.texto || c.nombre || "clip").split("\n")[0].slice(0, 28);
+  const nuevos = [...cb.keys()].filter(k=>!ca.has(k)), quitados = [...ca.keys()].filter(k=>!cb.has(k));
+  if(nuevos.length && quitados.length) return `Dividir o rehacer (${quitados.length} → ${nuevos.length})`;
+  if(nuevos.length) return nuevos.length === 1 ? `Añadir «${nom(cb.get(nuevos[0]))}»` : `Añadir ${nuevos.length} clips`;
+  if(quitados.length) return quitados.length === 1 ? `Eliminar «${nom(ca.get(quitados[0]))}»` : `Eliminar ${quitados.length} clips`;
+  const camb = [...cb.values()].filter(c=>ca.get(c.id) !== c);
+  if(camb.length){
+    const c = camb[0], o = ca.get(c.id);
+    const que = o.en !== c.en && o.desde === c.desde && o.hasta === c.hasta ? "Mover" : o.desde !== c.desde || o.hasta !== c.hasta ? "Recortar"
+      : o.texto !== c.texto ? "Escribir" : o.estilo !== c.estilo ? "Estilo de" : o.vol !== c.vol || (o.kf || {}).vol !== (c.kf || {}).vol ? "Volumen de"
+      : o.transform !== c.transform || o.kf !== c.kf ? "Transformar" : o.color !== c.color || o.filtro !== c.filtro ? "Color de" : "Cambiar";
+    return `${que} «${nom(c)}»${camb.length > 1 ? ` (+${camb.length - 1})` : ""}`;
+  }
+  if(a.marcadores !== b.marcadores) return "Marcadores";
+  if(a.portada !== b.portada) return "Portada";
+  if(a.pistas.length !== b.pistas.length) return a.pistas.length < b.pistas.length ? "Pista nueva" : "Quitar pista";
+  return "Ajuste del proyecto";
+}

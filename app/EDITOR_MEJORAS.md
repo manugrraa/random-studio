@@ -32,24 +32,24 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 - 🆕 **S: previsualizar al pasar el ratón** sin mover el cabezal (Final Cut)
 - 🆕 **H: pistas compactas** para ver muchas a la vez (DaVinci)
 - 🆕 Doble clic en un clip: lo elige; en un texto, a escribir directamente
-- ⏭ Clips **conectados**: el SFX y el texto pegados a su clip de la principal (se mueven con él) — Final Cut
+- 🆕 4.5 Clips **conectados**: el SFX y el texto pegados a su clip de la principal (se mueven con él) — Final Cut
 - ⏭ Recorte de **rodillo** y de **deslizar** (slip/slide) con Alt y Ctrl en los bordes — Premiere/Avid
-- ⏭ **Roles por colores**: voz, música, SFX, títulos, fichas (y silenciar un rol entero) — Final Cut
-- ⏭ Marcadores con **nombre y color**, y lista de marcadores — Premiere/DaVinci
-- ⏭ **Historial de deshacer** visible (volver a cualquier punto) — DaVinci/Kdenlive
+- 🆕 4.4 **Roles por colores**: voz, música, SFX, títulos, fichas (y silenciar un rol entero) — Final Cut
+- 🆕 4.5 Marcadores con **nombre y color**, y lista de marcadores — Premiere/DaVinci
+- 🆕 4.5 **Historial de deshacer** visible (volver a cualquier punto) — DaVinci/Kdenlive
 - ⏭ Atajos **personalizables** — Premiere
 - 🧭 **Audiciones**: varias tomas en el mismo hueco y elegir la buena — Final Cut
 
 ### Sonido
 - ✅ Mejorar voz (estilo CapCut) · aislar voz · fundidos · puntos de volumen · ondas reales · medidor
-- ⏭ **Auto ducking**: la música baja sola mientras se habla (Premiere/CapCut) — clave para Carental
-- ⏭ **Normalizar sonoridad** a −14 LUFS al exportar (lo que pide YouTube) — DaVinci Fairlight
-- ⏭ Fundido arrastrando la **esquina del clip** en la línea de tiempo — Vegas/CapCut
-- ⏭ **Quitar muletillas** («eh», «este») y respiraciones con un clic — Descript
+- 🆕 4.4 **Auto ducking** (botón ↘ de la pista; en 4.5 el visor también lo hace con la voz real): la música baja sola mientras se habla (Premiere/CapCut) — clave para Carental
+- 🆕 4.5 **Normalizar sonoridad** (menú de exportar: «Volumen de YouTube») a −14 LUFS al exportar (lo que pide YouTube) — DaVinci Fairlight
+- 🆕 4.4 Fundido arrastrando la **esquina del clip** en la línea de tiempo — Vegas/CapCut
+- 🆕 4.5 **Quitar muletillas** («eh», «este») y respiraciones con un clic — Descript
 
 ### Texto, subtítulos y efectos
 - ✅ Subtítulos automáticos con plantillas y corrección con IA · textos con estilos, sombras y animación de entrada · efectos · máscaras · color · fotogramas clave con curvas
-- ⏭ **Editar por texto**: la transcripción al lado, borrar una frase borra su trozo — Descript/Premiere
+- 🆕 4.5 **Editar por texto** (pestaña Guion): la transcripción al lado, borrar una frase borra su trozo — Descript/Premiere
 - ⏭ Palabras destacadas en color y **zooms automáticos** al ritmo de la voz — Submagic
 - ⏭ **Biblioteca de estilos de texto** propios (las fichas de Carental en un clic) — CapCut
 - 🧭 **Rastreo de movimiento** (un texto que sigue a algo) — After Effects
@@ -59,7 +59,7 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 - ✅ Proxies · contador de FPS · guías de Shorts · portada al exportar · pantalla completa
 - 🆕 **Al exportar con un nombre que ya existe: reemplazarlo o guardar una copia (2)**
 - 🆕 **Registro de cambios** de cada proyecto (para aprender de tus retoques)
-- ⏭ **Exportar en segundo plano** y seguir editando, con cola — DaVinci/Kdenlive
+- ✅ **Exportar en segundo plano** y seguir editando, con cola — DaVinci/Kdenlive
 - ⏭ Medidores de **color** (forma de onda) — DaVinci
 - 🧭 Exportar y **programar** directamente en YouTube, Instagram y TikTok desde el editor — Edits/CapCut
 
@@ -84,4 +84,6 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 - Fluidez: el visor ya no remide todos los textos en cada fotograma ni la biblioteca se repinta entera al arrastrar.
 - Tarjetas de subtítulos de 0,1 s sueltas: fuera.
 
-**Pendientes de la revisión (fase 2):** el visor no suena por encima del 100 % aunque el volumen esté a +6 dB (al exportar sí); la entrada de texto «fundido» siempre dura 0,1 s; la previsualización del «bajar al hablar» es aproximada (al exportar se hace con la voz real).
+**Hechos en la 4.5.0 (fase 2):** el «fundido» de entrada de los textos ya dura lo que dice; el «bajar al hablar» del visor usa la voz real; el visor avisa cuando el volumen pasa del 100 % (no puede sonar más alto; al exportar sí).
+
+**Lo que queda (fase 3):** recorte de rodillo y deslizar · atajos personalizables · palabras destacadas y zooms automáticos al ritmo de la voz · biblioteca de estilos de texto propios · medidores de color · audiciones · rastreo de movimiento · curvas de animación · exportar y programar desde el editor.

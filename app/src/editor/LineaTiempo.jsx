@@ -1,5 +1,5 @@
 import React from "react";
-import { fin, largo, tc, corto, puntosDeCorte, cuantiza, solapa, vel, nuevaPistaAudio, nuevaPistaVideo, nuevaPistaTexto } from "./modelo";
+import { mt, fin, largo, tc, corto, puntosDeCorte, cuantiza, solapa, vel, nuevaPistaAudio, nuevaPistaVideo, nuevaPistaTexto } from "./modelo";
 const { useEffect, useLayoutEffect, useRef, useState, useMemo, memo, useCallback } = React;
 
 /* RandomEditor · la línea de tiempo, al estilo de CapCut de PC.
@@ -90,7 +90,7 @@ function Barra({ ancho, zoom, scroll, dur, marcadores, puntos, reloj, onVista })
       <div ref={pista} onMouseDown={clicFuera} title="Arrastra para moverte · sus bordes, para acercar o alejar"
         style={{position:"relative",flex:1,minWidth:0,marginRight:6,height:ALTO_BARRA,background:"#1a1a1a",borderRadius:4,cursor:"pointer",overflow:"hidden"}}>
         {puntos.map((q, k)=><div key={"p"+k} style={{position:"absolute",left:q / S * W,top:4,bottom:4,width:1,background:"rgba(255,255,255,0.13)"}}/>)}
-        {(marcadores||[]).map((m, k)=><div key={"m"+k} style={{position:"absolute",left:m / S * W - 1,top:0,bottom:0,width:2,background:"#60a5fa"}}/>)}
+        {(marcadores||[]).map((m, k)=><div key={"m"+k} style={{position:"absolute",left:mt(m) / S * W - 1,top:0,bottom:0,width:2,background:(m && m.color) || "#60a5fa"}}/>)}
         <div onMouseDown={e=>arrastrar(e, "mover")} style={{position:"absolute",left:L,width:R - L,top:1,bottom:1,borderRadius:4,
           background:"rgba(255,255,255,0.16)",border:"1px solid rgba(255,255,255,0.28)",boxSizing:"border-box",cursor:"grab"}}>
           <div onMouseDown={e=>arrastrar(e, "izq")} title="Acercar / alejar" style={{position:"absolute",left:-1,top:-1,bottom:-1,width:7,cursor:"ew-resize",background:"rgba(212,175,55,0.75)",borderRadius:"4px 0 0 4px"}}/>
@@ -174,8 +174,10 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     }
     if(proyecto.portada != null){ const x = PAD + proyecto.portada*zoom - scroll; g.fillStyle = "#D4AF37";      // la portada, un rombo dorado
       g.beginPath(); g.moveTo(x, 15); g.lineTo(x+6, 22); g.lineTo(x, 29); g.lineTo(x-6, 22); g.closePath(); g.fill(); }
-    (proyecto.marcadores||[]).forEach(m=>{ const x = PAD + m*zoom - scroll; g.fillStyle = "#60a5fa";
-      g.beginPath(); g.moveTo(x-5, 16); g.lineTo(x+5, 16); g.lineTo(x+5, 24); g.lineTo(x, 29); g.lineTo(x-5, 24); g.closePath(); g.fill(); });
+    // (8/11, fase 2: marcadores con nombre y color, como Premiere/DaVinci)
+    (proyecto.marcadores||[]).forEach(m=>{ const x = PAD + mt(m)*zoom - scroll; g.fillStyle = (m && m.color) || "#60a5fa";
+      g.beginPath(); g.moveTo(x-5, 16); g.lineTo(x+5, 16); g.lineTo(x+5, 24); g.lineTo(x, 29); g.lineTo(x-5, 24); g.closePath(); g.fill();
+      if(m && m.nombre){ g.font = "bold 10px system-ui, sans-serif"; g.fillText(m.nombre.slice(0, 24), x + 8, 26); g.font = "10px system-ui, sans-serif"; g.fillStyle = "rgba(255,255,255,0.55)"; } });
   },[zoom, scroll, ancho, proyecto.marcadores, proyecto.portada, fps]);
 
   useEffect(()=>{
@@ -239,7 +241,7 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     if(!iman) return t;
     const u = 9 / zRef.current;
     const fuera = ignorar instanceof Set ? ignorar : new Set([ignorar]);
-    const ps = [reloj.t, ...(pRef.current.marcadores||[]), ...pRef.current.pistas.flatMap(pi=>pi.clips.filter(c=>!fuera.has(c.id)).flatMap(c=>[c.en, fin(c)]))];
+    const ps = [reloj.t, ...(pRef.current.marcadores||[]).map(mt), ...pRef.current.pistas.flatMap(pi=>pi.clips.filter(c=>!fuera.has(c.id)).flatMap(c=>[c.en, fin(c)]))];
     let mejor = t, d = u;
     ps.forEach(q=>{ if(Math.abs(q - t) < d){ d = Math.abs(q - t); mejor = q; } });
     if(mejor !== t) encajado.current = mejor;

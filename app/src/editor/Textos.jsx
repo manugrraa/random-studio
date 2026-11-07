@@ -46,7 +46,7 @@ function animEn(c, t, w, h) {
   const r = t - c.en;
   if(ai.tipo){
     const d = Math.max(0.05, ai.dur ?? 0.3), u = Math.min(1, Math.max(0, r / d)), q = 1 - (1 - u) * (1 - u);
-    const ua = Math.min(1, Math.max(0, r / Math.min(0.1, d)));
+    const ua = Math.min(1, Math.max(0, r / (ai.tipo === "fundido" ? d : Math.min(0.1, d))));   // (8/11: el «fundido» de entrada dura lo que dice)
     op = 1 - (1 - ua) * (1 - ua);
     const off = 1 - q;
     if(ai.tipo === "izquierda") dx = -2.66 * w * off; else if(ai.tipo === "derecha") dx = 2.66 * w * off;

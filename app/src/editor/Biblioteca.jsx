@@ -19,7 +19,7 @@ export function Estrella({ on, onClick, style }) {
     style={{width:24,height:24,fontSize:14,...style}} title={on ? "Quitar de favoritos" : "Añadir a favoritos"}>{on ? "\u2605" : "\u2606"}</button>;
 }
 
-const PESTANAS = [["clips","Clips",I.archivo],["musica","Música",I.oir],["sfx","SFX",I.sonido],["texto","Texto",I.texto],["subtitulos","Subtítulos",I.subs],["voces","Voces",I.voz],["stickers","Stickers",I.sticker],["efectos","Efectos",I.efecto]];
+const PESTANAS = [["clips","Clips",I.archivo],["musica","Música",I.oir],["sfx","SFX",I.sonido],["texto","Texto",I.texto],["subtitulos","Subtítulos",I.subs],["guion","Guion",I.texto],["voces","Voces",I.voz],["stickers","Stickers",I.sticker],["efectos","Efectos",I.efecto]];
 
 const Fila = memo(function Fila({ m, pestana, oyendo, onOir, onMeter, cat, fav, onFav }) {
   return (
@@ -92,7 +92,7 @@ function Efectos({ efectos, onEfecto }) {
     </div>));
 }
 
-export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs, panelVoces, efectos, onEfecto }) {
+export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs, panelVoces, panelGuion, efectos, onEfecto }) {
   const [pestana, setPestana] = useState(()=>{ try { return localStorage.getItem("red_pestana") || "clips"; } catch(e){ return "clips"; } });
   const [cat, setCat] = useState("");
   const [busca, setBusca] = useState("");
@@ -156,6 +156,7 @@ export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTex
         {pestana==="texto" && <Textos presets={presets} onTexto={onTexto} favs={favsAqui} onFav={alternarFav} soloFavs={soloFavs} vacio={sinFavs}/>}
         {pestana==="subtitulos" && panelSubs && React.cloneElement(panelSubs, { favs: favsAqui, onFav: id=>alternarFav("subtitulos", id), soloFavs, vacioFavs: sinFavs })}
         {pestana==="voces" && panelVoces}
+        {pestana==="guion" && panelGuion}
         {pestana==="stickers" && vacio(I.sticker, "Aquí irán los stickers. Próximamente.")}
         {pestana==="efectos" && <Efectos efectos={efectos} onEfecto={onEfecto}/>}
         {(pestana==="clips" || deAudio) && lista===null && <div style={{fontSize:12.5,color:"#888",padding:8}}>{pestana==="clips" ? "Cargando los clips…" : "Ordenando la biblioteca…"}</div>}

@@ -15,6 +15,7 @@ import { PanelMascara } from "./Mascara";
 import { PanelVoces, SeccionVoz } from "./Voz";
 import { PanelSubtitulos, InspectorSub } from "./Subtitulos";
 import { RecorteAudio } from "./RecorteAudio";
+import { PanelGuion } from "./Guion";
 
 // (5/11, él: "poder copiar atributos de un clip a otro, como la mejora de voz, el audio, etc. Como en CapCut y DaVinci")
 const ATRIBUTOS = ["vol", "fade_in", "fade_out", "silencio", "voz", "velocidad", "tono", "flujo", "filtro", "color", "mascara", "transform", "kf"];
@@ -64,14 +65,22 @@ export function RandomEditor({ toast }) {
   const p = pRef.current;
   // (8/11, fallo: escribir un texto y luego pulsar un botón desordenaba el deshacer) un gesto abierto se cierra antes
   const cerrarGesto = () => { const g = gesto.current; if(!g) return; gesto.current = null; if(g !== pRef.current){ pasado.current = [...pasado.current.slice(-150), g]; futuro.current = []; } };
-  const poner = nuevo => { if(nuevo === pRef.current) return; cerrarGesto(); pasado.current = [...pasado.current.slice(-150), pRef.current]; futuro.current = []; pRef.current = nuevo; sucio.current = true; repintar(x=>x+1); };
-  const cambiar = f => poner(M.ordenar(f(pRef.current)));
+  const horas = useRef(new WeakMap());      // (8/11, historial) cuándo se llegó a cada estado
+  const poner = nuevo => { if(nuevo === pRef.current) return; cerrarGesto(); horas.current.set(nuevo, Date.now()); pasado.current = [...pasado.current.slice(-150), pRef.current]; futuro.current = []; pRef.current = nuevo; sucio.current = true; repintar(x=>x+1); };
+  // (8/11, fase 2: clips CONECTADOS, Final Cut) lo que hay encima de un clip de la principal se mueve con él
+  const conectadosRef = useRef(true);
+  const conectados = (antes, despues) => conectadosRef.current ? M.conectar(antes, despues) : despues;
+  const cambiar = f => poner(conectados(pRef.current, M.ordenar(f(pRef.current))));
   const deshacer = () => { cerrarGesto(); if(!pasado.current.length) return; futuro.current = [pRef.current, ...futuro.current]; pRef.current = pasado.current.pop(); sucio.current = true; repintar(x=>x+1); };
+  // (8/11, fase 2: HISTORIAL visible, como DaVinci) volver de golpe a cualquier punto (y volver adelante)
+  const [menuHist, setMenuHist] = useState(false);
+  const irAHistorial = j => { cerrarGesto(); const todosE = [...pasado.current, pRef.current, ...futuro.current];
+    if(j < 0 || j >= todosE.length) return; pasado.current = todosE.slice(0, j); pRef.current = todosE[j]; futuro.current = todosE.slice(j + 1); sucio.current = true; repintar(x=>x+1); };
   const rehacer = () => { cerrarGesto(); if(!futuro.current.length) return; pasado.current = [...pasado.current, pRef.current]; pRef.current = futuro.current.shift(); sucio.current = true; repintar(x=>x+1); };
   const alGesto = (fase, nuevo) => {
     if(fase === "inicio") gesto.current = pRef.current;
-    else if(fase === "durante"){ pRef.current = M.ordenar(nuevo); sucio.current = true; repintar(x=>x+1); }
-    else { const g = gesto.current; gesto.current = null; if(g && g !== pRef.current){ pasado.current = [...pasado.current.slice(-150), g]; futuro.current = []; repintar(x=>x+1); } }
+    else if(fase === "durante"){ pRef.current = gesto.current ? conectados(gesto.current, M.ordenar(nuevo)) : M.ordenar(nuevo); sucio.current = true; repintar(x=>x+1); }
+    else { const g = gesto.current; gesto.current = null; if(g && g !== pRef.current){ horas.current.set(pRef.current, Date.now()); pasado.current = [...pasado.current.slice(-150), g]; futuro.current = []; repintar(x=>x+1); } }
   };
 
   const reloj = useRef(crearReloj()).current;
@@ -85,6 +94,8 @@ export function RandomEditor({ toast }) {
   const [herramienta, setHerramienta] = useState("sel");
   const [skim, setSkim] = useAjuste("red_skim", false);
   const [compacta, setCompacta] = useAjuste("red_compacta", false);
+  const [conectadosOn, setConectados] = useAjuste("red_conectados", true);
+  conectadosRef.current = conectadosOn;
   const [guias, setGuias] = useState(false);
   const [completa, setCompleta] = useState(false);
   const [medios, setMedios] = useState(null);
@@ -361,8 +372,11 @@ export function RandomEditor({ toast }) {
     if(!cambio || choca) return;
     cambiar(()=>nuevo);
   };
-  const marcador = () => { const t = M.cuantiza(reloj.t, fps), ms = pRef.current.marcadores||[], cerca = ms.find(m=>Math.abs(m-t) < 0.05);
-    cambiar(q=>({...q, marcadores: cerca!=null ? ms.filter(m=>m!==cerca) : [...ms, t].sort((a,b)=>a-b)})); };
+  const marcador = () => { const t = M.cuantiza(reloj.t, fps), ms = pRef.current.marcadores||[], cerca = ms.find(m=>Math.abs(M.mt(m)-t) < 0.05);
+    cambiar(q=>({...q, marcadores: cerca!=null ? ms.filter(m=>m!==cerca) : [...ms, {t, nombre:"", color:"#60a5fa"}].sort((a,b)=>M.mt(a)-M.mt(b))})); };
+  // (8/11) el nombre y el color de un marcador (desde la lista de Propiedades)
+  const cambiarMarcador = (k, patch, enGesto) => { const f = q => ({...q, marcadores:(q.marcadores||[]).map((m, j)=>j!==k ? m : {...(typeof m === "number" ? {t:m, nombre:"", color:"#60a5fa"} : m), ...patch})});
+    if(enGesto){ if(!gesto.current) alGesto("inicio"); alGesto("durante", f(pRef.current)); } else cambiar(f); };
   const accionPista = (que, id) => cambiar(q=>({...q, pistas: que==="quitar" ? q.pistas.filter(x=>x.id!==id) : q.pistas.map(x=>x.id===id ? {...x, [que]:!x[que]} : x)}));
   // 31/10: un EFECTO (vídeo con transparencia) en una pista superpuesta «Efectos» de arriba; con su sonido,
   // además, su SFX en una pista de audio (cada uno por su lado: se mueven y se borran por separado)
@@ -606,7 +620,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
   const uno = elegidos.length === 1 ? elegidos[0] : null;
   const esVideo = !!(uno && (p.pistas.find(x=>x.id===uno.pista) || {}).tipo === "video");
   const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista} reloj={reloj} sel={sel}
-    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto} subs={subsInfo} cambiarClip={cambiarClip} editarMascara={pestInsp==="mascara"}/>;
+    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto} subs={subsInfo} cambiarClip={cambiarClip} editarMascara={pestInsp==="mascara"} ondas={ondas}/>;
   const menuEl = menu && createPortal(
     <div onMouseDown={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:2000}}>
       <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:Math.min(menu.x, window.innerWidth-230), top:Math.min(menu.y, window.innerHeight-300)}}>
@@ -659,6 +673,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               <button onClick={()=>exportar("listos")}><span>Exportar vídeo a Editados (en su carpeta)</span><kbd>{p.destino ? "" : "Ctrl+E"}</kbd></button>
               <button onClick={()=>exportar("ruta")}><span>Exportar vídeo en…</span><kbd>Ctrl+Shift+E</kbd></button>
               <button onClick={()=>exportar("clip")}><span>Exportar como clip recortado nuevo</span><kbd></kbd></button>
+              <button onClick={()=>{ cambiar(q=>({...q, lufs:!q.lufs})); }} title="Toda la mezcla a −14 LUFS (lo que pide YouTube): ningún vídeo suena más flojo o más fuerte que los demás">
+                <span>{p.lufs ? "✓ " : ""}Volumen de YouTube (−14 LUFS)</span><kbd>{p.lufs ? "sí" : "no"}</kbd></button>
             </div></div>, document.body)}
         </div>
         {p.clip && <button onClick={guardarCambios} disabled={ocupado} className="rd-btn primario" title="Ctrl+S · rehace el clip con estos cambios, en su sitio">Guardar cambios</button>}
@@ -669,6 +685,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={meterFijo} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
           efectos={efectos} onEfecto={(e, s)=>meterEfecto(e, s)}
           panelVoces={<PanelVoces info={voces} generar={generarVoz} onMeter={meterVoz}/>}
+          panelGuion={<PanelGuion proyecto={p} reloj={reloj} onIr={t=>{ setJugando(0); ir(t); }}
+            onQuitar={(rangos, aviso)=>{ setJugando(0); cambiar(q=>M.quitarTramos(q, rangos)); toast(aviso + " (Ctrl+Z para deshacer)"); }}/>}
           panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
             onGenerar={generarSubs} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
             ia={subsIa} setIa={setSubsIa} contexto={subsCtx} setContexto={setSubsCtx}
@@ -710,6 +728,19 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <div className="rd-panel rd-insp" style={{padding:12,display:"flex",flexDirection:"column",gap:10,fontSize:12.5,overflowY:"auto"}}>
           <b style={{fontSize:13}}>{elegidos.length ? (uno ? uno.nombre : `${elegidos.length} elegidos`) : "Propiedades"}</b>
           {!elegidos.length && <div style={{color:"#888",lineHeight:1.6}}>Elige un clip para ver y cambiar sus propiedades.<br/>Todos los atajos, en Configuración del Studio.</div>}
+          {!elegidos.length && <div style={{display:"flex",flexDirection:"column",gap:6,borderTop:"1px solid #222",paddingTop:8}}>
+            <b style={{fontSize:12.5}}>Marcadores <span style={{color:"#777",fontWeight:400}}>· M pone uno en el cabezal</span></b>
+            {!(p.marcadores||[]).length && <span style={{color:"#777",fontSize:11.5}}>Aún no hay. Úsalos para apuntar momentos («aquí va el SFX», «cortar»…).</span>}
+            {(p.marcadores||[]).map((m, k)=>{ const mm = typeof m === "number" ? {t:m, nombre:"", color:"#60a5fa"} : m;
+              return <div key={k} style={{display:"flex",gap:5,alignItems:"center"}}>
+                <button className="rd-btn" style={{padding:"3px 6px",fontFamily:"ui-monospace, Consolas, monospace",fontSize:11}} onClick={()=>{ setJugando(0); ir(mm.t); }} title="Ir al marcador">{tc(mm.t, fps)}</button>
+                <input className="rd-input" value={mm.nombre || ""} placeholder="Nombre" style={{flex:1,minWidth:0,padding:"3px 6px"}}
+                  onChange={e=>cambiarMarcador(k, {nombre:e.target.value}, true)} onBlur={()=>alGesto("fin")}/>
+                {["#60a5fa","#f87171","#4ade80","#facc15","#c084fc"].map(col=><span key={col} onClick={()=>cambiarMarcador(k, {color:col})}
+                  style={{width:12,height:12,borderRadius:3,background:col,cursor:"pointer",outline: mm.color===col ? "2px solid #fff" : "none"}}/>)}
+                <button className="rd-ico peligro" style={{width:22,height:22}} title="Quitar" onClick={()=>cambiar(q=>({...q, marcadores:(q.marcadores||[]).filter((x, j)=>j!==k)}))}>×</button>
+              </div>; })}
+          </div>}
           {uno && uno.tipo === "sub" && <InspectorSub c={uno} alGesto={alGesto} cambiar={cambiarTarjeta}
             onColor={(k, col)=>cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.tipo!=="subtitulos" ? pi : {...pi, clips: pi.clips.map(x=>x.id!==uno.id ? x : {...x,
               palabras: x.palabras.map((pp, j)=>j!==k ? pp : (col ? [pp[0], pp[1], pp[2], col] : [pp[0], pp[1], pp[2]]))})})}))}/>}
@@ -747,7 +778,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               const enKf = conKf && ((uno.kf.vol || []).some(x=>Math.abs(x[0] - tRelDe(uno)) < 0.02));
               const bt = { padding:"0 8px", height:24, borderRadius:6, border:"1px solid #333", background:"#1a1a1a", color:"#ddd", cursor:"pointer", fontSize:14, lineHeight:"22px" };
               return <div key={campo} style={{display:"flex",flexDirection:"column",gap:4}}><span style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>{n}
-                  <span style={{display:"flex",gap:6,alignItems:"center"}}><span style={{color:"#999"}}>{fmt(v)}</span>
+                  <span style={{display:"flex",gap:6,alignItems:"center"}}><span style={{color:"#999"}} title={campo==="vol" && v > 1.001 ? "El visor no puede sonar por encima del 100 %: al exportar sí sale con este volumen" : undefined}>{fmt(v)}{campo==="vol" && v > 1.001 ? " ·" : ""}</span>
+                    {campo==="vol" && v > 1.001 && <span style={{fontSize:10,color:"#b9a35a"}}>(visor: 100 %)</span>}
                     {campo==="vol" && uno && <button onClick={()=>alternarKfVol(uno)} title={enKf ? "Quitar el punto del cabezal" : "Poner un punto de volumen en el cabezal (para que suba o baje en un trozo)"}
                       style={{...bt, height:20, lineHeight:"18px", padding:"0 6px", color: enKf ? "#D4AF37" : conKf ? "#b9a35a" : "#888", fontSize:12}}>◆</button>}</span></span>
                 <span style={{display:"flex",gap:6,alignItems:"center"}}>
@@ -784,6 +816,18 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <span className="rd-sep"/>
         <button onClick={deshacer} disabled={!pasado.current.length} className="rd-ico" title="Deshacer (Ctrl+Z)">{I.deshacer}</button>
         <button onClick={rehacer} disabled={!futuro.current.length} className="rd-ico" title="Rehacer (Ctrl+Shift+Z)">{I.rehacer}</button>
+        <button onClick={()=>setMenuHist(x=>!x)} disabled={!pasado.current.length && !futuro.current.length} className={"rd-ico"+(menuHist?" on":"")} title="Historial: vuelve a cualquier paso" style={{fontSize:15}}>☰</button>
+        {menuHist && createPortal(<div onMouseDown={()=>setMenuHist(false)} style={{position:"fixed",inset:0,zIndex:2000}}>
+          <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:120,bottom:window.innerHeight - (document.querySelector(".rd-herr") || {getBoundingClientRect:()=>({top:400})}).getBoundingClientRect().top + 4,maxHeight:"60vh",overflowY:"auto",minWidth:300}}>
+            {(()=>{ const todosE = [...pasado.current, pRef.current, ...futuro.current], ahora = pasado.current.length, filas = [];
+              for(let j = todosE.length - 1; j >= Math.max(0, todosE.length - 80); j--){
+                const h = horas.current.get(todosE[j]);
+                filas.push(<button key={j} onClick={()=>{ irAHistorial(j); }} style={{opacity: j > ahora ? 0.45 : 1, fontWeight: j === ahora ? 800 : 500, color: j === ahora ? "var(--gold)" : undefined}}>
+                  <span>{j === 0 ? "Al abrir" : M.resumenCambio(todosE[j - 1], todosE[j])}</span>
+                  <kbd>{j === ahora ? "ahora" : h ? new Date(h).toLocaleTimeString().slice(0, 8) : ""}</kbd></button>);
+              }
+              return filas; })()}
+          </div></div>, document.body)}
         <span className="rd-sep"/>
         <button onClick={dividir} className="rd-ico" title="Dividir en el cabezal (Ctrl+B)">{I.dividir}</button>
         <button onClick={()=>borrarLado(true)} className="rd-ico" title="Borrar a la izquierda (Q)">{I.izq}</button>
@@ -803,6 +847,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <button onClick={anadirPista} className="rd-ico" title="Pista de audio nueva">{I.pista}</button>
         <span className="rd-sep"/>
         <button onClick={()=>setSkim(x=>!x)} className={"rd-btn"+(skim?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Previsualizar al pasar el ratón por la línea de tiempo, sin mover el cabezal (S)">Ver al pasar</button>
+        <button onClick={()=>setConectados(x=>!x)} className={"rd-btn"+(conectadosOn?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Clips conectados: al mover o quitar un clip de la principal, los SFX, textos y subtítulos que tiene encima van con él">Conectados</button>
         <button onClick={()=>setCompacta(x=>!x)} className={"rd-btn"+(compacta?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Pistas más bajas para ver muchas a la vez (H)">Compactas</button>
         <span style={{flex:1}}/>
         <button onClick={()=>setZoom(z=>Math.max(0.5,z/1.4))} className="rd-ico" title="Alejar (Ctrl+-)">{I.menos}</button>

@@ -13,7 +13,8 @@ const { useEffect, useRef, useState, forwardRef, useImperativeHandle } = React;
    (antes, en cada corte había que cargar el vídeo de cero). Los audios, uno por pista. */
 export const fileUrl = p => p ? "file:///" + p.replace(/\\/g,"/").split("/").map(encodeURIComponent).join("/").replace(/^([A-Za-z])%3A/,"$1:") : null;
 
-export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip, editarMascara }, ref) {
+export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip, editarMascara, ondas }, ref) {
+  const ondasRef = useRef(ondas); ondasRef.current = ondas;
   // 31/10 (v3.18): escala de la pantalla (px de pantalla por px del lienzo), para mover/escalar el vídeo
   const lienzo = useRef(null), kRef = useRef(0.3);
   const [k, setK] = useState(0.3);
@@ -136,7 +137,13 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
     });
     // (31/10: «Mejorar voz» / «Aislar voz»: en las pistas de vídeo suena su audio limpio, que dura lo mismo que el vídeo)
     // (8/11) «bajar al hablar»: mientras suena la principal, esas pistas bajan (al exportar, con la voz de verdad)
-    const vp = pr.pistas.find(x=>x.id==="v1"), habla = !!(vp && !vp.muda && vp.clips.some(x=>!x.silencio && t >= x.en && t < fin(x)));
+    // (8/11, fase 2) con la onda de la voz: solo baja cuando de verdad se habla (como el sidechain al exportar)
+    const vp = pr.pistas.find(x=>x.id==="v1"), cv = vp && !vp.muda ? vp.clips.find(x=>!x.silencio && t >= x.en && t < fin(x)) : null;
+    let habla = !!cv;
+    if(cv){ const o = (ondasRef.current || {})[cv.ruta], od = o && (Array.isArray(o) ? o : o.p);
+      if(od && od.length){ const dt = (!Array.isArray(o) && o.dt) || (cv.dur_src || 1) / od.length, s0 = local(cv, t) - ((!Array.isArray(o) && o.inicio) || 0);
+        let m = 0; for(let i = Math.max(0, Math.floor((s0 - 0.35) / dt)); i <= Math.min(od.length - 1, Math.ceil((s0 + 0.03) / dt)); i++) m = Math.max(m, od[i]);
+        habla = m * (cv.vol ?? 1) > 0.06; } }
     const vistos = new Set();
     pr.pistas.filter(pi=>pi.tipo==="audio" || pi.tipo==="video").forEach(pi=>{
       const esV = pi.tipo === "video", id = esV ? "voz_" + pi.id : pi.id;
