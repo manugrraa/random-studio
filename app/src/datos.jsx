@@ -1128,7 +1128,12 @@ export function storeSyncCode(code) { try { localStorage.setItem(SYNC_CODE_KEY, 
 // v3: la nube va a través del backend (/api/datos) con la sesión de Google del
 // canal. Supabase ya no se toca desde la app: la tabla está cerrada (RLS) y antes
 // cualquiera con la web pública podía leer o borrar los datos.
+// (8/11) los perfiles LOCALES (Carental…) no tienen copia en la nube: no se pregunta al servidor (antes cada intento
+// salía en el registro de accesos como «datos: rechazado · cuenta de Google sin perfil aprobado», en tandas)
+export const PERFIL_LOCAL = "Este perfil es solo de este equipo: no se sincroniza con la nube";
+const perfilSinNube = () => /^local-/.test(String(perfilEnUso() || ""));
 export async function cloudToken() {
+  if(perfilSinNube()) throw new Error(PERFIL_LOCAL);
   if(!ytIsConnected()) throw new Error("Conecta Google para sincronizar");
   if(!(await ytEnsureToken())) throw new Error("La sesión de Google caducó");
   const t = ytGetTokens();
@@ -1163,6 +1168,7 @@ export async function cloudSave(code, payload) {
 // Guardado urgente al cerrar o pasar a segundo plano (fetch keepalive): usa el
 // token que ya haya, sin renovarlo (no da tiempo)
 export function cloudSaveUrgente(code, payload) {
+  if(perfilSinNube()) return;
   const t = ytGetTokens();
   if(!t || !t.access_token || !ytTokenValid()) return;
   try {
