@@ -66,6 +66,20 @@ ipcMain.handle("copia-hacer", async (e, token) => {
   } catch (x) { return { error: x.message }; }
 });
 
+/* (8/11, él: "un MEGA análisis de todos los Shorts de RandomHistorias") la exportación de estadísticas del canal, a
+ * <Resultados del perfil>/Estadísticas YouTube/estadisticas_<fecha>.json (solo números; ninguna clave) */
+ipcMain.handle("estadisticas-guardar", async (e, datos) => {
+  try {
+    const c = carpetas.carpetasDe() || {};
+    const base = c.resultados || c.trabajo || path.join(app.getPath("userData"), "trabajo");
+    const dir = path.join(base, "Estadísticas YouTube"); fs.mkdirSync(dir, { recursive: true });
+    const f = path.join(dir, "estadisticas_" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + ".json");
+    fs.writeFileSync(f, JSON.stringify(datos, null, 1));
+    try { require("electron").shell.showItemInFolder(f); } catch (x) {}
+    return { ok: true, ruta: f };
+  } catch (x) { return { error: x.message }; }
+});
+
 ipcMain.handle("redes-subir", async (e, ruta, url, borrarDespues) => {
   try {
     const datos = fs.readFileSync(ruta);

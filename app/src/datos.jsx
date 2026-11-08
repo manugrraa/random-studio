@@ -871,6 +871,56 @@ export async function ytAnalyticsQuery(params){
 }
 export const fechaISO = (d) => { const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
 
+/* ——— (8/11) Exportación para el MEGA análisis (él: "un MEGA análisis de todos los Shorts de RandomHistorias") ———
+   Todo lo que da la API de cada Short del canal conectado: sus números de siempre, la curva de retención (en qué
+   punto se va la gente), de dónde vienen las vistas y cómo arrancó (vistas día a día de su primera semana).
+   Solo lectura; devuelve un objeto que se guarda en un archivo (ninguna clave dentro). */
+export async function ytExportarAnalisis(progreso){
+  const avisar = (t)=>{ try { progreso && progreso(t); } catch(e){} };
+  await ytEnsureToken();
+  const hoy = fechaISO(new Date());
+  avisar("Leyendo el canal…");
+  const ch = await fetch("https://www.googleapis.com/youtube/v3/channels?"+new URLSearchParams({ part:"snippet,statistics", mine:"true" }), { headers: ytAuthHeader() }).then(r=>r.json());
+  const canal = ch.items?.[0] ? { id: ch.items[0].id, nombre: ch.items[0].snippet?.title, suscriptores: +ch.items[0].statistics?.subscriberCount||0,
+    vistas: +ch.items[0].statistics?.viewCount||0, videos: +ch.items[0].statistics?.videoCount||0 } : null;
+  avisar("Buscando todos los vídeos…");
+  const todos = await ytListUploadsFull(Infinity);
+  const shorts = todos.filter(v=>!v.live && v.durationSec>0 && v.durationSec<=180 && v.privacyStatus==="public" && v.publishedAt);
+  // números de siempre, por vídeo (de 200 en 200)
+  avisar("Números de cada Short…");
+  const BASE = "views,estimatedMinutesWatched,averageViewDuration,averageViewPercentage,likes,dislikes,comments,shares,subscribersGained,subscribersLost";
+  let metricas = "engagedViews," + BASE;
+  const porVideo = {};
+  for(let inicio=1; ; inicio+=200){
+    let r;
+    try { r = await ytAnalyticsQuery({ startDate:"2015-01-01", endDate:hoy, metrics:metricas, dimensions:"video", sort:"-views", maxResults:"200", startIndex:String(inicio) }); }
+    catch(e){ if(metricas!==BASE && /400/.test(e.message)){ metricas = BASE; inicio -= 200; continue; } throw e; }
+    const cab = (r.columnHeaders||[]).map(h=>h.name);
+    (r.rows||[]).forEach(f=>{ const o={}; cab.forEach((n,i)=>{ if(i) o[n]=+f[i]||0; }); porVideo[f[0]] = o; });
+    if(!r.rows || r.rows.length<200) break;
+  }
+  const salida = [];
+  for(let i=0; i<shorts.length; i++){
+    const v = shorts[i];
+    avisar(`Retención y origen de las vistas: ${i+1} de ${shorts.length}…`);
+    const f = `video==${v.id}`;
+    const pub = new Date(v.publishedAt), fin7 = new Date(pub); fin7.setDate(fin7.getDate()+6);
+    const [ret, origen, dias] = await Promise.all([
+      ytAnalyticsQuery({ startDate:"2015-01-01", endDate:hoy, metrics:"audienceWatchRatio,relativeRetentionPerformance", dimensions:"elapsedVideoTimeRatio", filters:f, sort:"elapsedVideoTimeRatio" }).catch(()=>null),
+      ytAnalyticsQuery({ startDate:"2015-01-01", endDate:hoy, metrics:"views", dimensions:"insightTrafficSourceType", filters:f, sort:"-views" }).catch(()=>null),
+      ytAnalyticsQuery({ startDate:fechaISO(pub), endDate:fechaISO(fin7 > new Date() ? new Date() : fin7), metrics:"views", dimensions:"day", filters:f, sort:"day" }).catch(()=>null),
+    ]);
+    salida.push({ id:v.id, titulo:v.title, publicado:v.publishedAt, duracion_s:v.durationSec, url:"https://youtube.com/shorts/"+v.id,
+      ...(porVideo[v.id]||{}),
+      retencion: ret ? (ret.rows||[]).map(r=>({ punto:+r[0], quedan:+r[1], relativa:+r[2] })) : null,
+      origen: origen ? Object.fromEntries((origen.rows||[]).map(r=>[r[0], +r[1]])) : null,
+      primeros_dias: dias ? (dias.rows||[]).map(r=>({ dia:r[0], vistas:+r[1] })) : null });
+  }
+  return { exportado: new Date().toISOString(), canal, total_videos: todos.length, total_shorts: salida.length,
+    nota: "retencion: punto 0-1 del vídeo; quedan = proporción de la audiencia que sigue viendo (puede pasar de 1 si se repite); relativa = comparada con vídeos de duración parecida de YouTube (0,5 = media)",
+    shorts: salida };
+}
+
 // RPM real por tipo de contenido, últimos 30 días cerrados (los ingresos llegan con ~2 días
 // de retraso). 30 y no más: antes de junio de 2026 el canal no estaba monetizado y una
 // ventana larga pillaría visitas sin ingresos, hundiendo el RPM artificialmente.

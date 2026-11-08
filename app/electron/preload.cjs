@@ -180,6 +180,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   terminadosLista: () => ipcRenderer.invoke("terminados-lista"),
   redesPreparar: (ruta) => ipcRenderer.invoke("redes-preparar", ruta),
   copiaPosible: () => ipcRenderer.invoke("copia-posible"),
+  estadisticasGuardar: (datos) => ipcRenderer.invoke("estadisticas-guardar", datos),
   copiaHacer: (token) => ipcRenderer.invoke("copia-hacer", token),
   redesSubir: (ruta, url, borrar) => ipcRenderer.invoke("redes-subir", ruta, url, borrar),
   redesPortada: (o) => ipcRenderer.invoke("redes-portada", o),

@@ -5,6 +5,7 @@ import { FormatPill, Icon, Icons, makeVideo } from "./base";
 import { ChannelHeroCard } from "./canal";
 import { clasificarFormato, fechaISO, fireNotification, iaDisponible, iaGenerar, ytAnalyticsQuery, ytAuthHeader, ytCheckVideos, ytDeleteVideo, ytExpireAccess, ytFetchDiario, ytFetchRpmReal, ytIsConnected, ytListChannelComments, ytListUploadsFull, ytPostComment, ytReplyComment, ytTokenValid, ytViewCounts } from "./datos";
 import { Field, inputStyle } from "./videos";
+import { ytExportarAnalisis } from "./datos";
 import { AccionesDeVista } from "./base";
 
 export const BarraProgreso = ({pct, alto=8, color}) => (
@@ -1043,6 +1044,30 @@ export function ScheduledView({ videos, trashYtIds, onOpen, onUpdateVideo, onAdd
   );
 }
 
+/* (8/11) el botón de la exportación para el análisis a fondo de los Shorts (retención, origen de las vistas, primera semana) */
+function ExportarAnalisis() {
+  const [paso, setPaso] = useState("");
+  const [hecho, setHecho] = useState(null);
+  if (!(window.studioFS && window.studioFS.estadisticasGuardar)) return null;
+  const ir = async () => {
+    setHecho(null);
+    try {
+      const d = await ytExportarAnalisis(setPaso);
+      setPaso("Guardando…");
+      const r = await window.studioFS.estadisticasGuardar(d);
+      if (r.error) throw new Error(r.error);
+      setHecho("✅ " + d.total_shorts + " Shorts de «" + ((d.canal && d.canal.nombre) || "el canal") + "» exportados (se ha abierto la carpeta)");
+    } catch (e) { setHecho("✕ " + (e.message === "ANALYTICS_PERMISOS" ? "Esta cuenta de Google no tiene permiso de estadísticas: vuelve a conectar Google en este perfil" : e.message)); }
+    setPaso("");
+  };
+  return (
+    <span style={{display:"inline-flex", alignItems:"center", gap:8}}>
+      <button onClick={ir} disabled={!!paso} className="rs-btn" title="Todos los Shorts del canal conectado: sus números, la curva de retención, de dónde vienen las vistas y su primera semana. Se guarda en Resultados → Estadísticas YouTube.">
+        📊 {paso ? "Exportando…" : "Exportar para análisis"}</button>
+      {(paso || hecho) && <span style={{fontSize:12, color: hecho && hecho.startsWith("✕") ? "var(--red)" : "var(--text-2)"}}>{paso || hecho}</span>}
+    </span>);
+}
+
 export function StatsView({ videos, goals, onConnect }) {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -1165,6 +1190,7 @@ export function StatsView({ videos, goals, onConnect }) {
         <button onClick={cargar} disabled={cargando} className="rs-btn">
           <span className={cargando?"spinning":""} style={{display:"flex"}}>{Icons.refresh}</span>{cargando?"Analizando…":"Refrescar"}
         </button>
+        <ExportarAnalisis />
       </AccionesDeVista>
 
       {error && (
