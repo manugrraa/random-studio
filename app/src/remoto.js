@@ -16,9 +16,29 @@ import { avisar } from "./avisos";
 
 const SF = () => window.studioFS;
 
+/* (8/11, Supabase bloqueado por tráfico: cada consulta traía ~88 KB) el estado se pide en LIGERO (sin las listas de
+   historias e ideas de cada equipo, ~2 KB) y esas listas solo se piden cuando cambia su huella; se guardan aquí y se
+   juntan, así que quien llama recibe lo mismo que antes. */
+const _pesadas = {};          // { equipo: { huella, historias, ideas } }
 export async function remotoApi(metodo, cuerpo) {
+  if (metodo === "GET") {
+    const j = await remotoLlamar("GET", null, "?ligero=1");
+    for (const e of j.equipos || []) {
+      if (!e.datos || !e.huella) continue;
+      let p = _pesadas[e.id];
+      if (!p || p.huella !== e.huella) {
+        try { const h = await remotoLlamar("GET", null, "?pesadas=" + encodeURIComponent(e.id)); p = _pesadas[e.id] = { huella: e.huella, historias: h.historias, ideas: h.ideas }; }
+        catch (x) { p = null; }
+      }
+      if (p) { if (p.historias != null) e.datos.historias = p.historias; if (p.ideas != null) e.datos.ideas = p.ideas; }
+    }
+    return j;
+  }
+  return remotoLlamar(metodo, cuerpo, "");
+}
+async function remotoLlamar(metodo, cuerpo, q) {
   const token = await tokenTrabajo();
-  const r = await fetch(YT_BACKEND + "/api/remoto", {
+  const r = await fetch(YT_BACKEND + "/api/remoto" + q, {
     method: metodo,
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, ...(await cabecerasEquipo(metodo, "/api/remoto")) },
     body: metodo === "GET" ? undefined : JSON.stringify(cuerpo || {}),

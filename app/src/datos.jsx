@@ -109,8 +109,9 @@ export function registerNotifSW(){
 }
 
 /* ============================ SINCRONIZACIÓN (Supabase) ============================ */
-export const SUPABASE_URL = "https://krzuellhsakbwavlahxg.supabase.co";
-export const SUPABASE_KEY = "sb_publishable_FWzHwkpMr4bOQYjakGGmpg_ZqEFFYCO";
+// (8/11) mudanza: el proyecto viejo (krzuellhsakbwavlahxg) quedó bloqueado por tráfico; este es el nuevo (org RandomStudio)
+export const SUPABASE_URL = "https://uaommciznlaprmiaazzk.supabase.co";
+export const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhb21tY2l6bmxhcHJtaWFhenprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQxNTM2ODcsImV4cCI6MjEwOTcyOTY4N30.zgtc3NYiKvfZZizRJTiGrYCOwdqizcshFCykV0y7XUg";
 export const SYNC_CODE_KEY = "rivals_sync_code";
 
 /* ——— Migración v2.0 (23/8/2026): unificar dispositivos en un solo código ———
