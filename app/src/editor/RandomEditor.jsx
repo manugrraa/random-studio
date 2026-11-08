@@ -97,7 +97,8 @@ export function RandomEditor({ toast }) {
   const [iman, setIman] = useState(true);
   const [herramienta, setHerramienta] = useState("sel");
   const [skim, setSkim] = useAjuste("red_skim", false);
-  const [compacta, setCompacta] = useAjuste("red_compacta", false);
+  // (8/11, él: «que se puedan hacer más chicos los clips y los audios en el timeline») el alto de las pistas, a medida
+  const [altoPistas, setAltoPistas] = useAjuste("red_alto_pistas", 0.7);
   const [conectadosOn, setConectados] = useAjuste("red_conectados", true);
   const [estilosTexto, setEstilosTexto] = useAjuste("red_estilos_texto", []);
   conectadosRef.current = conectadosOn;
@@ -459,21 +460,40 @@ export function RandomEditor({ toast }) {
   };
   // ---- copiar y pegar atributos (Ctrl+Alt+C / Ctrl+Alt+V)
   const portaAtrib = useRef(null);
+  // (8/11, él: «copiar atributos de clips y pegarlos en otros, para copiar el tamaño y la ubicación») también de TEXTOS
+  // (su estilo: sitio, tamaño, fuente, color…), y «Pegar solo tamaño y posición» (Ctrl+Alt+Shift+V)
+  const copia = x => JSON.parse(JSON.stringify(x));
+  const TAMPOS = ["escala", "x", "y", "rot"];
   const copiarAtributos = () => {
-    const s = est.current.sel, c = M.todos(pRef.current).find(x=>s.has(x.id) && x.ruta);
+    const s = est.current.sel, c = M.todos(pRef.current).find(x=>s.has(x.id) && (x.ruta || x.tipo === "texto"));
     if(!c){ toast("Elige el clip del que copiar"); return; }
-    portaAtrib.current = { de: c.nombre || "el clip", a: Object.fromEntries(ATRIBUTOS.filter(k=>c[k] !== undefined).map(k=>[k, JSON.parse(JSON.stringify(c[k]))])) };
-    toast("📋 Atributos copiados de «" + portaAtrib.current.de + "»: elige otros clips y pulsa «Pegar atributos» (Ctrl+Alt+V)");
+    portaAtrib.current = c.tipo === "texto"
+      ? { de: String(c.texto || "el texto").split("\n")[0].slice(0, 30), texto: true, estilo: copia(c.estilo || {}) }
+      : { de: c.nombre || "el clip", a: Object.fromEntries(ATRIBUTOS.filter(k=>c[k] !== undefined).map(k=>[k, copia(c[k])])) };
+    toast("📋 Atributos copiados de «" + portaAtrib.current.de + "»: elige otros y pulsa «Pegar atributos» (Ctrl+Alt+V) o «solo tamaño y posición» (Ctrl+Alt+Shift+V)");
+    repintar(x=>x+1);
   };
-  const pegarAtributos = () => {
+  const pegarAtributos = solo => {
     const pa = portaAtrib.current, s = est.current.sel;
-    if(!pa){ toast("Primero copia los atributos de un clip (Ctrl+Alt+C)"); return; }
+    if(!pa){ toast("Primero copia los atributos de un clip (Ctrl+Alt+C o clic derecho)"); return; }
     let n = 0;
     cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.bloqueada ? pi : ({...pi, clips: pi.clips.map(c=>{
-      if(!s.has(c.id) || !c.ruta) return c;
-      n++; const x = {...c}; for(const k of ATRIBUTOS){ if(pa.a[k] === undefined) delete x[k]; else x[k] = JSON.parse(JSON.stringify(pa.a[k])); } return x;
+      if(!s.has(c.id)) return c;
+      if(pa.texto){
+        if(c.tipo !== "texto") return c;
+        n++; const e = c.estilo || {};
+        return {...c, estilo: solo ? {...e, x: pa.estilo.x, y: pa.estilo.y, tam: pa.estilo.tam, max_ancho: pa.estilo.max_ancho} : copia(pa.estilo)};
+      }
+      if(!c.ruta) return c;
+      n++;
+      if(solo){                       // solo el tamaño, la posición y el giro (y su animación)
+        const t = {...(c.transform || {})}, kf = {...(c.kf || {})};
+        TAMPOS.forEach(k=>{ const v = (pa.a.transform || {})[k]; if(v === undefined) delete t[k]; else t[k] = v; const l = (pa.a.kf || {})[k]; if(l) kf[k] = copia(l); else delete kf[k]; });
+        return {...c, transform: t, kf};
+      }
+      const x = {...c}; for(const k of ATRIBUTOS){ if(pa.a[k] === undefined) delete x[k]; else x[k] = copia(pa.a[k]); } return x;
     })}))}));
-    toast(n ? "📋 Atributos de «" + pa.de + "» pegados en " + n + " clip" + (n > 1 ? "s" : "") : "Elige los clips en los que pegarlos");
+    toast(n ? "📋 " + (solo ? "Tamaño y posición" : "Atributos") + " de «" + pa.de + "» pegados en " + n + (n > 1 ? " clips" : " clip") : pa.texto ? "Elige los textos en los que pegarlo" : "Elige los clips en los que pegarlo");
   };
   // ---- el volumen con puntos clave (◆): con puntos, mover la barra cambia el del cabezal (o pone uno)
   const tRelDe = c => Math.max(0, Math.min(M.largo(c), reloj.t - c.en));
@@ -602,6 +622,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(ctrl && e.shiftKey && K==="f"){ ok(); setCompleta(x=>!x); }
       else if(ctrl && K==="b"){ ok(); dividir(); }
       else if(ctrl && e.altKey && K==="c"){ ok(); copiarAtributos(); }
+      else if(ctrl && e.altKey && e.shiftKey && K==="v"){ ok(); pegarAtributos(true); }
       else if(ctrl && e.altKey && K==="v"){ ok(); pegarAtributos(); }
       else if(ctrl && K==="c"){ ok(); copiar(false); }
       else if(ctrl && K==="x"){ ok(); copiar(true); }
@@ -622,7 +643,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       else if(k==="Delete"||k==="Backspace"){ ok(); eliminar(); }
       else if(K==="a" && !e.altKey){ ok(); elegirDesdeAqui(t); }
       else if(K==="s" && !e.altKey){ ok(); const on = !skim; setSkim(on); if(!on) verEn(null); toast(on ? "Previsualizar al pasar el ratón: encendido (S)" : "Previsualizar al pasar el ratón: apagado"); }
-      else if(K==="h" && !e.altKey){ ok(); setCompacta(x=>!x); }
+      else if(K==="h" && !e.altKey){ ok(); setAltoPistas(x=>x > 0.5 ? 0.4 : 0.7); }
       else if(e.shiftKey && K==="z"){ ok(); ajustar(); }
       else if(e.shiftKey && K==="m"){ ok(); silenciar(); }
       else if(K==="q"){ ok(); borrarLado(true); }
@@ -665,6 +686,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           [elegidos.every(c=>c.silencio) ? "Devolver el sonido" : "Silenciar","Shift+M",silenciar],["Eliminar","Supr",eliminar],
           ["Eliminar y cerrar el hueco","Shift+Supr",eliminarCerrando],["Cerrar los huecos de esta pista","",()=>cerrarHuecos(new Set([menu.pista]))],
           ["Elegir todo del cabezal en adelante","A",()=>elegirDesdeAqui(reloj.t)],
+          ["Copiar atributos","Ctrl+Alt+C",copiarAtributos],
+          ...(portaAtrib.current ? [["Pegar atributos de «" + portaAtrib.current.de + "»","Ctrl+Alt+V",()=>pegarAtributos()],["Pegar solo tamaño y posición","Ctrl+Alt+Shift+V",()=>pegarAtributos(true)]] : []),
           ...(elegidos.filter(c=>c.ruta && !c.imagen && !c.efecto).length > 1 ? [["Juntar como tomas (audición)","",()=>{ let n = 0; cambiar(q=>{ const [r, k] = M.juntarTomas(q, est.current.sel); n = k; return r; }); toast(n ? `Audición con ${n} tomas: cámbialas en Propiedades` : "Elige 2 o más clips de vídeo o audio"); setSel(new Set([elegidos.slice().sort((a,b)=>a.en-b.en)[0].id])); }]] : [])].map(([n,k,f])=>
           <button key={n} onClick={()=>{ setMenu(null); f(); }}><span>{n}</span><kbd>{k}</kbd></button>)}
       </div>
@@ -724,8 +747,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       {tarea && <div style={{padding:"0 10px"}}><PanelTarea tarea={tarea} onCerrar={cerrarTarea}/></div>}
       {/* biblioteca · previsualización · propiedades */}
       <div className="rd-medio-fila">
-        <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={meterFijo} onArchivos={meterArchivos} onTexto={cual=>meterTexto(cual)}
-          efectos={efectos} onEfecto={(e, s)=>meterEfecto(e, s)} estilosTexto={estilosTexto}
+        <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={meterFijo} onArchivos={estable("arch", meterArchivos)} onTexto={estable("tex", cual=>meterTexto(cual))}
+          efectos={efectos} onEfecto={estable("efe", (e, s)=>meterEfecto(e, s))} estilosTexto={estilosTexto}
           panelVoces={<PanelVoces info={voces} generar={generarVoz} onMeter={meterVoz}/>}
           panelGuion={<PanelGuion proyecto={p} reloj={reloj} onIr={t=>{ setJugando(0); ir(t); }}
             onQuitar={(rangos, aviso)=>{ setJugando(0); cambiar(q=>M.quitarTramos(q, rangos)); toast(aviso + " (Ctrl+Z para deshacer)"); }}
@@ -738,7 +761,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
             onGuardarPlantilla={async nombre=>{ try { const h = await deHecho(["redsubsguardar", nombre, pistaSubs.plantilla, JSON.stringify(pistaSubs.estilo || {}), String(subsMax)]);
               setSubsInfo(h); cambiarPistaSubs(()=>({plantilla:h.id, estilo:{}})); setSubsPid(h.id); toast(`Plantilla «${nombre}» guardada`); } catch(e){} }}
             onBorrarPlantilla={async id=>{ try { setSubsInfo(await deHecho(["redsubsborrar", id])); toast("Plantilla quitada"); } catch(e){} }}/>}
-          onMeterTodos={async r=>{ for(const m of r.clips) await meter(m, "video"); toast(`${r.clips.length} momentos al final de la principal, en tu orden`); }}/>
+          onMeterTodos={estable("todos", async r=>{ for(const m of r.clips) await meter(m, "video"); toast(`${r.clips.length} momentos al final de la principal, en tu orden`); })}/>
         <div className="rd-panel" style={{display:"flex",flexDirection:"column",minWidth:0,background:"#0b0b0b"}}>
           <div style={{position:"relative",flex:1,minHeight:0,display:"flex",alignItems:"stretch",justifyContent:"center",padding:10,gap:6}}>
             {verFps && <Fps vista={vista} jugando={jugando}/>}
@@ -853,7 +876,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               <button onClick={dividir} className="rd-ico" title="Dividir (Ctrl+B)">{I.dividir}</button>
               <button onClick={duplicar} className="rd-ico" title="Duplicar (Ctrl+D)">{I.duplicar}</button>
               <button onClick={copiarAtributos} className="rd-ico" title="Copiar atributos: volumen, fundidos, mejora de voz, color, transformación… (Ctrl+Alt+C)" style={{fontSize:12,width:"auto",padding:"0 8px"}}>📋 Copiar</button>
-              <button onClick={pegarAtributos} className="rd-ico" title="Pegar atributos en los clips elegidos (Ctrl+Alt+V)" style={{fontSize:12,width:"auto",padding:"0 8px",opacity: portaAtrib.current ? 1 : 0.55}}>📥 Pegar</button>
+              <button onClick={()=>pegarAtributos()} className="rd-ico" title="Pegar atributos en los clips elegidos (Ctrl+Alt+V)" style={{fontSize:12,width:"auto",padding:"0 8px",opacity: portaAtrib.current ? 1 : 0.55}}>📥 Pegar</button>
               <button onClick={eliminar} className="rd-ico peligro" title="Eliminar (Supr)">{I.borrar}</button>
             </div>
             {uno && uno.ruta && !uno.imagen && !uno.efecto && <SeccionVoz c={uno} procesar={procesarVoz} toast={toast}
@@ -903,7 +926,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
         <span className="rd-sep"/>
         <button onClick={()=>{ if(skim) verEn(null); setSkim(x=>!x); }} className={"rd-btn"+(skim?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Previsualizar al pasar el ratón por la línea de tiempo, sin mover el cabezal (S)">Ver al pasar</button>
         <button onClick={()=>setConectados(x=>!x)} className={"rd-btn"+(conectadosOn?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Clips conectados: al mover o quitar un clip de la principal, los SFX, textos y subtítulos que tiene encima van con él">Conectados</button>
-        <button onClick={()=>setCompacta(x=>!x)} className={"rd-btn"+(compacta?" on":"")} style={{padding:"4px 8px",fontSize:11.5}} title="Pistas más bajas para ver muchas a la vez (H)">Compactas</button>
+        <span title="Alto de las pistas (H: bajas / normales)" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,color:"#aaa"}}>Alto
+          <input type="range" min={0.3} max={1.2} step={0.05} value={altoPistas} onChange={e=>setAltoPistas(Number(e.target.value))} style={{width:70}}/></span>
         <span style={{flex:1}}/>
         <button onClick={()=>setZoom(z=>Math.max(0.5,z/1.4))} className="rd-ico" title="Alejar (Ctrl+-)">{I.menos}</button>
         <input type="range" min={0} max={1} step={0.001} value={Math.log(zoom/0.5)/Math.log(4000)} onChange={e=>setZoom(0.5*Math.pow(4000, Number(e.target.value)))} style={{width:150}}/>
@@ -934,7 +958,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           onIr={t=>{ setJugando(0); ir(t); }} onGesto={alGesto} onDividirEn={dividirEn}
           onSoltarMedio={(m, pi, t)=>m.efecto ? meterEfecto((efectos || []).find(x=>x.id===m.efecto) || {id:m.efecto, nombre:m.nombre}, false, t, pi.id) : m.texto ? meterTexto(m.texto, t, pi.tipo==="texto" ? pi.id : null) : meter(m, pi.tipo==="video" ? "video" : "audio", t, pi.id)}
           onMenu={(e, c, pi)=>{ e.preventDefault(); if(!sel.has(c.id)) setSel(new Set([c.id])); setMenu({x:e.clientX, y:e.clientY, pista:pi.id}); }}
-          compacta={compacta} skim={skim} onSkim={verEn}
+          escalaAlto={altoPistas} skim={skim} onSkim={verEn}
           onDoble={(e, c, pi)=>{ setSel(new Set([c.id])); setJugando(0); if(pi.tipo==="texto" || pi.tipo==="subtitulos") setTimeout(()=>{ const ta = document.querySelector(".rd-insp textarea"); if(ta){ ta.focus(); ta.select(); } }, 60); else ir(Math.min(Math.max(reloj.t, c.en), fin(c) - 1/fps)); }}
           onPista={accionPista}/>
       </div>

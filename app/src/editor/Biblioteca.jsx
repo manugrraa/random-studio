@@ -94,7 +94,22 @@ function Efectos({ efectos, onEfecto }) {
     </div>));
 }
 
-export function Biblioteca({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs, panelVoces, panelGuion, efectos, onEfecto, estilosTexto }) {
+/* 8/11 (optimización: al arrastrar o recortar, la biblioteca entera se volvía a pintar en cada movimiento) solo se repinta
+   si cambia algo suyo. Los paneles (Voces, Subtítulos, Guion) se comparan por lo que llevan; el Guion, solo si se está viendo. */
+const mismoPanel = (a, b) => {
+  if(a === b) return true;
+  if(!a || !b || a.type !== b.type) return false;
+  const pa = a.props, pb = b.props, ks = Object.keys(pa);
+  return ks.length === Object.keys(pb).length && ks.every(k=>pa[k] === pb[k] || (typeof pa[k] === "function" && typeof pb[k] === "function"));
+};
+const igualBiblio = (a, b) => Object.keys(b).every(k=>{
+  if(a[k] === b[k]) return true;
+  if(k === "panelGuion"){ let tab = ""; try { tab = localStorage.getItem("red_pestana"); } catch(e){} return tab !== "guion" || mismoPanel(a[k], b[k]); }
+  if(k.startsWith("panel")) return mismoPanel(a[k], b[k]);
+  return false;
+});
+export const Biblioteca = React.memo(BibliotecaBase, igualBiblio);
+function BibliotecaBase({ medios, biblio, presets, onMeter, onArchivos, onTexto, onMeterTodos, panelSubs, panelVoces, panelGuion, efectos, onEfecto, estilosTexto }) {
   const [pestana, setPestana] = useState(()=>{ try { return localStorage.getItem("red_pestana") || "clips"; } catch(e){ return "clips"; } });
   const [cat, setCat] = useState("");
   const [busca, setBusca] = useState("");

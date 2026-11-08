@@ -47,7 +47,7 @@ const Clip = memo(function Clip({ c, pista, zoom, elegido, cuchilla, onDown, onM
       style={{position:"absolute",left:PAD + c.en*zoom,top:0,width:w,height:h,borderRadius:5,boxSizing:"border-box",
         border:`2px solid ${elegido ? COL.sel : COL.borde}`, boxShadow: elegido ? "0 0 0 1px rgba(212,175,55,0.35), 0 0 12px rgba(212,175,55,0.25)" : "none",
         cursor: cuchilla ? "crosshair" : "grab"}}>
-      {w > 30 && <div style={{position:"absolute",left:5,top:pista.tipo==="texto"||pista.tipo==="subtitulos"?8:3,right:5,fontSize:10.5,fontWeight:700,color:"#fff",textShadow:"0 1px 3px #000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",pointerEvents:"none"}}>
+      {w > 30 && <div style={{position:"absolute",left:5,top:pista.tipo==="texto"||pista.tipo==="subtitulos"?Math.max(1, (h - 13) / 2):3,right:5,fontSize:10.5,fontWeight:700,color:"#fff",textShadow:"0 1px 3px #000",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",pointerEvents:"none"}}>
         {c.tipo === "texto" || c.tipo === "sub" ? (c.tipo === "texto" ? "T  " : "") + (c.texto || "").split("\n").join(" ") : (c.efecto ? "✦ " : c.imagen ? "▣ " : c.silencio ? "🔇 " : "") + c.nombre}</div>}
       {w > 60 && pista.tipo==="video" && <div style={{position:"absolute",right:6,top:af-15,fontSize:9.5,fontWeight:700,color:"#eee",textShadow:"0 1px 3px #000",pointerEvents:"none"}}>{corto(largo(c))}</div>}
       {/* 8/11 (Vegas/CapCut): los fundidos se arrastran desde las bolitas de arriba del clip */}
@@ -117,10 +117,10 @@ function Barra({ ancho, zoom, scroll, dur, marcadores, puntos, reloj, onVista })
 }
 
 export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta, iman, reloj, jugando, tiras, ondas,
-                              onIr, onGesto, onDividirEn, onSoltarMedio, onMenu, onPista, onDoble, compacta, skim, onSkim }) {
+                              onIr, onGesto, onDividirEn, onSoltarMedio, onMenu, onPista, onDoble, escalaAlto = 1, skim, onSkim }) {
   // 8/11 (DaVinci/Premiere: alto de pista ajustable): «compactas» para ver muchas pistas a la vez
-  const kAlto = compacta ? 0.55 : 1;
-  const AL = useMemo(()=>({ video: Math.round(ALTO.video * kAlto), audio: Math.round(ALTO.audio * kAlto), texto: Math.max(22, Math.round(ALTO.texto * kAlto)), subtitulos: Math.max(22, Math.round(ALTO.subtitulos * kAlto)) }),[kAlto]);
+  const kAlto = Math.max(0.3, Math.min(1.2, escalaAlto || 1));
+  const AL = useMemo(()=>({ video: Math.round(ALTO.video * kAlto), audio: Math.max(16, Math.round(ALTO.audio * kAlto)), texto: Math.max(16, Math.round(ALTO.texto * kAlto)), subtitulos: Math.max(16, Math.round(ALTO.subtitulos * kAlto)) }),[kAlto]);
   const AF = Math.round(ALTO_FOTO * kAlto);
   const caja = useRef(null), vertical = useRef(null), regla = useRef(null), cabezal = useRef(null), hover = useRef(null), hoverTxt = useRef(null), aviso = useRef(null), guia = useRef(null);
   const lienzos = useRef({});

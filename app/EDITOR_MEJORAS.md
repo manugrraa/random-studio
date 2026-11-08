@@ -94,4 +94,6 @@ Análisis de los editores punteros: lo que hace fuerte a cada uno y qué nos lle
 
 **Prueba real de la ventana (4.7.1, 8/11):** abierta en modo de pruebas con una copia del Mercedes, sin errores. Fluidez medida (FPS, pantalla de 144 Hz): reproducir 144 · desplazar 116 → **144** · zoom con la rueda 45 → **128** · arrastrar un clip 60 con parones de 125 ms → **144 sin parones**. Cómo: la onda se guarda en pirámide y se pinta como un solo polígono, cada pista solo se repinta si cambió ella, la rueda y el arrastre van a un cambio por fotograma y el visor no se recalcula con el zoom.
 
+**4.7.2 (8/11, sus apuntes):** copiar y pegar atributos también entre textos, y «Pegar solo tamaño y posición» (Ctrl+Alt+Shift+V o clic derecho) · alto de las pistas a medida («Alto» en la barra; por defecto más bajas) · cada vídeo de Carental en SU carpeta con su título (ya no «2026-11 Noviembre») · la biblioteca ya no se repinta en cada movimiento al editar.
+
 **Límites que quedan:** el rastreo sirve para clips superpuestos (logos, imágenes, vídeo), todavía no para textos; los medidores miden el clip elegido con su color, no la mezcla de todas las capas; «Programar en redes» te lleva al programador con el vídeo resaltado (el día y la red los eliges tú arrastrándolo).
