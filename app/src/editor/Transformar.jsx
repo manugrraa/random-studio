@@ -102,7 +102,7 @@ export function Transformador({ c, tRel, W, H, k, natural, onGesto, cambiarClip 
 }
 
 // ---- en propiedades: transformar (con fotogramas clave y curvas) y la velocidad
-export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir, onRastrear, rastreando }) {
+export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir, onRastrear, rastreando, onCara, haciendoCara }) {
   const [t, setT] = useState(reloj.t);
   // (8/11, fallo: tras moverse rápido, el ◆ se ponía en el instante de antes) + el último instante siempre llega
   useEffect(()=>{ let ult = 0, tm = 0; const q = reloj.oir(x=>{ const a = performance.now(); clearTimeout(tm); if(a - ult > 90){ ult = a; setT(x); } else tm = setTimeout(()=>setT(reloj.t), 100); }); return ()=>{ clearTimeout(tm); q && q(); }; },[reloj]);
@@ -140,11 +140,46 @@ export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir, onRastrea
           </div>);
       })}
       <Curvas c={c} tRel={tRel} alGesto={alGesto} cambiarClip={cambiarClip}/>
+      {onCara && <SeguirCara onCara={onCara} haciendo={haciendoCara}/>}
       {onRastrear && <button onClick={onRastrear} disabled={rastreando} className="rd-btn" style={{justifyContent:"center"}}
         title="Pon el centro de este clip encima de lo que quieres seguir (al principio del clip) y pulsa: se moverá con ello">{rastreando ? "Siguiendo…" : "Seguir lo de debajo (rastreo)"}</button>}
       <div style={{display:"flex",gap:6}}>
         <button onClick={()=>cambiarClip({...c, transform:{...TRANS0}, kf:{}})} className="rd-btn" style={{flex:1,justifyContent:"center"}}>Restablecer</button>
       </div>
+    </div>);
+}
+
+/* 8/11 (él, al corregir «Viernes Ventas»: «añadir una opción para seguir la cara y colocarla siempre en el punto que
+   el usuario elija»). Se elige DÓNDE quedan los ojos (en % del lienzo; por defecto, a un tercio: así los subtítulos
+   centrados se ven perfectos), si la cara se SIGUE (fotogramas clave de posición) o se deja un encuadre FIJO, y la
+   ampliación (la justa para que no asome borde, o la que él diga). Lo calcula RandomEditor.seguirCara. */
+const lsLeer = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } };
+const lsPoner = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
+const PUNTOS_CARA = [["Ojos a un tercio", 50, 31], ["Centro", 50, 50], ["Más arriba", 50, 24]];
+function SeguirCara({ onCara, haciendo }) {
+  const [o, setO] = useState(()=>lsLeer("red_cara", { x:50, y:31, modo:"seguir", auto:true, escala:120 }));
+  const poner = n => { const v = {...o, ...n}; setO(v); lsPoner("red_cara", v); };
+  const num = { width:46, background:"#111", border:"1px solid #333", borderRadius:5, color:"#eee", padding:"2px 4px", fontSize:11.5 };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6,border:"1px solid #2a2a2a",borderRadius:7,padding:7}}>
+      <b style={{fontSize:11,color:"#bbb"}}>LA CARA</b>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+        {PUNTOS_CARA.map(([n, x, y])=><button key={n} className={"rd-chip" + (o.x === x && o.y === y ? " on" : "")} onClick={()=>poner({x, y})}>{n}</button>)}
+      </div>
+      <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11.5,color:"#aaa"}}>
+        <span title="Dónde quedan los ojos: % del ancho desde la izquierda">X <input type="number" min={0} max={100} value={o.x} onChange={e=>poner({x:Math.max(0, Math.min(100, +e.target.value || 0))})} onKeyDown={e=>e.stopPropagation()} style={num}/> %</span>
+        <span title="Dónde quedan los ojos: % del alto desde arriba">Y <input type="number" min={0} max={100} value={o.y} onChange={e=>poner({y:Math.max(0, Math.min(100, +e.target.value || 0))})} onKeyDown={e=>e.stopPropagation()} style={num}/> %</span>
+      </div>
+      <div style={{display:"flex",gap:4}}>
+        <button className={"rd-chip" + (o.modo === "seguir" ? " on" : "")} onClick={()=>poner({modo:"seguir"})} title="La cara se queda en su sitio aunque se mueva (fotogramas clave de posición)">Seguirla</button>
+        <button className={"rd-chip" + (o.modo === "fijo" ? " on" : "")} onClick={()=>poner({modo:"fijo"})} title="Un solo encuadre para todo el clip (como haces tú en Carental)">Encuadre fijo</button>
+      </div>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"#aaa"}}>
+        <input type="checkbox" checked={o.auto} onChange={e=>poner({auto:e.target.checked})}/> Ampliación justa (sin bordes)
+        {!o.auto && <><input type="number" min={100} max={300} value={o.escala} onChange={e=>poner({escala:Math.max(100, Math.min(300, +e.target.value || 100))})} onKeyDown={e=>e.stopPropagation()} style={num}/> %</>}
+      </label>
+      <button onClick={()=>onCara({ px:o.x / 100, py:o.y / 100, modo:o.modo, escala:o.auto ? null : o.escala / 100 })} disabled={haciendo} className="rd-btn primario" style={{justifyContent:"center"}}>
+        {haciendo ? "Buscando la cara…" : o.modo === "seguir" ? "Seguir la cara" : "Encuadrar la cara"}</button>
     </div>);
 }
 

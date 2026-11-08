@@ -458,6 +458,47 @@ export function RandomEditor({ toast }) {
         toast(`Rastreo hecho: ${kx.length} puntos de posición${flojos ? ` (en ${flojos} momentos se perdió y se quedó quieto; retócalo en la curva)` : ""}. Ctrl+Z para deshacer`); }
     } catch(e){} finally { setRastreando(false); }
   };
+  /* 8/11 (él: «una opción para seguir la cara y colocarla siempre en el punto que el usuario elija»): los ojos de quien
+     sale en el clip (clon/cara.py, cada 0,2 s y suavizados) quedan en el punto elegido del lienzo. «Seguir»: fotogramas
+     clave de x/y; «fijo»: un solo encuadre (con el percentil 65 de la altura de los ojos, como el montaje de Carental).
+     La ampliación, la justa para que no asome borde (o la que él diga). */
+  const [haciendoCara, setHaciendoCara] = useState(false);
+  const seguirCara = async (c, { px, py, modo, escala }) => {
+    const q = pRef.current, W = q.ancho || 1080, H = q.alto || 1920;
+    setHaciendoCara(true); toast("Buscando la cara…");
+    try {
+      const r = await deHecho(["redcara", c.ruta, String(c.desde), String(c.hasta)]);
+      let ps = r.puntos || [];
+      // (el tamaño tal como se ve, con el giro del móvil: redinfo da el del archivo, 1920×1080 en un vertical)
+      const sw = r.ancho, sh = r.alto; if(!sw || !sh){ toast("No sé el tamaño de ese vídeo"); return; }
+      if(!ps.length){ toast("No se ve ninguna cara en este clip"); return; }
+      const f = Math.min(W / sw, H / sh);
+      if(modo === "fijo"){ const ys = ps.map(x=>x[2]).sort((a,b)=>a-b), xs = ps.map(x=>x[1]).sort((a,b)=>a-b);
+        ps = [[c.desde, xs[Math.floor(xs.length / 2)], ys[Math.floor(0.65 * (ys.length - 1))]]]; }
+      // posición para que el punto (xf, yf) del vídeo quede en (px, py) con ampliación S, sin que asome borde
+      const pos = (xf, yf, S) => { const dw = sw * f * S, dh = sh * f * S;
+        const lx = dw >= W - 0.5 ? (dw - W) / 2 : Infinity, ly = dh >= H - 0.5 ? (dh - H) / 2 : Infinity;
+        const X = px * W - W / 2 - (xf - 0.5) * dw, Y = py * H - H / 2 - (yf - 0.5) * dh;
+        return { X: Math.max(-lx, Math.min(lx, X)), Y: Math.max(-ly, Math.min(ly, Y)), ok: Math.abs(X) <= lx + 1 && Math.abs(Y) <= ly + 1 }; };
+      // la ampliación justa: la menor con la que el 80 % de los momentos quedan en su sitio (como mucho 140 %; si se
+      // mueve mucho de lado a lado, en los extremos la cara llega hasta el borde y ahí se queda)
+      let S = escala;
+      if(!S){ S = 1.4; for(let s = 1; s <= 1.4001; s += 0.01) if(ps.filter(([, x, y])=>pos(x, y, s).ok).length >= Math.ceil(0.8 * ps.length)){ S = s; break; } }
+      S = +S.toFixed(3);
+      const ya = M.todos(pRef.current).find(x=>x.id===c.id) || c, kf = {...(ya.kf || {})};
+      delete kf.escala; delete kf.x; delete kf.y;
+      if(ps.length === 1){ const p0 = pos(ps[0][1], ps[0][2], S);
+        cambiarClip({...ya, transform:{...(ya.transform || {}), escala:S, x:+p0.X.toFixed(1), y:+p0.Y.toFixed(1)}, kf});
+      } else {
+        const kx = [], ky = [];
+        ps.forEach(([st, x, y])=>{ const rel = +((st - c.desde) / M.vel(c)).toFixed(4), p0 = pos(x, y, S);
+          kx.push([rel, +p0.X.toFixed(1), "lineal"]); ky.push([rel, +p0.Y.toFixed(1), "lineal"]); });
+        cambiarClip({...ya, transform:{...(ya.transform || {}), escala:S}, kf:{...kf, x:kx, y:ky}});
+      }
+      const nada = r.vistos < r.pedidos * 0.5;
+      toast(`${modo === "fijo" ? "Encuadrado" : "Siguiendo la cara"}: ampliación ${Math.round(S * 100)} %${nada ? ` (solo se vio la cara en ${r.vistos} de ${r.pedidos} momentos)` : ""}. Ctrl+Z para deshacer`);
+    } catch(e){} finally { setHaciendoCara(false); }
+  };
   // ---- copiar y pegar atributos (Ctrl+Alt+C / Ctrl+Alt+V)
   const portaAtrib = useRef(null);
   // (8/11, él: «copiar atributos de clips y pegarlos en otros, para copiar el tamaño y la ubicación») también de TEXTOS
@@ -827,7 +868,8 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
             <span style={{fontSize:10.5,color:"#888"}}>{(uno.tomas[uno.toma || 0] || {}).nombre} · al exportar sale la elegida</span>
           </div>}
           {uno && uno.ruta && pestInsp==="transformar" && esVideo && <PanelTransformar c={uno} reloj={reloj} alGesto={alGesto} cambiarClip={cambiarClip} ir={t=>{ setJugando(0); ir(t); }}
-            onRastrear={uno.pista !== "v1" ? ()=>rastrear(uno) : null} rastreando={rastreando}/>}
+            onRastrear={uno.pista !== "v1" ? ()=>rastrear(uno) : null} rastreando={rastreando}
+            onCara={uno.imagen ? null : o=>seguirCara(uno, o)} haciendoCara={haciendoCara}/>}
           {uno && uno.ruta && pestInsp==="velocidad" && <PanelVelocidad c={uno} alGesto={alGesto} cambiarClip={cambiarClip}/>}
           {uno && uno.ruta && pestInsp==="color" && esVideo && <PanelColor c={uno} alGesto={alGesto} cambiarClip={cambiarClip} reloj={reloj}/>}
           {uno && uno.ruta && pestInsp==="mascara" && esVideo && <PanelMascara c={uno} W={p.ancho} H={p.alto} alGesto={alGesto} cambiarClip={cambiarClip}/>}
