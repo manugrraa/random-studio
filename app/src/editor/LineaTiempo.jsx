@@ -16,6 +16,21 @@ export const ALTO = { video: 100, audio: 58, texto: 34, subtitulos: 34 };
 const ALTO_FOTO = 58, CABECERA = 122, ALTO_BARRA = 16;
 const COL = { video:"#1d3557", audio:"#183a2b", texto:"#4c1d95", subtitulos:"#115e59", sel:"#D4AF37", borde:"rgba(255,255,255,0.16)" };
 const ZMIN = 0.5, ZMAX = 2000;
+/* 8/11 (optimización, prueba real: el zoom con la rueda iba a 45 FPS): la onda se guarda en PIRÁMIDE (cada nivel, el
+   máximo de cada dos del anterior) y cada píxel mira como mucho 3-4 valores en vez de cientos al alejarse */
+const PIRAMIDES = new WeakMap();
+function piramide(od) {
+  let p = PIRAMIDES.get(od); if(p) return p;
+  p = [od];
+  while(p[p.length - 1].length > 64){ const a = p[p.length - 1], b = new Float32Array(Math.ceil(a.length / 2)); for(let i = 0; i < b.length; i++) b[i] = Math.max(a[2 * i], a[2 * i + 1] || 0); p.push(b); }
+  PIRAMIDES.set(od, p); return p;
+}
+function maxEntre(p, i0, i1) {
+  const n = p[0].length; i0 = Math.max(0, i0); i1 = Math.min(n, i1); if(i1 <= i0) return 0;
+  let k = Math.max(0, Math.min(p.length - 1, Math.floor(Math.log2(i1 - i0)) - 1)), a = p[k], m = 0;
+  for(let i = i0 >> k, j = Math.ceil(i1 / (1 << k)); i < j && i < a.length; i++) if(a[i] > m) m = a[i];
+  return m;
+}
 // 8/11 (los «roles» de Final Cut): cada pista de audio con el color de lo que lleva, para encontrarlo de un vistazo
 const ROL = [[/m[uú]sica/i, "#1e3a5f", "rgba(96,165,250,0.95)"], [/sfx|efecto|sonido/i, "#4a2a12", "rgba(251,146,60,0.95)"], [/voz|locuci/i, "#183a2b", "rgba(74,222,128,0.95)"]];
 const rolDe = pi => pi.tipo === "audio" ? (ROL.find(r=>r[0].test(pi.nombre || "")) || null) : null;
@@ -180,10 +195,16 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       if(m && m.nombre){ g.font = "bold 10px system-ui, sans-serif"; g.fillText(m.nombre.slice(0, 24), x + 8, 26); g.font = "10px system-ui, sans-serif"; g.fillStyle = "rgba(255,255,255,0.55)"; } });
   },[zoom, scroll, ancho, proyecto.marcadores, proyecto.portada, fps]);
 
+  // (8/11, optimización: arrastrando un clip se repintaban TODAS las pistas en cada movimiento) cada pista solo se repinta
+  // si cambió ella o la vista
+  const pintado = useRef({});
   useEffect(()=>{
     const t0 = Math.max(0, (scroll - PAD) / zoom) - 1, t1 = (scroll + ancho) / zoom + 1;
     proyecto.pistas.forEach(pi=>{
       const cv = lienzos.current[pi.id]; if(!cv) return;
+      const ya = pintado.current[pi.id];
+      if(ya && ya.pi === pi && ya.zoom === zoom && ya.scroll === scroll && ya.ancho === ancho && ya.tiras === tiras && ya.ondas === ondas && ya.AL === AL && ya.cv === cv) return;
+      pintado.current[pi.id] = { pi, zoom, scroll, ancho, tiras, ondas, AL, cv };
       const H = AL[pi.tipo];
       const g = tam(cv, ancho, H);
       pi.clips.forEach(c=>{
@@ -215,14 +236,16 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
           const ytop = pi.tipo==="video" ? AF + 3 : 16, hW = H - ytop - 3, base = H - 3, n = od.length;
           const dt = (ond && ond.dt) || ((c.dur_src || 1) / n), ini = (ond && ond.inicio) || 0;
           g.fillStyle = gris ? "rgba(150,150,150,0.55)" : (pi.tipo==="video" ? "rgba(96,165,250,0.95)" : (rolDe(pi) || [])[2] || "rgba(74,222,128,0.95)");
-          const vf = Math.min(1.25, c.vol ?? 1);
+          const vf = Math.min(1.25, c.vol ?? 1), pir = piramide(od);
+          // (la onda como UN polígono: su contorno de arriba y la base; lo más barato de pintar)
+          g.beginPath(); g.moveTo(Math.floor(a), base);
           for(let x = Math.floor(a); x < b; x++){
             const s0 = tsrc(x) - ini, s1 = tsrc(x + 1) - ini;
-            let i0 = Math.floor(s0 / dt), i1 = Math.max(i0 + 1, Math.ceil(s1 / dt)), m = 0;
-            for(let i = Math.max(0, i0); i < Math.min(n, i1); i++) if(od[i] > m) m = od[i];
-            const hh = Math.max(1, m * vf * hW);
-            g.fillRect(x, base - hh, 1, hh);
+            const i0 = Math.floor(s0 / dt), i1 = Math.max(i0 + 1, Math.ceil(s1 / dt));
+            const hh = Math.max(1, maxEntre(pir, i0, i1) * vf * hW);
+            g.lineTo(x, base - hh); g.lineTo(x + 1, base - hh);
           }
+          g.lineTo(Math.ceil(b), base); g.closePath(); g.fill();
         }
         // los fundidos, como una cuña oscura
         const fi = (c.fade_in||0) * zoom, fo = (c.fade_out||0) * zoom;
@@ -457,11 +480,15 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
       onGesto("durante", {...inicial, pistas: ps});
       avisar(txt, ev.clientX);
     };
+    // (8/11, optimización: el ratón manda más movimientos que fotogramas) se procesa el último, uno por fotograma
+    let ultimo = null, rafMov = 0;
+    const moverRaf = ev => { ultimo = ev; if(!rafMov) rafMov = requestAnimationFrame(()=>{ rafMov = 0; if(ultimo) mover(ultimo); }); };
     const soltar = () => {
-      arrastrando.current = false; pararAuto(); mostrarGuia(null); window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar); avisar(null); onGesto("fin");
+      if(rafMov){ cancelAnimationFrame(rafMov); rafMov = 0; if(ultimo) mover(ultimo); }
+      arrastrando.current = false; pararAuto(); mostrarGuia(null); window.removeEventListener("mousemove", moverRaf); window.removeEventListener("mouseup", soltar); avisar(null); onGesto("fin");
       if(grupo && !movido) setSel(new Set([c.id]));      // un clic sin arrastrar en uno del grupo: se queda solo ese (como CapCut)
     };
-    window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
+    window.addEventListener("mousemove", moverRaf); window.addEventListener("mouseup", soltar);
   };
   // el grupo elegido, todos a la vez la misma distancia: el imán pega el borde (de cualquiera) que caiga más
   // cerca de algo; nadie pasa de 0, y en la principal libre ninguno se monta encima de otro que no se mueve
@@ -517,14 +544,17 @@ export function LineaTiempo({ proyecto, zoom, setZoom, sel, setSel, herramienta,
     window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
   };
   // rueda: desplaza en horizontal · Shift: las pistas en vertical · Ctrl o Alt: acercar/alejar donde está el ratón
+  const zoomRueda = useRef({ f: 1, mx: 0, raf: 0 });
   const rueda = e => {
     const el = caja.current; if(!el) return;
     e.preventDefault();
     if(e.ctrlKey || e.altKey){
-      const r = el.getBoundingClientRect(), mx = e.clientX - r.left, t = (mx + el.scrollLeft - PAD) / zRef.current;
-      const d = e.deltaY || e.deltaX;
-      const nz = Math.max(ZMIN, Math.min(ZMAX, zRef.current * (d < 0 ? 1.18 : 1/1.18)));
-      ponerVista(nz, t - mx / nz);    // el punto bajo el ratón no se mueve
+      // (8/11, optimización) los pasos de la rueda se juntan y se aplican una vez por fotograma
+      const r = el.getBoundingClientRect(), mx = e.clientX - r.left, d = e.deltaY || e.deltaX;
+      const zr = zoomRueda.current; zr.f *= d < 0 ? 1.18 : 1/1.18; zr.mx = mx;
+      if(!zr.raf) zr.raf = requestAnimationFrame(()=>{ zr.raf = 0; const f = zr.f; zr.f = 1; const ee = caja.current; if(!ee) return;
+        const t = (zr.mx + ee.scrollLeft - PAD) / zRef.current, nz = Math.max(ZMIN, Math.min(ZMAX, zRef.current * f));
+        ponerVista(nz, t - zr.mx / nz); });    // el punto bajo el ratón no se mueve
     } else if(e.shiftKey){
       vertical.current.scrollTop += e.deltaY || e.deltaX;
     } else {

@@ -85,6 +85,9 @@ export function RandomEditor({ toast }) {
   };
 
   const reloj = useRef(crearReloj()).current;
+  // (8/11, optimización) funciones que no cambian de identidad entre repintados (para que el visor no se repinte de más)
+  const fijas = useRef({});
+  const estable = (k, f) => { fijas.current["_" + k] = f; return fijas.current[k] || (fijas.current[k] = (...a)=>fijas.current["_" + k](...a)); };
   const vista = useRef(null);
   const jugandoRef = useRef(0);
   const [jugando, setJugandoE] = useState(0);
@@ -653,7 +656,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
   const uno = elegidos.length === 1 ? elegidos[0] : null;
   const esVideo = !!(uno && (p.pistas.find(x=>x.id===uno.pista) || {}).tipo === "video");
   const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista} reloj={reloj} sel={sel}
-    onElegirTexto={id=>setSel(new Set([id]))} onGesto={alGesto} subs={subsInfo} cambiarClip={cambiarClip} editarMascara={pestInsp==="mascara"} ondas={ondas}/>;
+    onElegirTexto={estable("eleg", id=>setSel(new Set([id])))} onGesto={estable("gesto", alGesto)} subs={subsInfo} cambiarClip={estable("cc", cambiarClip)} editarMascara={pestInsp==="mascara"} ondas={ondas}/>;
   const menuEl = menu && createPortal(
     <div onMouseDown={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:2000}}>
       <div className="rd-menu" onMouseDown={e=>e.stopPropagation()} style={{left:Math.min(menu.x, window.innerWidth-230), top:Math.min(menu.y, window.innerHeight-300)}}>

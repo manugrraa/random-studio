@@ -27,7 +27,8 @@ function ponerVolumen(el, v) {
   if(Math.abs(el._gain.gain.value - v) > 1e-3) el._gain.gain.value = v;
 }
 
-export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip, editarMascara, ondas }, ref) {
+// (8/11, optimización) memo: con el zoom o la selección de la línea de tiempo el visor no se recalcula entero
+export const Vista = React.memo(forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip, editarMascara, ondas }, ref) {
   const ondasRef = useRef(ondas); ondasRef.current = ondas;
   // 31/10 (v3.18): escala de la pantalla (px de pantalla por px del lienzo), para mover/escalar el vídeo
   const lienzo = useRef(null), kRef = useRef(0.3);
@@ -234,4 +235,4 @@ export const Vista = forwardRef(function Vista({ proyecto, guias, proxies, reloj
         </>}
       </div>}
     </div>);
-});
+}));
