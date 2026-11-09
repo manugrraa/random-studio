@@ -61,7 +61,9 @@ async function ejecutar(o) {
     case "revisar": return s.estudioRevisar(a.id, a.etapa, !!a.ok, String(a.nota || ""));
     case "rehacer": return s.estudioRehacer(a.id, a.etapa, String(a.nota || ""));
     case "nota": return s.estudioNotaFinal(a.id, String(a.texto || ""));
-    case "cancelar": return s.historiasCancelar(a.historia || undefined);
+    // (9-11) un pedido que no llegó a empezar no tiene historia: no hay nada que parar (antes, sin id, se paraba TODO lo de
+    // este equipo, aunque fuera otra historia)
+    case "cancelar": return a.historia || !a.pedido ? s.historiasCancelar(a.historia || undefined) : { ok: true, nada: true };
     case "ideas_generar": return s.estudioIdeasGenerar(Number(a.n) || 5, String(a.pista || ""));
     case "idea_poner": return s.estudioIdeaPoner(a.id, { estado: a.estado });
     // (v3.38.1: ya no hay orden «crear»: toda historia nueva pasa por la cola, que es la que impide repetirlas)
@@ -676,6 +678,17 @@ export function iniciarTrabajador(t) {
         if (!locales.some(h => h.id === ped.historia_id)) continue;
         m[ped.id] = { tipo: "historia", historia: ped.historia_id, faseOk: _soyDueno }; cambio = true;
       }
+      // (9-11) historias NUEVAS que el servidor da a este equipo pero que aquí nunca empezaron (sin historia, sin apuntar y
+      // hace más de 3 min): vuelven a la cola para el primero que pueda (cancelar + reintentar; sin avisos al móvil)
+      if (!ocupadoCogiendo) for (const ped of (r.pedidos || [])) {
+        if (ped.tipo !== "historia" || ped.equipo !== r.yo || ped.estado !== "asignado" || ped.historia_id || m[ped.id]) continue;
+        if (Date.now() - new Date(ped.actualizado || ped.creado).getTime() < 3 * 60000) continue;
+        try {
+          await pedidosApi("POST", { accion: "cancelar", id: ped.id });
+          await pedidosApi("POST", { accion: "reintentar", id: ped.id });
+          anotar("equipo", "la historia «" + (ped.titulo || ped.id) + "» estaba atada a este equipo sin empezar: vuelve a la cola");
+        } catch (e) {}
+      }
       if (cambio) guardarMios(m);
       revisadoRelevo = true;
     } catch (e) {}
@@ -816,18 +829,16 @@ export function iniciarTrabajador(t) {
     const puedeRodar = !!aj.blender && !(t && t.fondo) && !ocupadoAqui && !pasaDe("escena");
     // (6-11) reparto: si este equipo ya lleva más historias que otro, no coge NUEVAS (sí las que hay que animar aquí)
     const porDelante = await voyPorDelante();
-    const tipos = porDelante && !puedeRodar ? ["ideas"] : ["historia", "ideas"];
+    // (9-11) el que va por delante no pide historias nuevas: el servidor no deja «devolver» una nueva (solo relevos) y se
+    // quedaban atadas a este equipo sin empezar (6 pedidos del móvil, 9-11). El dueño sí pide: le tocan antes las de animar
+    const tipos = porDelante && (!puedeRodar || !_soyDueno) ? ["ideas"] : ["historia", "ideas"];
     ocupadoCogiendo = true;
     try {
       // v3.41: solo se ofrece a seguir relevos si puede bajar la copia de Drive
       // (v3.49.2) con Studio grabando de fondo, no coge historias para animar (esperarían a Studio): que las coja el otro
       const r = await pedidosApi("POST", { accion: "reclamar", tipos, rodar: puedeRodar, relevo: !!(s.estudioRelevoRecibir && driveConectadoTrabajo()) && !ocupadoAqui });
       const p = r.pedido;
-      if (p && porDelante && p.tipo === "historia" && !p.porAnimar && !p.relevo) {
-        // una nueva cuando ya voy por delante: vuelve a la cola para el otro equipo
-        await pedidosApi("POST", { accion: "devolver", id: p.id }).catch(() => {});
-        return;
-      }
+      // (9-11) una nueva aunque vaya por delante (solo el dueño): se hace aquí; devolverla la dejaba atada sin empezar
       if (!p) {
         // v3.41.7: nada nuevo que preparar ni que animar del portátil: el ordenador anima lo suyo que ya está preparado
         const b = blender[0];
