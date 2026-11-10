@@ -924,16 +924,22 @@ export function HistoriasRemoto({ toast, incrustado }) {
   const [filtro, setFiltro] = useState("todas");
   const [enviandoIdea, setEnviandoIdea] = useState({});
   const [ahora, setAhora] = useState(Date.now());
-  const cargar = useCallback(async () => {
-    try { setR(await remotoApi("GET")); setError(""); } catch (e) { setError(e.message); }
-    try { setCola(await pedidosApi("GET")); } catch (e) {}
+  const cargar = useCallback(async (que) => {
+    if (que !== "cola") { try { setR(await remotoApi("GET")); setError(""); } catch (e) { setError(e.message); } }
+    if (que !== "equipos") { try { setCola(await pedidosApi("GET")); } catch (e) {} }
   }, []);
   useEffect(() => {
     cargar();
-    // v3.41: con el timbre, lo que cambia en cualquier equipo se ve al instante; la vuelta de 15 s queda de respaldo
-    let pronto = null;
-    const off = alTimbre(() => { clearTimeout(pronto); pronto = setTimeout(cargar, 300); });
-    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 15000);
+    /* v3.41: con el timbre, lo que cambia en cualquier equipo se ve al instante. (10-11, menos tráfico: Vercel pausó el
+     * servidor) solo se recarga lo que cambió (equipos o cola), juntando los avisos de 2 s, y la vuelta de respaldo es cada
+     * minuto y solo con la ventana a la vista */
+    let pronto = null, pend = new Set();
+    const off = alTimbre((d) => {
+      pend.add(d && d.que === "pedidos" ? "cola" : "equipos");
+      clearTimeout(pronto);
+      pronto = setTimeout(() => { const q = pend; pend = new Set(); cargar(q.size > 1 ? undefined : [...q][0]); }, 2000);
+    });
+    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 60000);
     const a = setInterval(() => setAhora(Date.now()), 1000);
     return () => { off(); clearTimeout(pronto); clearInterval(t); clearInterval(a); };
   }, [cargar]);

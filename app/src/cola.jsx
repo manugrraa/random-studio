@@ -140,8 +140,9 @@ export function ColaTrabajo({ toast }) {
     cargar();
     // (v3.42.1) con el timbre, los cambios se ven al instante; la vuelta de 15 s queda de respaldo
     let pronto = null;
-    const off = alTimbre(() => { clearTimeout(pronto); pronto = setTimeout(cargar, 300); });
-    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 15000);
+    // (10-11, menos tráfico) solo los avisos de la cola, juntados 2 s; el respaldo, cada minuto
+    const off = alTimbre((d) => { if (d && d.que && d.que !== "pedidos") return; clearTimeout(pronto); pronto = setTimeout(cargar, 2000); });
+    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 60000);
     return () => { off(); clearTimeout(pronto); clearInterval(t); };
   }, [cargar]);
   const accion = async (cuerpo, ok) => { try { await pedidosApi("POST", cuerpo); if (ok) toast(ok); cargar(); } catch (e) { toast("❌ " + e.message); } };

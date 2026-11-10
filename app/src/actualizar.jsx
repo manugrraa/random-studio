@@ -29,6 +29,7 @@ export async function actualizacionApi(metodo, cuerpo) {
 /** v3.34.1: el portátil publica su versión NADA MÁS ABRIRSE (también en la pantalla de cuentas, sin entrar en ningún perfil):
  * así cada versión nueva llega al ordenador aunque se instale con la app cerrada. En los demás equipos no hace nada. */
 let _publicando = false;
+let _mirada = 0;            // (10-11) última vez que se preguntó al servidor por versiones nuevas
 export async function publicarSiToca() {
   if (_publicando || !SF() || !SF().actInfo) return;
   _publicando = true;
@@ -54,28 +55,33 @@ export function AvisoActualizacion() {
   const [espera, setEspera] = useState(null);     // v3.41.4: lo que está en marcha y hay que dejar terminar
   useEffect(() => {
     if (!SF() || !SF().actInstalar) return;
-    const mirar = async () => {
+    const mirar = async (forzar) => {
       // 1) el portátil: versión ya preparada al lado (npm run instalar con la app abierta); además se publica ya para los demás
       try {
         const l = await SF().actLocal();
         if (l.ok && num(l.version) > num(APP_VERSION)) { setNueva({ version: l.version, local: true }); publicarSiToca(); return; }
       } catch (e) {}
+      // (10-11, menos tráfico) al servidor, como mucho cada 5 min (y al volver a la ventana)
+      if (Date.now() - _mirada < (forzar === true ? 60000 : 5 * 60000)) return;
+      _mirada = Date.now();
       try {
         const [v, yo] = await Promise.all([actualizacionApi("GET"), SF().actInfo()]);
         // 2) el portátil publica solo su versión si es más nueva que la publicada (el servidor solo se lo deja al dueño)
-        if (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version))) { publicarVersion(yo, "").catch(() => {}); return; }
+        // (10-11) por publicarSiToca: con la red lenta, antes empezaba otra subida cada minuto encima de la anterior
+        if (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version))) { publicarSiToca(); return; }
         // 3) los demás equipos: hay una más nueva publicada por el portátil
         // (y nunca si es justo el mismo código que ya lleva este equipo)
         if (v.version && num(v.version) > num(APP_VERSION) && num(v.version) > num(yo.version) && v.sha256 !== yo.sha256) setNueva({ ...v, otroElectron: v.electron && yo.electron && v.electron.split(".")[0] !== yo.electron.split(".")[0] });
         else setNueva(null);
       } catch (e) {}
     };
-    mirar();
-    // cada minuto, al volver a la ventana y al momento si aparece una versión preparada en el portátil
-    const t = setInterval(mirar, 60 * 1000);
-    const alFoco = () => mirar();
+    mirar(true);
+    // cada minuto lo de este equipo (al servidor, cada 5 min), al volver a la ventana y al momento si aparece una versión
+    // preparada en el portátil
+    const t = setInterval(() => mirar(false), 60 * 1000);
+    const alFoco = () => mirar(true);
     window.addEventListener("focus", alFoco);
-    const off = SF().onActCambio ? SF().onActCambio(mirar) : null;
+    const off = SF().onActCambio ? SF().onActCambio(() => mirar(true)) : null;
     return () => { clearInterval(t); window.removeEventListener("focus", alFoco); off && off(); };
   }, []);
   // v3.41.4: esperando a que termine la tarea en marcha; en cuanto el equipo queda libre, se actualiza solo

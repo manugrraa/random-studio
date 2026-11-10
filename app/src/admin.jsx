@@ -102,7 +102,7 @@ export function AdminView({ toast }) {
   useEffect(() => {
     idEquipo().then(setYo).catch(() => {});
     cargar();
-    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 4000);
+    const t = setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 15000);   // (10-11) antes cada 4 s
     const r = setInterval(() => setAhora(Date.now()), 1000);
     return () => { clearInterval(t); clearInterval(r); };
   }, [cargar]);
@@ -317,7 +317,7 @@ export function useSolicitudesPendientes(activo) {
       try { const j = await seguridadApi(YT_BACKEND, await cloudToken(), "GET"); if (vivo) setN(solicitudesDe(j).length); } catch (e) {}
     };
     mirar();
-    const t = setInterval(mirar, 20000);
+    const t = setInterval(mirar, 120000);   // (10-11) antes cada 20 s
     return () => { vivo = false; clearInterval(t); };
   }, [activo]);
   return n;

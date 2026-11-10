@@ -9,7 +9,7 @@
 import { APP_VERSION } from "./base";
 import { YT_BACKEND } from "./datos";
 import { driveConectadoTrabajo, driveHistorias, driveTokenTrabajo, tokenTrabajo } from "./sesion_historias";
-import { alTimbre, fijarTimbre } from "./timbre";
+import { alTimbre, fijarTimbre, timbreConectado } from "./timbre";
 import { cabecerasEquipo } from "./seguridad";
 import { PERFILES, perfilActual } from "./perfiles";
 import { avisar } from "./avisos";
@@ -87,6 +87,9 @@ let _toast = null, _base = null, _kitVivo = null, _kitPropio = null, _basePendie
 // en el timbre; los demás, al oírla distinta, se ponen al día en segundos. _kitPendiente: llegaron cambios con una tarea en
 // marcha: se aplican en el primer hueco.
 let _kitPendiente = false, _otros = [], _igualarAhora = null, _publicarPronto = null;
+// (10-11) lo último que se publicó (para no repetir el estado entero si no cambió) y si el servidor sabe de «latidos»
+const _publicado = { firma: "", cuando: 0, latido: null };
+let _recogido = 0;
 const publicarYa = () => { try { _publicarPronto && _publicarPronto(); } catch (e) {} };
 const miKitHuella = () => ((_kitVivo && _kitVivo.huella) || "") + "/" + ((_kitPropio && _kitPropio.huella) || "");
 const anotar = (ambito, texto, datos) => { try { const s = SF(); if (s && s.registro) s.registro(ambito, texto, datos); } catch (e) {} };
@@ -194,8 +197,24 @@ export function iniciarRemotoEscritorio(t) {
       // v3.45.4: los módulos del kit creados en este equipo (los demás bajan los que les falten); 3-11: todo el kit compartido
       kitPropio: _kitPropio && _kitPropio.archivo ? _kitPropio : null, kitHuella: miKitHuella(),
     };
+    /* (10-11, Vercel pausó el servidor: 12 GB/mes de «Fast Origin Transfer», casi todo esto) el estado entero (~44 KB) solo
+     * se manda cuando CAMBIA algo que se vea; si no, un «sigo vivo» de unos bytes (o, con el servidor de antes, el estado
+     * entero cada 60 s: «en línea» dura 90 s). Las líneas del registro de la tarea no cuentan como cambio. */
+    const firma = JSON.stringify({ ...datos, ts: 0, claudeUso: null,
+      tarea: datos.tarea ? { ...datos.tarea, ultimas: null, acciones: null, paso: null, accion: null } : null,
+      ligeras: (datos.ligeras || []).map(x => ({ id: x.id, etapa: x.etapa })) });
+    const hace = Date.now() - _publicado.cuando;
+    if (firma === _publicado.firma && hace < 5 * 60000) {
+      if (hace < 55000) return;
+      if (_publicado.latido !== false) {
+        const lt = await remotoApi("POST", { accion: "latido" }).catch(e => (/no v[aá]lid|desconocid|400/i.test(e.message) ? { viejo: true } : null));
+        if (lt && !lt.viejo) { _publicado.cuando = Date.now(); if (lt.otros) { _otros = lt.otros; vigilarOtros(_otros); igualarBase(_otros, t).catch(() => {}); } if (aj.origen) bajarEntregas().catch(() => {}); return; }
+        if (lt && lt.viejo) _publicado.latido = false;
+        else return;
+      }
+    }
     const r = await remotoApi("POST", { accion: "publicar", datos }).catch(() => null);
-    if (r) { _otros = r.otros || []; vigilarOtros(_otros); igualarBase(_otros, t).catch(() => {}); }
+    if (r) { _publicado.firma = firma; _publicado.cuando = Date.now(); _otros = r.otros || []; vigilarOtros(_otros); igualarBase(_otros, t).catch(() => {}); }
     if (aj.origen) bajarEntregas().catch(() => {});
   };
   // v3.43.3: el portátil guarda TODAS las historias terminadas en Vídeos RDR\Editados\RandomHistorias\<TÍTULO>\: las que
@@ -327,6 +346,7 @@ export function iniciarRemotoEscritorio(t) {
 
   const recoger = async () => {
     if (!navigator.onLine) return;
+    _recogido = Date.now();
     let r; try { r = await remotoApi("POST", { accion: "recoger" }); } catch (e) { return; }
     for (const o of r.ordenes || []) {
       let ok = true, txt = "";
@@ -347,8 +367,10 @@ export function iniciarRemotoEscritorio(t) {
     // (3-11) otro equipo publica con otra huella del kit: me pongo al día al momento
     if (d.que === "estado" && d.kit && d.de && kitOido[d.de] !== d.kit) { const primera = !(d.de in kitOido); kitOido[d.de] = d.kit; if (!primera && d.kit !== miKitHuella() && _igualarAhora) _igualarAhora("el timbre dice que " + String(d.de).slice(0, 8) + " cambió su kit"); }
   });
+  // (10-11) publicar mira cada 20 s, pero solo llama al servidor si algo cambió (o el latido de cada minuto); las órdenes
+  // llegan al momento por el timbre: la vuelta de respaldo, cada minuto
   setInterval(publicar, 20000);
-  setInterval(recoger, 20000);
+  setInterval(() => { if (!timbreConectado() || Date.now() - _recogido > 55000) recoger(); }, 20000);
 }
 
 // ------------------------------------------------------------------ trabajo dual
@@ -583,6 +605,7 @@ export function iniciarTrabajador(t) {
   if (_trabajador || !s || !s.estudioCrear) return;
   _trabajador = true;
   let ocupadoCogiendo = false, ultimoAviso = {};
+  let pedidosNuevos = true, reclamadoA = 0;       // (10-11) ver «coger trabajo nuevo»
   const detalles = {};
   const avisarDetalle = (pid, det) => {
     if (detalles[pid] === det) return;
@@ -824,6 +847,9 @@ export function iniciarTrabajador(t) {
     }
     // 3) coger trabajo nuevo: solo si estoy disponible, libre y preparado
     if (!_disponible || !aj.proyecto || !aj.claude) return;
+    // (10-11, menos tráfico) a la cola se pregunta al momento si el timbre avisa de pedidos; si no, una vez por minuto
+    if (!pedidosNuevos && Date.now() - reclamadoA < 60000) return;
+    pedidosNuevos = false; reclamadoA = Date.now();
     const ocupadoAqui = !!(t && t.activa);
     // v3.47.0: preparar (guion y voces) lo puede hacer cualquier equipo; rodar, solo el que tiene Roblox Studio
     const puedeRodar = !!aj.blender && !(t && t.fondo) && !ocupadoAqui && !pasaDe("escena");
@@ -909,7 +935,8 @@ export function iniciarTrabajador(t) {
   // nunca la que está trabajando)
   let ultimaNumeracion = 0;
   const renumerar = async () => {
-    if (Date.now() - ultimaNumeracion < 30000 || !s.estudioRenumerar) return;
+    // (10-11) cada 3 min (y al oír en el timbre que cambió la cola): antes cada 30 s
+    if (Date.now() - ultimaNumeracion < 180000 || !s.estudioRenumerar) return;
     ultimaNumeracion = Date.now();
     try {
       const r = await pedidosApi("POST", { accion: "numeracion" });
@@ -938,8 +965,8 @@ export function iniciarTrabajador(t) {
     if (c) guardarMios(m);
   });
   comprobarRelevos().then(vuelta);
-  setInterval(comprobarRelevos, 60000);
+  setInterval(comprobarRelevos, 3 * 60000);
   // v3.41: con el timbre, los pedidos nuevos se cogen al instante; la vuelta de siempre queda de respaldo, más espaciada
-  alTimbre((d) => { if (d.que === "pedidos") vuelta(); });
-  setInterval(vuelta, 15000);
+  alTimbre((d) => { if (d.que === "pedidos") { pedidosNuevos = true; vuelta(); ultimaNumeracion = 0; } });
+  setInterval(vuelta, 15000);         // (lo de este equipo cada 15 s; la cola, ver «coger trabajo nuevo»)
 }
