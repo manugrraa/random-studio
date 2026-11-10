@@ -87,6 +87,30 @@ export function AvisoActualizacion() {
     }, 10000);
     return () => clearInterval(iv);
   }, [espera]);
+  /* (10-11, Manu: «hay que activar las actualizaciones automáticas, porque al ordenador no puedo acceder») cada versión
+   * nueva se instala SOLA al minuto (si hay algo en marcha, espera a que acabe, sin cortarlo). En el portátil, la que se
+   * prepara aquí solo cuando ya está publicada: reiniciar a mitad de la subida la cortaba y no llegaba al ordenador. */
+  const instalarRef = React.useRef(null);
+  const [cuenta, setCuenta] = useState(null);
+  const [aplazada, setAplazada] = useState(0);
+  useEffect(() => {
+    if (!nueva || nueva.otroElectron || estado || espera || Date.now() < aplazada) { setCuenta(null); return; }
+    let vivo = true, t = 60;
+    setCuenta(t);
+    const iv = setInterval(async () => {
+      t -= 1; if (vivo) setCuenta(Math.max(0, t));
+      if (t > 0) return;
+      clearInterval(iv);
+      if (nueva.local) {
+        // (portátil) primero que quede publicada para los demás
+        try { const v = await actualizacionApi("GET"); if (num(v.version) < num(nueva.version)) { await publicarSiToca(); if (vivo) setAplazada(Date.now() + 60000); return; } }
+        catch (e) { if (vivo) setAplazada(Date.now() + 60000); return; }
+      }
+      if (vivo && instalarRef.current) instalarRef.current();
+    }, 1000);
+    return () => { vivo = false; clearInterval(iv); };
+  }, [nueva && nueva.version, estado, espera, aplazada]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!aplazada) return; const t = setTimeout(() => { setAplazada(0); setOculto(false); }, Math.max(0, aplazada - Date.now()) + 500); return () => clearTimeout(t); }, [aplazada]);
   if (!nueva || oculto) return null;
   /* v3.41.4: «Actualizar ahora» con algo en marcha (un render, unas voces…) ya no lo corta: este equipo deja de coger
    * trabajo, no encadena la etapa siguiente y se actualiza en cuanto termina la que está haciendo. */
@@ -102,6 +126,7 @@ export function AvisoActualizacion() {
     }
     aplicar();
   };
+  instalarRef.current = instalar;
   const cancelarEspera = () => { setEspera(null); if (SF().historiasPausarEncadenado) SF().historiasPausarEncadenado(false); ponerDisponible(true); };
   const aplicar = async () => {
     setEstado(nueva.local ? "Guardando todo y reiniciando…" : "Bajando la versión " + nueva.version + " (unos segundos)… luego se reinicia sola");
@@ -124,8 +149,9 @@ export function AvisoActualizacion() {
             <button onClick={cancelarEspera} className="rs-btn sm ghost">Cancelar</button></>
         : estado ? <><span style={{ fontWeight: 600 }}>{estado}</span>
             {estado.startsWith("❌") && <button onClick={instalar} className="rs-btn sm primary">Reintentar</button>}</>
-        : <button onClick={instalar} className="rs-btn sm primary">Actualizar ahora</button>}
-      {!estado && !espera && <button onClick={() => setOculto(true)} className="rs-btn sm ghost">Luego</button>}
+        : <>{cuenta != null && <span style={{ fontWeight: 600 }}>Se actualiza sola en {cuenta} s</span>}
+            <button onClick={instalar} className="rs-btn sm primary">Actualizar ahora</button></>}
+      {!estado && !espera && <button onClick={() => { setOculto(true); setAplazada(Date.now() + 30 * 60000); }} className="rs-btn sm ghost" title="Vuelve a intentarlo sola en 30 min">Luego</button>}
     </div>);
 }
 
