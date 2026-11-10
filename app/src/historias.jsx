@@ -10,6 +10,7 @@ import { alTimbre } from "./timbre";
 import { AccionesDeVista } from "./base";
 import { VideoDrive } from "./drive_video";
 import { Recopilaciones } from "./recopilaciones";
+import { ProgramarShort } from "./redes";
 
 /* ============================ HISTORIAS (v3.21; v3.30 estudio completo) ============================
  * Todo el proceso de RandomHistorias dentro del Studio, con una «carpeta» por historia:
@@ -278,7 +279,7 @@ function ElegirMiniatura({ det, toast, onHecha }) {
 
 /* (5-11, Manu) elegir la miniatura en el Short ENTREGADO: vale para cualquier historia que esté en este equipo, aunque la
  * hiciera el ordenador (sin fotos de sus planos aquí). Paras el vídeo en el fotograma que quieras y se usa ese. */
-function ElegirMiniaturaShort({ nombre, toast, plegado }) {
+function ElegirMiniaturaShort({ nombre, toast, plegado, onHecha }) {
   const [abierto, setAbierto] = useState(!plegado);
   const [d, setD] = useState(null);
   const [haciendo, setHaciendo] = useState(false);
@@ -297,6 +298,7 @@ function ElegirMiniaturaShort({ nombre, toast, plegado }) {
       const r = await SF().historiasMiniaturaEntrega(nombre, vid.current.currentTime);
       setD(x => ({ ...x, miniatura: r.miniatura }));
       avisar("Miniatura cambiada: " + nombre + " - miniatura.png");
+      onHecha && onHecha();
     } catch (e) { avisar("No se pudo: " + String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
     setHaciendo(false);
   };
@@ -318,12 +320,12 @@ function ElegirMiniaturaShort({ nombre, toast, plegado }) {
 }
 
 // ------------------------------------------------------------------ terminadas (3-11): aparte, plegadas, y borrar varias
-function Terminadas({ lista, selId, setSelId, toast, alBorrar }) {
+function Terminadas({ lista, selId, setSelId, toast, alBorrar, otras = [], otraSel, setOtraSel }) {
   const [abierta, setAbierta] = useState(false);
   const [elegir, setElegir] = useState(false);
   const [sel, setSel] = useState(() => new Set());
   const [borrando, setBorrando] = useState(false);
-  if (!lista.length) return null;
+  if (!lista.length && !otras.length) return null;
   const quitar = async (ids) => {
     if (!ids.length) return;
     if (!confirm("¿Borrar " + (ids.length === 1 ? "esta historia terminada" : "estas " + ids.length + " historias terminadas") + " para liberar espacio?\n\nSe borra DEL TODO su carpeta de trabajo (planos, renders, audio). Los Shorts entregados, sus miniaturas y las copias de Drive no se tocan.")) return;
@@ -336,9 +338,9 @@ function Terminadas({ lista, selId, setSelId, toast, alBorrar }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
       <button onClick={() => setAbierta(a => !a)} style={{ ...botonSec, display: "flex", justifyContent: "space-between", color: "var(--green)" }}>
-        <span>✅ Terminadas · {lista.length}</span><span>{abierta ? "▲" : "▼"}</span></button>
+        <span>✅ Terminadas · {lista.length + otras.length}</span><span>{abierta ? "▲" : "▼"}</span></button>
       {abierta && <>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {!!lista.length && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {!elegir ? <button onClick={() => setElegir(true)} style={{ ...botonSec, padding: "6px 10px" }}>Elegir para borrar</button>
             : <>
               <button disabled={!sel.size || borrando} onClick={() => quitar([...sel])} style={{ ...botonSec, padding: "6px 10px", color: "var(--red)", opacity: sel.size ? 1 : .5 }}>🗑 Borrar {sel.size || ""}</button>
@@ -346,7 +348,7 @@ function Terminadas({ lista, selId, setSelId, toast, alBorrar }) {
               <button onClick={() => { setElegir(false); setSel(new Set()); }} style={{ ...botonSec, padding: "6px 10px" }}>Cancelar</button>
             </>}
           {!elegir && <button disabled={borrando} onClick={() => quitar(lista.map(h => h.id))} style={{ ...botonSec, padding: "6px 10px", color: "var(--red)" }}>🗑 Borrar todas</button>}
-        </div>
+        </div>}
         {borrando && <div style={{ fontSize: 12, color: "var(--text-3)" }}>Borrando…</div>}
         {lista.map(h => {
           const on = sel.has(h.id), activa = h.id === selId;
@@ -362,7 +364,52 @@ function Terminadas({ lista, selId, setSelId, toast, alBorrar }) {
               </div>
             </button>);
         })}
+        {/* (10-11) las que hizo otro equipo y ya están aquí: elegir su miniatura y programarlas */}
+        {!!otras.length && !elegir && <>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em", marginTop: 6 }}>HECHAS EN OTRO EQUIPO · {otras.length}</div>
+          {otras.map(o => (
+            <button key={o.nombre} onClick={() => setOtraSel(o.nombre)}
+              style={{ display: "flex", gap: 8, alignItems: "center", textAlign: "left", padding: "6px 8px", borderRadius: 10,
+                border: "1px solid " + (otraSel === o.nombre ? "var(--border-gold)" : "var(--border)"), background: "var(--card)" }}>
+              <div style={{ width: 26, height: 46, borderRadius: 6, overflow: "hidden", flexShrink: 0, background: "var(--card-2)" }}>{o.miniatura && <img src={o.miniatura} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{o.nombre}</div>
+            </button>))}
+        </>}
       </>}
+    </div>);
+}
+
+/* (10-11, Manu: «programar los Shorts de las historias desde el Studio») el mismo cuadro del calendario de redes, con
+ * el día y la red elegidos aquí; la miniatura sale sola (la de la carpeta del Short) */
+function BotonProgramar({ nombre, toast }) {
+  const [ruta, setRuta] = useState(null);
+  const abrir = async () => {
+    try {
+      const r = await SF().historiasEntregaVideo(nombre);
+      if (!r || !r.ruta) return toast("El Short todavía no está en este equipo");
+      setRuta(r.ruta);
+    } catch (e) { toast("No se pudo: " + (e.message || e)); }
+  };
+  return <>
+    <button onClick={abrir} className="grad-gold" style={botonOro}>📅 Programar</button>
+    {ruta && <ProgramarShort ruta={ruta} nombre={nombre} toast={toast} onCerrar={() => setRuta(null)} />}
+  </>;
+}
+const nombreEntrega = (det) => det && det.carpetaEntrega ? String(det.carpetaEntrega).split(/[\\/]/).pop() : "";
+
+/* (10-11, Manu: «seleccionar las miniaturas de las historias hechas del ordenador en mi portátil») un Short que hizo
+ * otro equipo y está aquí (se bajó de Drive): verlo, elegir su miniatura y programarlo */
+function OtraTerminada({ o, toast, onCambio }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+      <div style={{ ...tarjeta, borderColor: "rgba(74,222,128,.4)" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em" }}>HECHA EN OTRO EQUIPO · {new Date(o.fecha).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</div>
+        <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 19, margin: "4px 0 12px", lineHeight: 1.25 }}>{o.nombre}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <BotonProgramar nombre={o.nombre} toast={toast} />
+        </div>
+      </div>
+      <ElegirMiniaturaShort key={o.nombre} nombre={o.nombre} toast={toast} onHecha={onCambio} />
     </div>);
 }
 
@@ -386,6 +433,7 @@ function Terminado({ det, mat, toast, onGuardada }) {
             style={{ width: "100%", fontSize: 13, lineHeight: 1.5, padding: 10, borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)", resize: "vertical" }} />
           <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
             <button onClick={guardar} className="grad-gold" style={botonOro}>{nota.trim() ? "Guardar la nota" : "Está perfecto"}</button>
+            {det.entregada && nombreEntrega(det) && <BotonProgramar nombre={nombreEntrega(det)} toast={toast} />}
             {det.entregada && <button onClick={() => SF().historiasAbrir(det.id, "entrega")} style={botonSec}>Abrir la carpeta del Short</button>}
           </div>
           {mat.nota_final && <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 8 }}>Nota guardada el {new Date(mat.nota_final.fecha).toLocaleDateString("es-ES")}</div>}
@@ -620,6 +668,11 @@ export function HistoriasView({ toast }) {
   const [tarea, setTarea] = useState(null);
   const [ahora, setAhora] = useState(Date.now());
   const [informe, setInforme] = useState(null);
+  // (10-11) Shorts que hizo otro equipo y están aquí (se bajaron de Drive)
+  const [otras, setOtras] = useState([]);
+  const [otraSel, setOtraSel] = useState(null);
+  const cargarOtras = useCallback(() => { if (SF() && SF().historiasEntregasOtras) SF().historiasEntregasOtras().then(r => setOtras((r && r.lista) || [])).catch(() => {}); }, []);
+  const elegirLocal = (id) => { setOtraSel(null); setSelId(id); };
   const listaRef = useRef([]);
   // «Historia 07 · TÍTULO» (mientras no hay guion, el título de la idea)
   const nombreDe = (id) => { if (/^R\d{2}$/.test(id)) return "Recopilación " + id.slice(1); const h = (listaRef.current || []).find(x => x.id === id); return "Historia " + id.slice(0, 2) + (h && h.titulo ? " · «" + h.titulo + "»" : ""); };
@@ -629,6 +682,7 @@ export function HistoriasView({ toast }) {
       const r = await SF().historiasLista();
       if (!r.ok) { setError(r.error); return; }
       setLista(r.historias); listaRef.current = r.historias; setError("");
+      cargarOtras();
       // (si la elegida se borró o se renumeró, se elige otra)
       setSelId(s => (s && r.historias.some(h => h.id === s)) ? s : (r.historias[0] && r.historias[0].id));
     } catch (e) { setError(e.message || String(e)); }
@@ -756,10 +810,10 @@ export function HistoriasView({ toast }) {
             <button onClick={() => setPestana("ideas")} style={{ ...botonSec, borderStyle: "dashed", padding: 12, color: "var(--gold)" }}>+ Nueva historia desde una idea</button>
             {!lista && !error && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Cargando…</div>}
             {(lista || []).filter(h => !h.entregada).map(h => {
-              const activa = h.id === selId, et = h.etapas || [];
+              const activa = h.id === selId && !otraSel, et = h.etapas || [];
               const hechas = et.filter(x => x.estado === "hecho").length, rev = et.find(x => x.estado === "revisar"), trab = trabajaAqui(h.id);
               return (
-                <button key={h.id} onClick={() => setSelId(h.id)}
+                <button key={h.id} onClick={() => elegirLocal(h.id)}
                   style={{ display: "flex", gap: 10, alignItems: "center", textAlign: "left", padding: 8, borderRadius: 14,
                     border: `1px solid ${activa ? "var(--border-gold)" : rev ? "rgba(245,158,11,.5)" : "var(--border)"}`,
                     background: activa ? "linear-gradient(135deg,rgba(212,175,55,0.14),rgba(212,175,55,0.03))" : "var(--card)" }}>
@@ -779,11 +833,13 @@ export function HistoriasView({ toast }) {
                 </button>);
             })}
             {/* 3-11: las terminadas, solo aquí (plegadas), para elegir y borrar las que quieras y liberar espacio */}
-            <Terminadas lista={(lista || []).filter(h => h.entregada)} selId={selId} setSelId={setSelId} toast={toast} alBorrar={() => { setSelId(null); cargar(); }} />
+            <Terminadas lista={(lista || []).filter(h => h.entregada)} selId={otraSel ? null : selId} setSelId={elegirLocal} toast={toast} alBorrar={() => { setSelId(null); cargar(); }}
+              otras={otras} otraSel={otraSel} setOtraSel={setOtraSel} />
           </div>
 
           {/* detalle */}
-          {det && etapas && mat && (
+          {otraSel && otras.some(o => o.nombre === otraSel) && <OtraTerminada o={otras.find(o => o.nombre === otraSel)} toast={toast} onCambio={cargarOtras} />}
+          {!otraSel && det && etapas && mat && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
               <div style={{ ...tarjeta }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>

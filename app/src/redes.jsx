@@ -273,6 +273,41 @@ function Programar({ video, dia, red, cuentas, onCerrar, onHecho, toast }) {
     </div>);
 }
 
+/* ---------- (10-11, Manu: «programar los Shorts de las historias desde el Studio») ----------
+   Desde RandomHistorias, sin ir al calendario: se elige el día y la red aquí y sale el mismo cuadro de programar. */
+export function ProgramarShort({ ruta, nombre, onCerrar, toast }) {
+  const [est] = useSocial();
+  const [red, setRed] = useState(null);
+  const [dia, setDia] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 1); return isoDia(d); });
+  if (red) return <Programar video={{ video: ruta, nombre }} dia={dia} red={red} cuentas={est && est.cuentas} onCerrar={onCerrar} onHecho={onCerrar} toast={toast} />;
+  const conectada = r => r === "youtube" ? ytIsConnected() : !!(est && (est.cuentas || []).some(x => x.red === r));
+  const campo = { fontSize: 13, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--bg)", color: "var(--text)" };
+  return (
+    <div onClick={onCerrar} style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 420, maxWidth: "92vw", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: 18, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 16 }}>📅 Programar el Short</div>
+        <div style={{ fontSize: 13, color: "var(--text-2)" }}>«{nombre}»</div>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>Día
+          <input type="date" value={dia} min={isoDia(new Date())} onChange={e => e.target.value && setDia(e.target.value)} style={campo} /></label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {Object.keys(RED).map(r => {
+            const ok = conectada(r);
+            return (
+              <button key={r} disabled={!ok || (r !== "youtube" && !est)} onClick={() => setRed(r)}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--card-2)", opacity: ok ? 1 : .5, textAlign: "left" }}>
+                <b style={{ color: RED[r].color, width: 16 }}>{RED[r].icono}</b>
+                <span style={{ fontWeight: 700, fontSize: 13.5 }}>{RED[r].nombre}</span>
+                <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--text-3)" }}>{ok ? "a las " + ls("rds_redes_hora_" + r, HORA_DEF[r]) : r === "youtube" ? "conecta YouTube en este perfil" : !est ? "…" : "conéctalo en Calendario → Redes"}</span>
+              </button>);
+          })}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={onCerrar} style={{ fontSize: 13, padding: "8px 14px", borderRadius: 9, border: "1px solid var(--border)" }}>Cancelar</button>
+        </div>
+      </div>
+    </div>);
+}
+
 /* ---------- la vista de carriles ---------- */
 const mismaRuta = (a, b) => !!a && !!b && String(a).split("/").join("\\").toLowerCase() === String(b).split("/").join("\\").toLowerCase();
 export function CarrilesView({ videos, weekOffset, setWeekOffset, setCalView, onOpen, toast }) {

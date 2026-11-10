@@ -374,7 +374,24 @@ const archivosEntrega = (dir) => {
 };
 ipcMain.handle("historias-entrega-video", async (e, nombre) => {
   const dir = carpetaEntregaDe(nombre), a = archivosEntrega(dir);
-  return { ok: true, video: a.mp4 ? urlArchivo(a.mp4) : null, miniatura: a.png ? miniDataUrl(a.png, 360) : null };
+  return { ok: true, video: a.mp4 ? urlArchivo(a.mp4) : null, ruta: a.mp4 || null, miniatura: a.png ? miniDataUrl(a.png, 360) : null };
+});
+/* (10-11, Manu: «seleccionar las miniaturas de las historias hechas del ordenador en mi portátil») los Shorts entregados
+ * que están en este equipo pero cuya historia no (los hizo otro equipo y se bajaron de Drive) */
+ipcMain.handle("historias-entregas-otras", async () => {
+  const propias = new Set();
+  try { for (const n of fs.readdirSync(histDir())) if (/^\d{2}_/.test(n)) { const t = titulo(path.join(histDir(), n)); if (t) propias.add(tituloArchivo(t)); } } catch (x) {}
+  const out = [];
+  let ls = []; try { ls = fs.readdirSync(listasDir(), { withFileTypes: true }); } catch (x) { return { ok: true, lista: [] }; }
+  for (const d of ls) {
+    if (!d.isDirectory() || d.name.startsWith(".") || propias.has(d.name)) continue;
+    const dir = path.join(listasDir(), d.name), a = archivosEntrega(dir);
+    if (!a.mp4) continue;
+    let fecha = 0; try { fecha = fs.statSync(a.mp4).mtimeMs; } catch (x) {}
+    out.push({ nombre: d.name, fecha, miniatura: a.png ? miniDataUrl(a.png, 60) : null });
+  }
+  out.sort((x, y) => y.fecha - x.fecha);
+  return { ok: true, lista: out };
 });
 ipcMain.handle("historias-miniatura-entrega", async (e, nombre, t) => {
   const dir = carpetaEntregaDe(nombre), a = archivosEntrega(dir);

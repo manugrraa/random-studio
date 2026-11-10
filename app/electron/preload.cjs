@@ -197,6 +197,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   historiasCancelar: (soloId) => ipcRenderer.invoke("historias-cancelar", soloId),
   historiasMiniatura: (id, plano, t) => ipcRenderer.invoke("historias-miniatura", id, plano, t),
   historiasEntregaVideo: (nombre) => ipcRenderer.invoke("historias-entrega-video", nombre),
+  historiasEntregasOtras: () => ipcRenderer.invoke("historias-entregas-otras"),
   vigilanteSistema: () => ipcRenderer.invoke("vigilante-sistema"),
   // (5/11) recopilaciones (recopilaciones.cjs)
   recopLista: () => ipcRenderer.invoke("recop-lista"),
