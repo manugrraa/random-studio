@@ -274,10 +274,13 @@ function python(nn, etapa, args, sender, alAcabar) {
 // el vídeo de donde salen los fotogramas de la miniatura: el Short SIN subtítulos si lo hay (entregado o en su historia)
 function videoLimpio(nn, t) {
   const c = carpetaRec(nn), n = nombreSeguro(t);
-  const entregado = path.join(c, n, n + "_sin_subs.mp4");
-  if (existe(entregado)) return { f: entregado, limpio: true };
+  // (14-11) primero el Short SIN INTERFAZ (sin cifras, placas ni subtítulos); si no hay, el de sin subtítulos
   const o = ordenes()[n];
-  if (o) { const s = path.join(histDir(), o.id, `historia${o.id.slice(0, 2)}_final_sin_subs.mp4`); if (existe(s)) return { f: s, limpio: true }; }
+  for (const suf of ["_sin_interfaz", "_sin_subs"]) {
+    const entregado = path.join(c, n, n + suf + ".mp4");
+    if (existe(entregado)) return { f: entregado, limpio: true, sinInterfaz: suf === "_sin_interfaz" };
+    if (o) { const s = path.join(histDir(), o.id, `historia${o.id.slice(0, 2)}_final${suf}.mp4`); if (existe(s)) return { f: s, limpio: true, sinInterfaz: suf === "_sin_interfaz" }; }
+  }
   return { f: path.join(c, n, n + ".mp4"), limpio: false };
 }
 
