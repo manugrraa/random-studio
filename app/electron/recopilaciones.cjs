@@ -294,16 +294,16 @@ function textosSubida(nn) {
   const frase = (t) => { t = String(t).trim().replace(/!+$/, ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); };
   const ejemplos = r.historias.slice(0, 3).map(h => frase(h.titulo).replace(/^(En este pueblo|Aquí) /i, "").toLowerCase());
   const titulo = `${n} PUEBLOS CON REGLAS IMPOSIBLES 😱 Historias de Roblox (Recopilación ${nn})`;
+  // (14-11, Manu: «como la de la primera recopilación») la misma forma que la 01: 3 ejemplos, sin párrafo extra y con
+  // los mismos espacios
   const desc = `${n} historias de Roblox seguidas: los pueblos más raros a los que me he mudado, cada uno con una regla imposible. ` +
-    `${ejemplos.length >= 2 ? "En uno " + ejemplos[0] + ", en otro " + ejemplos[1] + "… " : ""}y si rompes la regla, mejor no te cuento lo que pasa. 🏘️
+    `${ejemplos.length >= 3 ? "En uno " + ejemplos[0] + ", en otro " + ejemplos[1] + ", en otro " + ejemplos[2] + "… " : ejemplos.length === 2 ? "En uno " + ejemplos[0] + ", en otro " + ejemplos[1] + "… " : ""}y si rompes la regla, mejor no te cuento lo que pasa. 🏘️
 
-` +
-    `Recopilación ${nn} de historias animadas de Roblox en español: ${r.historias.slice(3, 7).map(h => frase(h.titulo).toLowerCase()).join(", ")} y mucho más. ` +
-    `Más de ${Math.floor((r.total + 45) / 60)} minutos de historias para ver de una vez.
 
 ` +
     `⏱️ CAPÍTULOS
 ${(r.capitulos || "").trim()}
+
 
 ` +
     `💬 ¿A qué pueblo me mudo ahora? Déjamelo en los comentarios: igual la próxima historia es la tuya.
