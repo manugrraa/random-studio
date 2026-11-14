@@ -17,7 +17,7 @@ const raiz = () => process.env.RANDOMHISTORIAS_DIR || carpetas().historias;
 const entregas = () => carpetas().entregas;
 const recDir = () => path.join(entregas(), ".Recopilaciones");
 const histDir = () => path.join(raiz(), "historias");
-const POR_GRUPO = 12;
+const POR_GRUPO = 14;          // (14-11, Manu) 14 historias: así pasa de 20 minutos siempre
 const MIN_SEG = 20 * 60;
 
 const existe = (p) => { try { return fs.existsSync(p); } catch (e) { return false; } };
@@ -357,6 +357,31 @@ ipcMain.handle("recop-elegir", async (e, nn, ideaId) => {
   } catch (x) { return { ok: false, error: x.message }; }
 });
 ipcMain.handle("recop-introoutro", async (e, nn) => { try { return lanzarIntroOutro(nnValido(nn), e.sender); } catch (x) { return { ok: false, error: x.message }; } });
+/* (14-11, Manu: «la miniatura de la recopilación, 4 miniaturas de los Shorts que yo elija, sin subtítulos») en qué segundo
+ * del Short está su miniatura (tools/recopilacion/momento_miniatura.py, comparando imágenes); con él se saca el mismo
+ * fotograma del Short sin subtítulos. Se guarda junto al Short para no repetirlo (vale mientras no cambie la miniatura). */
+ipcMain.handle("recop-momento-miniatura", async (e, nn, t) => {
+  try {
+    const c = carpetaRec(nnValido(nn)), n = nombreSeguro(t), dir = path.join(c, n);
+    const mp4 = path.join(dir, n + ".mp4"), png = path.join(dir, n + " - miniatura.png"), cache = path.join(dir, ".momento_miniatura.json");
+    if (!existe(mp4) || !existe(png)) return { ok: false, error: "Este Short no tiene miniatura" };
+    const clave = String(fs.statSync(png).mtimeMs);
+    try { const j = JSON.parse(fs.readFileSync(cache, "utf-8")); if (j.clave === clave) return { ok: true, segundo: j.segundo }; } catch (x) {}
+    // (sin bloquear la ventana mientras busca: unos 4 s por Short)
+    const r = await new Promise(ok => {
+      const p = spawn("python", [path.join(raiz(), "tools", "recopilacion", "momento_miniatura.py"), mp4, png],
+        { cwd: raiz(), windowsHide: true, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+      let stdout = "", stderr = "";
+      p.stdout.on("data", d => stdout += d); p.stderr.on("data", d => stderr += d);
+      const t0 = setTimeout(() => { try { p.kill(); } catch (x) {} }, 120000);
+      p.on("close", () => { clearTimeout(t0); ok({ stdout, stderr }); });
+    });
+    const j = JSON.parse(String(r.stdout || "").trim().split("\n").pop() || "{}");
+    if (typeof j.segundo !== "number") return { ok: false, error: (r.stderr || "no se encontró").slice(-200) };
+    try { fs.writeFileSync(cache, JSON.stringify({ clave, segundo: j.segundo, parecido: j.parecido })); } catch (x) {}
+    return { ok: true, segundo: j.segundo };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
 ipcMain.handle("recop-video-limpio", async (e, nn, t) => { try { const v = videoLimpio(nnValido(nn), t); return { ok: true, video: urlArchivo(v.f), limpio: v.limpio }; } catch (x) { return { ok: false, error: x.message }; } });
 // paneles: [{titulo, t (s), cx, cy, zoom}] ×4; título: [[texto, color], ...]
 ipcMain.handle("recop-miniatura", async (e, nn, paneles, titulo) => {

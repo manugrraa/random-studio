@@ -208,6 +208,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   recopElegir: (nn, ideaId) => ipcRenderer.invoke("recop-elegir", nn, ideaId),
   recopIntroOutro: (nn) => ipcRenderer.invoke("recop-introoutro", nn),
   recopVideoLimpio: (nn, t) => ipcRenderer.invoke("recop-video-limpio", nn, t),
+  recopMomentoMiniatura: (nn, t) => ipcRenderer.invoke("recop-momento-miniatura", nn, t),
   recopMiniatura: (nn, paneles, titulo) => ipcRenderer.invoke("recop-miniatura", nn, paneles, titulo),
   recopMontar: (nn) => ipcRenderer.invoke("recop-montar", nn),
   recopPublicada: (nn, v) => ipcRenderer.invoke("recop-publicada", nn, v),

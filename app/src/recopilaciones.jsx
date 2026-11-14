@@ -265,11 +265,45 @@ function Miniatura({ r, hacer, trabajando, toast }) {
   }, [r.numero, p.titulo]);
   useEffect(() => { if (ref.current && video) ref.current.currentTime = p.t || 0; }, [video]);   // eslint-disable-line react-hooks/exhaustive-deps
   const poner = (k, v) => setPaneles(ps => ps.map((x, i) => i === activo ? { ...x, [k]: v } : x));
+  /* (14-11, Manu) se eligen 4 MINIATURAS de los Shorts (en el orden de las franjas): de cada una se busca su momento
+   * en el Short y se usa ese fotograma del Short sin subtítulos */
+  const [elegidas, setElegidas] = useState([]);
+  const [buscando, setBuscando] = useState(false);
+  const alternar = (t) => setElegidas(es => es.includes(t) ? es.filter(x => x !== t) : es.length >= 4 ? es : [...es, t]);
+  const usarElegidas = async () => {
+    setBuscando(true);
+    try {
+      const nuevos = [];
+      for (const t of elegidas) {
+        const m = await SF().recopMomentoMiniatura(r.numero, t);
+        if (!m.ok) { toast("«" + t + "»: " + m.error); setBuscando(false); return; }
+        nuevos.push({ titulo: t, t: m.segundo, cy: 1000, zoom: 1 });
+      }
+      setPaneles(nuevos); setActivo(0);
+      toast("Listas las 4 franjas: revisa el recorte de cada una y pulsa «Hacer miniatura»");
+    } catch (e) { toast("No se pudo: " + (e.message || e)); }
+    setBuscando(false);
+  };
   // «EN ESTE PUEBLO...»: PUEBLO en rojo y el resto en blanco (como la 01); otro título va todo en blanco salvo la palabra PUEBLO
   const trozos = (txt) => { const m = txt.split(/(PUEBLO)/); return m.filter(Boolean).map(s => [s, s === "PUEBLO" ? "rojo" : "blanco"]); };
   return (
     <div className="rs-card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {r.miniatura && <img src={r.miniatura} alt="" style={{ width: "100%", maxWidth: 560, borderRadius: 10 }} />}
+      <div style={{ fontSize: 13, color: "var(--text-2)" }}>Elige 4 miniaturas de los Shorts, en el orden de las franjas (de izquierda a derecha). Se usan sin subtítulos.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(72px,1fr))", gap: 8 }}>
+        {r.historias.map(h => {
+          const i = elegidas.indexOf(h.titulo);
+          return (
+            <button key={h.titulo} onClick={() => alternar(h.titulo)} title={h.titulo}
+              style={{ position: "relative", padding: 0, borderRadius: 8, overflow: "hidden", aspectRatio: "9/16", background: "var(--card-2)",
+                border: i >= 0 ? "2px solid var(--gold)" : "1px solid var(--border)", opacity: h.miniatura ? 1 : .4 }}>
+              {h.miniatura && <img src={h.miniatura} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
+              {i >= 0 && <span style={{ position: "absolute", left: 4, top: 4, width: 20, height: 20, borderRadius: 10, background: "var(--gold)", color: "#000", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>}
+            </button>);
+        })}
+      </div>
+      <button className="rs-btn primary" style={{ alignSelf: "flex-start" }} disabled={elegidas.length !== 4 || buscando || trabajando} onClick={usarElegidas}>
+        {buscando ? "Buscando cada miniatura en su Short…" : elegidas.length === 4 ? "Usar estas 4" : "Elige " + (4 - elegidas.length) + " más"}</button>
       <div className="rs-seg" style={{ alignSelf: "flex-start" }}>
         {paneles.map((x, i) => <button key={i} className={i === activo ? "on" : ""} onClick={() => setActivo(i)}>Franja {i + 1}{x.t ? " · " + mmss(x.t) : ""}</button>)}
       </div>
