@@ -267,6 +267,23 @@ function Miniatura({ r, hacer, trabajando, toast }) {
   const poner = (k, v) => setPaneles(ps => ps.map((x, i) => i === activo ? { ...x, [k]: v } : x));
   /* (14-11, Manu) se eligen 4 MINIATURAS de los Shorts (en el orden de las franjas): de cada una se busca su momento
    * en el Short y se usa ese fotograma del Short sin subtítulos */
+  /* (14-11, Manu: «que me prepares candidatos») los momentos más vistosos de cada Short, ya recortados como franja
+   * (sin subtítulo); al pulsar uno se pone en la franja elegida y se pasa a la siguiente */
+  const [cands, setCands] = useState(null);
+  const [buscandoC, setBuscandoC] = useState(null);       // { progreso, total } mientras busca
+  useEffect(() => SF().onRecopProgreso ? SF().onRecopProgreso(d => { if (d.tipo === "candidatos" && String(d.nn) === String(r.numero)) setBuscandoC({ progreso: d.progreso, total: d.total }); }) : undefined, [r.numero]);
+  const proponer = async (rehacer) => {
+    setBuscandoC({ progreso: 0, total: r.historias.length });
+    const x = await SF().recopCandidatos(r.numero, !!rehacer).catch(e => ({ ok: false, error: e.message }));
+    setBuscandoC(null);
+    if (!x.ok) return toast("No se pudo: " + x.error);
+    setCands(x.candidatos);
+  };
+  const ponerCandidato = (c) => {
+    setPaneles(ps => { const n = [...ps]; while (n.length < 4) n.push({ titulo: "", t: 0, cy: 1000, zoom: 1 }); n[activo] = { titulo: c.titulo, t: c.segundo, cy: c.cy, zoom: c.zoom }; return n; });
+    toast("Franja " + (activo + 1) + ": «" + c.titulo + "»");
+    setActivo(a => Math.min(3, a + 1));
+  };
   const [elegidas, setElegidas] = useState([]);
   const [buscando, setBuscando] = useState(false);
   const alternar = (t) => setElegidas(es => es.includes(t) ? es.filter(x => x !== t) : es.length >= 4 ? es : [...es, t]);
@@ -304,6 +321,22 @@ function Miniatura({ r, hacer, trabajando, toast }) {
       </div>
       <button className="rs-btn primary" style={{ alignSelf: "flex-start" }} disabled={elegidas.length !== 4 || buscando || trabajando} onClick={usarElegidas}>
         {buscando ? "Buscando cada miniatura en su Short…" : elegidas.length === 4 ? "Usar estas 4" : "Elige " + (4 - elegidas.length) + " más"}</button>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button className="rs-btn" disabled={!!buscandoC || trabajando} onClick={() => proponer(false)}>
+          {buscandoC ? "Buscando momentos… " + buscandoC.progreso + "/" + buscandoC.total : "Proponer candidatos"}</button>
+        {cands && !buscandoC && <button className="rs-btn ghost" onClick={() => proponer(true)}>Volver a buscar</button>}
+        <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>Los momentos más vistosos de cada Short, ya como franja y sin subtítulo (≈5 s por Short)</span>
+      </div>
+      {cands && (<>
+        <div style={{ fontSize: 13, color: "var(--text-2)" }}>Pulsa uno para ponerlo en la <b>Franja {activo + 1}</b> (luego pasa a la siguiente).</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(64px,1fr))", gap: 6, maxHeight: 420, overflowY: "auto" }}>
+          {cands.map((c, i) => (
+            <button key={i} onClick={() => ponerCandidato(c)} title={c.titulo + " · " + mmss(c.segundo)}
+              style={{ padding: 0, borderRadius: 6, overflow: "hidden", border: paneles.some(x => x.titulo === c.titulo && Math.abs((x.t || 0) - c.segundo) < 0.05) ? "2px solid var(--gold)" : "1px solid var(--border)", background: "#000" }}>
+              <img src={c.imagen} alt="" loading="lazy" style={{ width: "100%", display: "block" }} />
+            </button>))}
+        </div>
+      </>)}
       <div className="rs-seg" style={{ alignSelf: "flex-start" }}>
         {paneles.map((x, i) => <button key={i} className={i === activo ? "on" : ""} onClick={() => setActivo(i)}>Franja {i + 1}{x.t ? " · " + mmss(x.t) : ""}</button>)}
       </div>

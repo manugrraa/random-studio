@@ -386,6 +386,36 @@ ipcMain.handle("recop-momento-miniatura", async (e, nn, t) => {
     return { ok: true, segundo: j.segundo };
   } catch (x) { return { ok: false, error: x.message }; }
 });
+/* (14-11, Manu: «que me prepares candidatos, dentro de RandomHistorias») los momentos más vistosos de cada Short para
+ * una franja (tools/recopilacion/candidatos.py): del Short sin subtítulos si lo hay; si no, con la franja subida para
+ * dejar fuera el subtítulo. Se guardan en .candidatos/ y no se repiten mientras no cambien los Shorts. */
+ipcMain.handle("recop-candidatos", async (e, nn, rehacer) => {
+  try {
+    const r = leerRec(nnValido(nn)), dir = path.join(r.carpeta, ".candidatos"), cache = path.join(dir, "candidatos.json");
+    const lista = r.historias.filter(h => !h.falta).map(h => { const v = videoLimpio(r.numero, h.titulo); let m = 0; try { m = fs.statSync(v.f).mtimeMs; } catch (x) {} return { titulo: h.titulo, video: v.f, limpio: v.limpio, m }; });
+    const clave = lista.map(x => x.titulo + ":" + x.m).join("|");
+    const conUrl = (cs) => cs.filter(x => existe(x.imagen)).map(x => ({ ...x, imagen: urlArchivo(x.imagen) }));
+    if (!rehacer) { try { const j = JSON.parse(fs.readFileSync(cache, "utf-8")); if (j.clave === clave) return { ok: true, candidatos: conUrl(j.candidatos) }; } catch (x) {} }
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (x) {}
+    fs.mkdirSync(dir, { recursive: true });
+    const entrada = path.join(dir, "lista.json");
+    fs.writeFileSync(entrada, JSON.stringify(lista.map(({ m, ...x }) => x)));
+    const candidatos = await new Promise((ok, ko) => {
+      const p = spawn("python", [path.join(raiz(), "tools", "recopilacion", "candidatos.py"), entrada, dir],
+        { cwd: raiz(), windowsHide: true, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+      const cs = []; let resto = "", err = "";
+      p.stdout.on("data", d => {
+        resto += d; const ls = resto.split("\n"); resto = ls.pop();
+        for (const l of ls) { try { const j = JSON.parse(l); if (j.progreso) { try { e.sender.send("recop-progreso", { nn: r.numero, tipo: "candidatos", progreso: j.progreso, total: j.total }); } catch (x) {} } else if (j.imagen) cs.push(j); } catch (x) {} }
+      });
+      p.stderr.on("data", d => err += d);
+      p.on("close", code => code === 0 ? ok(cs) : ko(new Error(err.split("\n").filter(Boolean).slice(-2).join(" | ") || "código " + code)));
+    });
+    fs.writeFileSync(cache, JSON.stringify({ clave, candidatos }));
+    registro.anotar("recopilaciones", "candidatos para la miniatura de la " + r.numero + ": " + candidatos.length);
+    return { ok: true, candidatos: conUrl(candidatos) };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
 ipcMain.handle("recop-video-limpio", async (e, nn, t) => { try { const v = videoLimpio(nnValido(nn), t); return { ok: true, video: urlArchivo(v.f), limpio: v.limpio }; } catch (x) { return { ok: false, error: x.message }; } });
 // paneles: [{titulo, t (s), cx, cy, zoom}] ×4; título: [[texto, color], ...]
 ipcMain.handle("recop-miniatura", async (e, nn, paneles, titulo) => {
