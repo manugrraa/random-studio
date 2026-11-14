@@ -293,7 +293,8 @@ function textosSubida(nn) {
   const n = r.historias.length;
   const frase = (t) => { t = String(t).trim().replace(/!+$/, ""); return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase(); };
   const ejemplos = r.historias.slice(0, 3).map(h => frase(h.titulo).replace(/^(En este pueblo|Aquí) /i, "").toLowerCase());
-  const titulo = `${n} PUEBLOS CON REGLAS IMPOSIBLES 😱 Historias de Roblox (Recopilación ${nn})`;
+  // (14-11, Manu) el título de la 01, tal cual
+  const titulo = `Me mudé a ESTOS PUEBLOS con REGLAS IMPOSIBLES 😱 | Historias Animadas de Roblox`;
   // (14-11, Manu: «como la de la primera recopilación») la misma forma que la 01: 3 ejemplos, sin párrafo extra y con
   // los mismos espacios
   const desc = `${n} historias de Roblox seguidas: los pueblos más raros a los que me he mudado, cada uno con una regla imposible. ` +
