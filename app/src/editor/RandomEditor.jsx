@@ -199,8 +199,9 @@ export function RandomEditor({ toast }) {
     }));
   });
 
-  // proxies de los vídeos de la principal, de uno en uno (la gráfica los hace en segundos) y en caché
-  const rutasVideo = [...new Set((v1 ? v1.clips : []).map(c=>c.ruta))];
+  // proxies de los vídeos, de uno en uno (la gráfica los hace en segundos) y en caché
+  // (14-11) de TODAS las pistas de vídeo: los planos de encima se leían del original y daban tirones con varias capas
+  const rutasVideo = [...new Set(p.pistas.filter(pi=>pi.tipo==="video").flatMap(pi=>pi.clips).map(c=>c.ruta).filter(r=>r && !M.IMAGEN.test(r)))];
   useEffect(()=>{
     if(!usarProxies) return;
     const q = colaProxy.current;
