@@ -264,7 +264,7 @@ function Miniatura({ r, hacer, trabajando, toast }) {
     SF().recopVideoLimpio(r.numero, p.titulo).then(v => setVideo(v.ok ? v : null));
   }, [r.numero, p.titulo]);
   useEffect(() => { if (ref.current && video) ref.current.currentTime = p.t || 0; }, [video]);   // eslint-disable-line react-hooks/exhaustive-deps
-  const poner = (k, v) => setPaneles(ps => ps.map((x, i) => i === activo ? { ...x, [k]: v } : x));
+  const poner = (k, v) => setPaneles(ps => ps.map((x, i) => i === activo ? { ...x, [k]: v, ...(k === "titulo" ? { vista: null } : {}) } : x));
   /* (14-11, Manu) se eligen 4 MINIATURAS de los Shorts (en el orden de las franjas): de cada una se busca su momento
    * en el Short y se usa ese fotograma del Short sin subtítulos */
   /* (14-11, Manu: «que me prepares candidatos») los momentos más vistosos de cada Short, ya recortados como franja
@@ -279,48 +279,54 @@ function Miniatura({ r, hacer, trabajando, toast }) {
     if (!x.ok) return toast("No se pudo: " + x.error);
     setCands(x.candidatos);
   };
-  const ponerCandidato = (c) => {
-    setPaneles(ps => { const n = [...ps]; while (n.length < 4) n.push({ titulo: "", t: 0, cy: 1000, zoom: 1 }); n[activo] = { titulo: c.titulo, t: c.segundo, cy: c.cy, zoom: c.zoom }; return n; });
-    toast("Franja " + (activo + 1) + ": «" + c.titulo + "»");
-    setActivo(a => Math.min(3, a + 1));
+  const ponerCandidato = (c) => asignar({ titulo: c.titulo, t: c.segundo, cy: c.cy, zoom: c.zoom, vista: c.imagen });
+  /* (14-11, Manu: «elegir las que yo quiera de las miniaturas ya hechas más las de los candidatos») las dos cosas van
+   * igual: lo que pulses entra en la franja elegida y se pasa a la siguiente. La miniatura hecha se busca en su Short
+   * (su segundo) y, si ese Short no tiene versión sin subtítulos, la franja sube para dejar fuera el subtítulo. */
+  const [buscando, setBuscando] = useState(null);       // título de la miniatura que se está buscando
+  const asignar = (panel) => {
+    const i = activo;
+    setPaneles(ps => { const n = [...ps]; while (n.length < 4) n.push({ titulo: "", t: 0, cy: 1000, zoom: 1 }); n[i] = panel; return n; });
+    toast("Franja " + (i + 1) + ": «" + panel.titulo + "»");
+    setActivo(Math.min(3, i + 1));
   };
-  const [elegidas, setElegidas] = useState([]);
-  const [buscando, setBuscando] = useState(false);
-  const alternar = (t) => setElegidas(es => es.includes(t) ? es.filter(x => x !== t) : es.length >= 4 ? es : [...es, t]);
-  const usarElegidas = async () => {
-    setBuscando(true);
+  const ponerMiniatura = async (h) => {
+    setBuscando(h.titulo);
     try {
-      const nuevos = [];
-      for (const t of elegidas) {
-        const m = await SF().recopMomentoMiniatura(r.numero, t);
-        if (!m.ok) { toast("«" + t + "»: " + m.error); setBuscando(false); return; }
-        nuevos.push({ titulo: t, t: m.segundo, cy: 1000, zoom: 1 });
-      }
-      setPaneles(nuevos); setActivo(0);
-      toast("Listas las 4 franjas: revisa el recorte de cada una y pulsa «Hacer miniatura»");
+      const [m, v] = await Promise.all([SF().recopMomentoMiniatura(r.numero, h.titulo), SF().recopVideoLimpio(r.numero, h.titulo)]);
+      if (!m.ok) return toast("«" + h.titulo + "»: " + m.error);
+      const limpio = v && v.ok && v.limpio;
+      asignar({ titulo: h.titulo, t: m.segundo, cy: limpio ? 1000 : 662, zoom: limpio ? 1 : 1.45, vista: h.miniatura });
     } catch (e) { toast("No se pudo: " + (e.message || e)); }
-    setBuscando(false);
+    finally { setBuscando(null); }
   };
+  const vistaDe = (x) => x.vista || ((r.historias.find(h => h.titulo === x.titulo) || {}).miniatura) || null;
   // «EN ESTE PUEBLO...»: PUEBLO en rojo y el resto en blanco (como la 01); otro título va todo en blanco salvo la palabra PUEBLO
   const trozos = (txt) => { const m = txt.split(/(PUEBLO)/); return m.filter(Boolean).map(s => [s, s === "PUEBLO" ? "rojo" : "blanco"]); };
   return (
     <div className="rs-card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {r.miniatura && <img src={r.miniatura} alt="" style={{ width: "100%", maxWidth: 560, borderRadius: 10 }} />}
-      <div style={{ fontSize: 13, color: "var(--text-2)" }}>Elige 4 miniaturas de los Shorts, en el orden de las franjas (de izquierda a derecha). Se usan sin subtítulos.</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(72px,1fr))", gap: 8 }}>
-        {r.historias.map(h => {
-          const i = elegidas.indexOf(h.titulo);
-          return (
-            <button key={h.titulo} onClick={() => alternar(h.titulo)} title={h.titulo}
-              style={{ position: "relative", padding: 0, borderRadius: 8, overflow: "hidden", aspectRatio: "9/16", background: "var(--card-2)",
-                border: i >= 0 ? "2px solid var(--gold)" : "1px solid var(--border)", opacity: h.miniatura ? 1 : .4 }}>
-              {h.miniatura && <img src={h.miniatura} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
-              {i >= 0 && <span style={{ position: "absolute", left: 4, top: 4, width: 20, height: 20, borderRadius: 10, background: "var(--gold)", color: "#000", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>}
-            </button>);
-        })}
+      {/* las 4 franjas: pulsa una para elegir qué va en ella */}
+      <div style={{ fontSize: 13, color: "var(--text-2)" }}>Elige la franja y luego pulsa una miniatura de un Short o un candidato: entra ahí y pasa a la siguiente. Puedes mezclar las dos.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 72px)", gap: 8 }}>
+        {[0, 1, 2, 3].map(i => { const x = paneles[i] || {}; const v = x.titulo ? vistaDe(x) : null; return (
+          <button key={i} onClick={() => setActivo(i)} title={x.titulo || "Vacía"}
+            style={{ position: "relative", padding: 0, borderRadius: 8, overflow: "hidden", aspectRatio: "9/16", background: "var(--card-2)",
+              border: i === activo ? "2px solid var(--gold)" : "1px solid var(--border)", boxShadow: i === activo ? "0 0 0 3px rgba(212,175,55,0.25)" : "none" }}>
+            {v && <img src={v} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
+            <span style={{ position: "absolute", left: 4, top: 4, width: 20, height: 20, borderRadius: 10, background: i === activo ? "var(--gold)" : "rgba(0,0,0,.6)", color: i === activo ? "#000" : "#fff", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+          </button>); })}
       </div>
-      <button className="rs-btn primary" style={{ alignSelf: "flex-start" }} disabled={elegidas.length !== 4 || buscando || trabajando} onClick={usarElegidas}>
-        {buscando ? "Buscando cada miniatura en su Short…" : elegidas.length === 4 ? "Usar estas 4" : "Elige " + (4 - elegidas.length) + " más"}</button>
+      <div className="rs-kicker">Miniaturas de los Shorts</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(64px,1fr))", gap: 6 }}>
+        {r.historias.map(h => (
+          <button key={h.titulo} disabled={!h.miniatura || !!buscando} onClick={() => ponerMiniatura(h)} title={h.titulo}
+            style={{ position: "relative", padding: 0, borderRadius: 6, overflow: "hidden", aspectRatio: "9/16", background: "var(--card-2)",
+              border: paneles.some(x => x.titulo === h.titulo && x.vista === h.miniatura) ? "2px solid var(--gold)" : "1px solid var(--border)", opacity: h.miniatura ? (buscando && buscando !== h.titulo ? .5 : 1) : .3 }}>
+            {h.miniatura && <img src={h.miniatura} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
+            {buscando === h.titulo && <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, fontWeight: 700 }}>Buscando…</span>}
+          </button>))}
+      </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <button className="rs-btn" disabled={!!buscandoC || trabajando} onClick={() => proponer(false)}>
           {buscandoC ? "Buscando momentos… " + buscandoC.progreso + "/" + buscandoC.total : "Proponer candidatos"}</button>
@@ -328,7 +334,7 @@ function Miniatura({ r, hacer, trabajando, toast }) {
         <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>Los momentos más vistosos de cada Short, ya como franja y sin subtítulo (≈5 s por Short)</span>
       </div>
       {cands && (<>
-        <div style={{ fontSize: 13, color: "var(--text-2)" }}>Pulsa uno para ponerlo en la <b>Franja {activo + 1}</b> (luego pasa a la siguiente).</div>
+        <div className="rs-kicker">Candidatos · van a la Franja {activo + 1}</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(64px,1fr))", gap: 6, maxHeight: 420, overflowY: "auto" }}>
           {cands.map((c, i) => (
             <button key={i} onClick={() => ponerCandidato(c)} title={c.titulo + " · " + mmss(c.segundo)}
