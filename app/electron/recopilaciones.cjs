@@ -92,10 +92,14 @@ function enOrden(hs) {
 function leerRec(nn) {
   const c = carpetaRec(nn), ord = ordenes();
   let r = leerJson(jsonRec(nn), null);
-  if (!r) {
-    const hs = fs.readdirSync(c).filter(n => !n.startsWith(".") && !n.startsWith("_") && existe(path.join(c, n, n + ".mp4")));
-    r = { numero: nn, detectada: true, historias: hs.map(t => ({ titulo: t })).sort((a, b) => ((ord[a.titulo] || {}).n || 999) - ((ord[b.titulo] || {}).n || 999)) };
-  }
+  /* (14-11, Manu: «la 02 no detecta ninguna historia», y estaban sus 14 carpetas) mandan las CARPETAS: las historias
+   * son las que hay dentro (él las mete y saca a mano). El recopilacion.json solo da el orden si lo tiene; antes, si
+   * existía sin la lista (la 02 solo guardaba ideas e intro), la recopilación salía vacía */
+  const hs = fs.readdirSync(c).filter(n => !n.startsWith(".") && !n.startsWith("_") && existe(path.join(c, n, n + ".mp4")));
+  const enJson = ((r && r.historias) || []).map(h => h.titulo);
+  const pos = (t) => { const i = enJson.indexOf(t); return i >= 0 ? i : 1000 + ((ord[t] || {}).n || 999); };
+  const historias = hs.map(t => ({ titulo: t })).sort((a, b) => pos(a.titulo) - pos(b.titulo));
+  r = r ? { ...r, historias } : { numero: nn, detectada: true, historias };
   const nombre = "Recopilación " + nn, fin = path.join(c, "." + nombre);
   const intro = path.join(c, "_INTRO Y OUTRO", "INTRO - " + nombre + ".mp4"), outro = path.join(c, "_INTRO Y OUTRO", "OUTRO - " + nombre + ".mp4");
   const video = path.join(fin, nombre + ".mp4"), mini = path.join(fin, nombre + " - miniatura.png");
