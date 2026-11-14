@@ -109,8 +109,9 @@ export function AvisoActualizacion() {
       clearInterval(iv);
       if (nueva.local) {
         // (portátil) primero que quede publicada para los demás
+        // (14-11) con el servidor caído no hay subida que cortar: se instala igual (al arrancar la publica cuando vuelva)
         try { const v = await actualizacionApi("GET"); if (num(v.version) < num(nueva.version)) { await publicarSiToca(); if (vivo) setAplazada(Date.now() + 60000); return; } }
-        catch (e) { if (vivo) setAplazada(Date.now() + 60000); return; }
+        catch (e) { /* sin servidor: sigue e instala */ }
       }
       if (vivo && instalarRef.current) instalarRef.current();
     }, 1000);
