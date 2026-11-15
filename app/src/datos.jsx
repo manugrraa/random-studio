@@ -140,7 +140,7 @@ export const OLD_SYNC_CODES = [
 
 /* ============================ YOUTUBE + DRIVE (integración) ============================ */
 // URL del backend en Vercel y el Client ID de Google (OAuth). Rellena YT_CLIENT_ID con tu ID real.
-export const YT_BACKEND = "https://rderandom-backend.vercel.app";
+export const YT_BACKEND = "https://rderandom-backend.randomstudio.workers.dev";   // (15-11-2026) mudanza de Vercel a Cloudflare
 export const YT_CLIENT_ID = "376576989643-7hidirnma3vjqru2uppjfl5upg94n6vs.apps.googleusercontent.com";
 export const YT_REDIRECT = "https://manugrraa.github.io/random-studio/"; // debe coincidir con Google Cloud
 export const YT_TOKEN_KEY = "rds_yt_tokens";
