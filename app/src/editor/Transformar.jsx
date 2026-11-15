@@ -140,6 +140,7 @@ export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir, onRastrea
           </div>);
       })}
       <Curvas c={c} tRel={tRel} alGesto={alGesto} cambiarClip={cambiarClip}/>
+      <EntradaClip c={c} cambiarClip={cambiarClip}/>
       {onCara && <SeguirCara onCara={onCara} haciendo={haciendoCara}/>}
       {onRastrear && <button onClick={onRastrear} disabled={rastreando} className="rd-btn" style={{justifyContent:"center"}}
         title="Pon el centro de este clip encima de lo que quieres seguir (al principio del clip) y pulsa: se moverá con ello">{rastreando ? "Siguiendo…" : "Seguir lo de debajo (rastreo)"}</button>}
@@ -153,6 +154,30 @@ export function PanelTransformar({ c, reloj, alGesto, cambiarClip, ir, onRastrea
    el usuario elija»). Se elige DÓNDE quedan los ojos (en % del lienzo; por defecto, a un tercio: así los subtítulos
    centrados se ven perfectos), si la cara se SIGUE (fotogramas clave de posición) o se deja un encuadre FIJO, y la
    ampliación (la justa para que no asome borde, o la que él diga). Lo calcula RandomEditor.seguirCara. */
+/* 15/11 (él, con «Paciencia»: «no entiendo por qué da un efecto de desenfoque y no sé cómo quitarlo; me gustaría que
+   los efectos también se pudieran modificar dentro de las propiedades»). El efecto con que ENTRA el clip (lo pone el
+   montaje de Carental: el «golpe» con estela vertical) se ve y se cambia aquí; el salto de zoom que lo acompaña son
+   fotogramas clave de escala e Y (en las curvas), y también se pueden quitar de una vez. */
+const ENTRADAS = [["", "Ninguno"], ["golpe", "Golpe con estela"], ["desenfoque", "Desenfoque"]];
+function EntradaClip({ c, cambiarClip }) {
+  const e = c.entrada || {}, tipo = e.tipo || "";
+  const salto = ((c.kf || {}).escala || []).length > 1;
+  const poner = n => { const x = {...c}; if(n.tipo === "") delete x.entrada; else x.entrada = {...e, dur:e.dur || 0.12, ...n}; cambiarClip(x); };
+  const quitarSalto = () => { const kf = {...(c.kf || {})}; delete kf.escala; delete kf.y; cambiarClip({...c, kf}); };
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6,border:"1px solid #2a2a2a",borderRadius:7,padding:7}}>
+      <b style={{fontSize:11,color:"#bbb"}}>EFECTO DE ENTRADA</b>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+        {ENTRADAS.map(([k, n])=><button key={k} className={"rd-chip" + (tipo === k ? " on" : "")} onClick={()=>poner({tipo:k})}>{n}</button>)}
+      </div>
+      {tipo && <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11.5,color:"#aaa"}}>Dura
+        <input type="range" min={0.04} max={0.6} step={0.01} value={e.dur || 0.12} onChange={ev=>poner({dur:+ev.target.value})} style={{flex:1}}/>
+        {Math.round((e.dur || 0.12) * 1000)} ms</label>}
+      {salto && <button onClick={quitarSalto} className="rd-btn" style={{justifyContent:"center"}} title="Los fotogramas clave de escala e Y del principio (el «golpe» de zoom)">Quitar también el salto de zoom</button>}
+      {!tipo && !salto && <span style={{fontSize:10.5,color:"#777"}}>Este clip entra sin efecto.</span>}
+    </div>);
+}
+
 const lsLeer = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } };
 const lsPoner = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
 const PUNTOS_CARA = [["Ojos a un tercio", 50, 31], ["Centro", 50, 50], ["Más arriba", 50, 24]];
