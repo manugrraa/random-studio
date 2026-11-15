@@ -179,7 +179,7 @@ export function iniciarRemotoEscritorio(t) {
       historias.push(x);
     }
     const datos = {
-      tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible, enCurso: enCursoAqui(),
+      tipo: "escritorio", version: APP_VERSION, ts: Date.now(), historias, disponible: _disponible, enCurso: enCursoAqui(), limiteHasta: limiteAqui(),
       capacidad: { proyecto: !!aj.proyecto, claude: !!aj.claude, claudeInstalado: aj.claudeInstalado !== false, claudeError: aj.claudeError || "", blender: !!aj.blender, eleven: !!aj.eleven,
         // v3.41: la salud del equipo (la pestaña «Equipos» dice qué le falta a cada uno y cómo arreglarlo)
         bash: aj.bash !== false, disco: aj.disco || null, elevenError: aj.elevenError || "", gpu: aj.gpu || null, whisper: aj.whisper || null, drive: driveConectadoTrabajo(), kit: aj.kit || null, rescateKit: aj.rescateKit || null, esperandoLimite: Object.keys(esperas()).length },
@@ -498,6 +498,10 @@ const K_LIM = "rs_perfil_limite";
 const esperas = () => { try { return JSON.parse(localStorage.getItem(K_LIM) || "{}"); } catch (e) { return {}; } };
 const guardarEsperas = (w) => { try { localStorage.setItem(K_LIM, JSON.stringify(w)); } catch (e) {} };
 const hora = (ms) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+// (15-11, Manu: «cuando se acabe el límite de Claude, que las historias no se releven de un ordenador a otro, que se
+// esperen») hasta cuándo dura el límite en este equipo (0 = sin límite). Mientras dure: no se pasa nada al otro equipo,
+// no se coge trabajo nuevo y el servidor no deja que otro equipo releve sus historias (va en el estado: limiteHasta)
+const limiteAqui = () => { const v = Object.values(esperas()).filter(x => Number(x) > Date.now()); return v.length ? Math.max(...v.map(Number)) : 0; };
 
 /* v3.41.2 REPARTO: el ordenador prepara (guion y voces) y el portátil anima (escena, animatic, render, montaje).
  * v3.41.7: el ordenador prepara TODAS las suyas antes de animar ninguna; cada preparada se ofrece al portátil. */
@@ -513,7 +517,7 @@ async function equipoStudioLibre() {
     const r = await remotoApi("GET");
     return (r.equipos || []).find(e => e.id !== r.yo && e.en_linea && e.datos && e.datos.tipo === "escritorio" && e.datos.disponible !== false
       && e.datos.capacidad && e.datos.capacidad.blender && e.datos.capacidad.proyecto && e.datos.capacidad.claude && e.datos.capacidad.drive
-      && !e.datos.tarea && !e.datos.fondo) || null;
+      && !e.datos.tarea && !e.datos.fondo && !(Number(e.datos.limiteHasta) > Date.now())) || null;
   } catch (x) { return null; }
 }
 
@@ -813,8 +817,10 @@ export function iniciarTrabajador(t) {
     for (const b of blender) avisarDetalle(b.pid, "preparada · espera para animarse");
     // 2) seguir la empezada antes de coger nada nuevo (v3.47.1: el que la preparó la rueda; solo se pasa al otro si este no
     // tiene Roblox Studio o está ocupado con otra)
+    // (15-11) con el límite de Claude acabado, nada pasa al otro equipo ni se coge nuevo: se espera a que se restablezca
+    const enLimite = limiteAqui() > 0;
     // v3.41.7: en el ordenador, cada historia preparada se ofrece al portátil (cada 5 min como mucho, de una en una)
-    if (_disponible && revisadoRelevo) {
+    if (_disponible && revisadoRelevo && !enLimite) {
       const of = blender.find(b => Date.now() - (b.x.ofrecida || 0) > 5 * 60000 && !(t && t.activa && t.id === b.h.id));
       if (of) {
         of.x.ofrecida = Date.now(); guardarMios(m);
@@ -823,7 +829,7 @@ export function iniciarTrabajador(t) {
       }
     }
     // (6-11) el portátil pasa UNA de las que esperan a Studio a otro equipo con Studio libre (cada 5 min como mucho cada una)
-    if (_soyDueno && esperaStudio.length && _disponible && revisadoRelevo) {
+    if (_soyDueno && esperaStudio.length && _disponible && revisadoRelevo && !enLimite) {
       const of = esperaStudio.find(b => Date.now() - (b.x.ofrecida || 0) > 5 * 60000);
       const libre = of ? await equipoStudioLibre() : null;
       if (of && libre) {
@@ -846,7 +852,7 @@ export function iniciarTrabajador(t) {
       return;
     }
     // 3) coger trabajo nuevo: solo si estoy disponible, libre y preparado
-    if (!_disponible || !aj.proyecto || !aj.claude) return;
+    if (!_disponible || !aj.proyecto || !aj.claude || enLimite) return;
     // (10-11, menos tráfico) a la cola se pregunta al momento si el timbre avisa de pedidos; si no, una vez por minuto
     if (!pedidosNuevos && Date.now() - reclamadoA < 60000) return;
     pedidosNuevos = false; reclamadoA = Date.now();
