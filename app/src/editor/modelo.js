@@ -8,7 +8,16 @@
 export const uid = () => Math.random().toString(36).slice(2, 10);
 // 31/10 (v3.18): la VELOCIDAD de cada clip (0,1x-10x): a 2x dura la mitad en la línea de tiempo
 export const vel = c => c.velocidad || 1;
-export const largo = c => (c.hasta - c.desde) / vel(c);
+/* (16/11, fase 2 del motor nuevo) TODO EN FOTOGRAMAS ENTEROS. Él: "hay clips cortados donde la vara no puede ponerse,
+   porque están entre dos frames". La principal se encadenaba sumando segundos con decimales y el error se acumulaba (un
+   clip empezaba en 20,250000000000014 y la vara, en 20,25 exacto, seguía «en el anterior»). Ahora la duración y el final
+   de cada clip se cuentan en fotogramas del proyecto (FPS, lo fija el editor al abrir/cambiar el proyecto) y se guardan
+   como fotograma/fps: dos tiempos del mismo fotograma son SIEMPRE el mismo número. */
+let FPS = 30;
+export const fijarFps = f => { FPS = f > 0 ? f : 30; };
+export const fpsActual = () => FPS;
+export const qf = x => Math.round(x * FPS) / FPS;
+export const largo = c => { const r = (c.hasta - c.desde) / vel(c); const q = qf(r); return q > 0 || !(r > 0) ? q : 1 / FPS; };
 // el segundo del ARCHIVO que suena en el instante `t` de la línea de tiempo
 export const local = (c, t) => c.desde + (t - c.en) * vel(c);
 // las pistas que se VEN y las que se OYEN no se mezclan nunca (él: "al pegar un subtítulo a veces se iba a la de audio")
@@ -36,7 +45,7 @@ export function valorEn(c, prop, tRel) {
   return kf[kf.length-1][1];
 }
 export const transformado = c => !!(c.kf && Object.values(c.kf).some(x=>x && x.length)) || Object.entries(c.transform || {}).some(([k, v])=>v !== TRANS0[k]);
-export const fin = c => c.en + largo(c);
+export const fin = c => qf(c.en + largo(c));
 export const LIENZOS = { vertical:[1080,1920,"9:16"], horizontal:[1920,1080,"16:9"] };
 
 export const nuevoProyecto = () => ({ nombre:"", formato:"vertical", ancho:1080, alto:1920, fps:30, marcadores:[], pistas:[
@@ -47,9 +56,61 @@ export const nuevoProyecto = () => ({ nombre:"", formato:"vertical", ancho:1080,
 // la principal se cierra sola: cada clip empieza donde acaba el anterior (en su orden)
 export const cerrar = pista => {
   if(pista.id!=="v1") return pista;
-  let t = 0;
-  return { ...pista, clips: [...pista.clips].sort((a,b)=>a.en-b.en).map(c=>{ const n = c.en===t ? c : {...c, en:t}; t += largo(c); return n; }) };
+  let f = 0;                                  // (16/11: se encadena en fotogramas enteros; nunca se acumula error)
+  return { ...pista, clips: [...pista.clips].sort((a,b)=>a.en-b.en).map(c=>{ const t = f / FPS; const n = c.en===t ? c : {...c, en:t}; f += Math.round(largo(c) * FPS); return n; }) };
 };
+
+/* (16/11, fase 2) la REJILLA: cada clip empieza en un fotograma exacto y dura fotogramas enteros (su «hasta» se ajusta,
+   y nunca pasa del final del archivo); los puntos clave caen en fotogramas y la portada también. Se aplica al abrir el
+   proyecto y en cada cambio. Devuelve el mismo objeto si ya estaba todo en su sitio. */
+export function rejilla(p) {
+  const fps = p.fps || 30; fijarFps(fps);
+  const q = x => Math.round(x * fps) / fps;
+  let algo = false;
+  const kfRejilla = kf => {
+    if(!kf) return kf;
+    let c = false; const out = {};
+    for(const [prop, arr] of Object.entries(kf)){
+      if(!Array.isArray(arr)){ out[prop] = arr; continue; }
+      const n = arr.map(k => { const t = q(k[0]); if(t === k[0]) return k; c = true; return [t, ...k.slice(1)]; });
+      out[prop] = n;
+    }
+    return c ? out : kf;
+  };
+  const pistas = (p.pistas || []).map(pi => {
+    let cambio = false;
+    const clips = (pi.clips || []).map(c => {
+      const v = vel(c), en = Math.max(0, q(c.en));
+      const bruto = (c.hasta - c.desde) / v;
+      let nf = Math.max(1, Math.round(bruto * fps));
+      let hasta = c.desde + (nf / fps) * v;
+      if(c.dur_src && c.dur_src < 1e8 && hasta > c.dur_src + 1e-6 && nf > 1){ nf--; hasta = c.desde + (nf / fps) * v; }
+      if(Math.abs(hasta - c.hasta) < 1e-9) hasta = c.hasta;
+      const kf = kfRejilla(c.kf);
+      if(en === c.en && hasta === c.hasta && kf === c.kf) return c;
+      cambio = true;
+      return { ...c, en, hasta, ...(kf !== c.kf ? { kf } : {}) };
+    });
+    // dos clips que iban pegados y, al redondear cada uno, se pisan UN fotograma: el de delante acaba donde empieza el
+    // siguiente (los solapes de verdad, de más de un fotograma, no se tocan)
+    if(pi.tipo !== "subtitulos"){
+      const orden = clips.map((c, i) => [c, i]).sort((a, b) => a[0].en - b[0].en);
+      for(let j = 0; j + 1 < orden.length; j++){
+        const [a, ia] = orden[j], b = orden[j + 1][0];
+        const fa = Math.round(a.en * fps), fb = Math.round(b.en * fps), nfa = Math.round((a.hasta - a.desde) / vel(a) * fps);
+        if(fa + nfa === fb + 1 && nfa > 1){
+          const n = { ...a, hasta: a.desde + ((nfa - 1) / fps) * vel(a) };
+          clips[ia] = n; orden[j][0] = n; cambio = true;
+        }
+      }
+    }
+    if(!cambio) return pi;
+    algo = true; return { ...pi, clips };
+  });
+  const portada = p.portada != null ? q(p.portada) : p.portada;
+  if(!algo && portada === p.portada) return p;
+  return { ...p, pistas: algo ? pistas : p.pistas, ...(portada !== p.portada ? { portada } : {}) };
+}
 // 28/10, él: "poder mover los clips del timeline a mi libre albedrío, no que se queden pegados": la principal
 // solo se cierra sola con `magnetica` (el botón de la barra); si no, cada clip se queda donde se suelta
 export const ordenar = p => p.magnetica ? { ...p, pistas: p.pistas.map(cerrar) } : p;

@@ -72,7 +72,8 @@ export function RandomEditor({ toast }) {
   // (8/11, fase 2: clips CONECTADOS, Final Cut) lo que hay encima de un clip de la principal se mueve con él
   const conectadosRef = useRef(true);
   const conectados = (antes, despues) => conectadosRef.current ? M.conectar(antes, despues) : despues;
-  const cambiar = f => poner(conectados(pRef.current, M.ordenar(f(pRef.current))));
+  // (16/11, fase 2) todo cambio pasa por la REJILLA de fotogramas (y la principal se encadena en fotogramas enteros)
+  const cambiar = f => poner(M.rejilla(conectados(pRef.current, M.ordenar(M.rejilla(f(pRef.current))))));
   const deshacer = () => { cerrarGesto(); if(!pasado.current.length) return; futuro.current = [pRef.current, ...futuro.current]; pRef.current = pasado.current.pop(); sucio.current = true; repintar(x=>x+1); };
   // (8/11, fase 2: HISTORIAL visible, como DaVinci) volver de golpe a cualquier punto (y volver adelante)
   const [menuHist, setMenuHist] = useState(false);
@@ -81,7 +82,7 @@ export function RandomEditor({ toast }) {
   const rehacer = () => { cerrarGesto(); if(!futuro.current.length) return; pasado.current = [...pasado.current, pRef.current]; pRef.current = futuro.current.shift(); sucio.current = true; repintar(x=>x+1); };
   const alGesto = (fase, nuevo) => {
     if(fase === "inicio") gesto.current = pRef.current;
-    else if(fase === "durante"){ pRef.current = gesto.current ? conectados(gesto.current, M.ordenar(nuevo)) : M.ordenar(nuevo); sucio.current = true; repintar(x=>x+1); }
+    else if(fase === "durante"){ const n = M.ordenar(M.rejilla(nuevo)); pRef.current = M.rejilla(gesto.current ? conectados(gesto.current, n) : n); sucio.current = true; repintar(x=>x+1); }
     else { const g = gesto.current; gesto.current = null; if(g && g !== pRef.current){ horas.current.set(pRef.current, Date.now()); pasado.current = [...pasado.current.slice(-150), g]; futuro.current = []; repintar(x=>x+1); } }
   };
 
@@ -224,7 +225,8 @@ export function RandomEditor({ toast }) {
   const proxiesListos = rutasVideo.filter(r=>proxies[r]).length;
 
   // ---- reproducción
-  const ir = t => { t = Math.max(0, Math.min(M.total(pRef.current), t)); reloj.poner(t); vista.current && vista.current.sincronizar(t, 0); };
+  // (16/11, fase 2) la vara PARADA siempre en un fotograma exacto (reproduciendo va continua, con el sonido)
+  const ir = t => { t = Math.max(0, Math.min(M.total(pRef.current), t)); if(!jugandoRef.current) t = M.cuantiza(t, fpsRef.current); reloj.poner(t); vista.current && vista.current.sincronizar(t, 0); };
   // los trozos de sonido que usa el proyecto, preparados de antemano (al abrirlo y al cambiarlo, sin esperar)
   useEffect(()=>{ const id = setTimeout(()=>motor.current.precargar(pRef.current), 400); return ()=>clearTimeout(id); },[p]);
   // cambió el proyecto mientras suena (mover, recortar, volumen…): se vuelve a programar desde donde va
@@ -587,7 +589,7 @@ export function RandomEditor({ toast }) {
     if(!callado) toast("Proyecto guardado");
     return r.ruta;
   };
-  const cargarProyecto = pr => { pRef.current = M.ordenar(M.normalizar({...M.nuevoProyecto(), ...pr})); pasado.current = []; futuro.current = []; sucio.current = false; setSel(new Set()); repintar(x=>x+1); setTimeout(()=>{ ir(0); ajustar(); }, 60); };
+  const cargarProyecto = pr => { pRef.current = M.ordenar(M.rejilla(M.normalizar({...M.nuevoProyecto(), ...pr}))); pasado.current = []; futuro.current = []; sucio.current = false; setSel(new Set()); repintar(x=>x+1); setTimeout(()=>{ ir(0); ajustar(); }, 60); };
   const abrir = async nombre => {
     if(sucio.current && !window.confirm("Hay cambios sin guardar. ¿Abrir otro proyecto igualmente?")) return;
     const r = await window.studioFS.redAbrir(nombre); if(r.error){ toast(r.error); return; } cargarProyecto(r.proyecto);
