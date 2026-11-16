@@ -316,7 +316,7 @@ export function BrutosView({ toast }) {
                     <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{c.clips.length} clip(s) · <span style={{ color: col, fontWeight: 700 }}>{txt}</span>{c.drive ? " · ☁ Drive" : ""}</div>
                   </div>
                 </div>
-                {abiertaEsta && <DetalleCarpeta c={c} porRel={porRel} ponerCar={ponerCar} montar={montar} ocupado={ocupado} montando={montando === c.id}
+                {abiertaEsta && <DetalleCarpeta c={c} porRel={porRel} nombres={est.nombres || {}} ponerCar={ponerCar} montar={montar} ocupado={ocupado} montando={montando === c.id}
                   subirDrive={subirDrive} drive={drive} subiendo={subiendo && subiendo.id === c.id ? subiendo : null} setViendo={setViendo}
                   quitar={async () => { if (window.confirm(`¿Quitar la carpeta «${c.nombre}»? Los brutos y el vídeo montado no se borran.`)) { await cambiar({ tipo: "quitar-carpeta", id: c.id }); setAbierta(null); } }} />}
               </div>);
@@ -339,7 +339,7 @@ export function BrutosView({ toast }) {
     </div>);
 }
 
-function DetalleCarpeta({ c, porRel, ponerCar, montar, ocupado, montando, subirDrive, drive, subiendo, setViendo, quitar }) {
+function DetalleCarpeta({ c, porRel, ponerCar, montar, ocupado, montando, subirDrive, drive, subiendo, setViendo, quitar, nombres = {} }) {
   const [nota, setNota] = useState(c.nota || "");
   const [tit, setTit] = useState({ titulo: c.titulo || "", blanco: c.titulo_blanco || "", rojo: c.titulo_rojo || "" });
   useEffect(() => { setNota(c.nota || ""); setTit({ titulo: c.titulo || "", blanco: c.titulo_blanco || "", rojo: c.titulo_rojo || "" }); }, [c.id]);
@@ -356,7 +356,7 @@ function DetalleCarpeta({ c, porRel, ponerCar, montar, ocupado, montando, subirD
           return (
             <div key={rel} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
               {b && b.mini ? <img src={fileUrl(b.mini)} alt="" onClick={() => b && setViendo(b)} style={{ width: 22, height: 38, objectFit: "cover", borderRadius: 4, cursor: "pointer" }} /> : <span style={{ width: 22 }}>?</span>}
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: b ? "var(--text)" : "var(--red)" }} title={rel}>{b && (est.nombres || {})[rel] ? <><b>{est.nombres[rel]}</b> <span style={{ color: "var(--text-3)" }}>{rel}</span></> : rel}{b ? ` · ${mmss(b.dur)}` : " (no está)"}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: b ? "var(--text)" : "var(--red)" }} title={rel}>{b && nombres[rel] ? <><b>{nombres[rel]}</b> <span style={{ color: "var(--text-3)" }}>{rel}</span></> : rel}{b ? ` · ${mmss(b.dur)}` : " (no está)"}</span>
               <button onClick={() => mover(k, -1)} disabled={k === 0} style={{ color: "var(--text-3)", opacity: k === 0 ? .3 : 1 }}>↑</button>
               <button onClick={() => mover(k, 1)} disabled={k === c.clips.length - 1} style={{ color: "var(--text-3)", opacity: k === c.clips.length - 1 ? .3 : 1 }}>↓</button>
               <button onClick={() => ponerCar({ clips: c.clips.filter(x => x !== rel) })} title="Quitar de la carpeta (el bruto no se toca)" style={{ color: "var(--red)" }}>✕</button>
