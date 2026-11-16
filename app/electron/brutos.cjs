@@ -68,7 +68,7 @@ ipcMain.handle("locales-quitar", async (e, id) => {
 
 // ------------------------------------------------------------------ brutos
 const estadoArchivo = () => path.join(carpetas.carpetasDe().trabajo, "brutos", "estado.json");
-const estadoVacio = () => ({ descartados: [], carpetas: [] });
+const estadoVacio = () => ({ descartados: [], carpetas: [], nombres: {} });
 
 ipcMain.handle("brutos-estado", async () => {
   const c = carpetas.carpetasDe();
@@ -88,6 +88,13 @@ ipcMain.handle("brutos-cambiar", async (e, cambio) => {
     if (i >= 0) est.carpetas[i] = { ...est.carpetas[i], ...c };
     else est.carpetas.unshift({ estado: "nuevo", creada: new Date().toISOString(), clips: [], nota: "", titulo_modo: "ninguno", ...c });   // (7/11) el título lo pone él
   } else if (k === "quitar-carpeta") est.carpetas = est.carpetas.filter(x => x.id !== cambio.id);
+  // (16/11, él: «que se puedan renombrar los clips desde Brutos») un nombre suyo para el bruto, SOLO en el Studio:
+  // el archivo no se toca (CapCut y los montajes apuntan a él)
+  else if (k === "nombre" && cambio.rel) {
+    est.nombres = { ...(est.nombres || {}) };
+    const n = String(cambio.nombre || "").trim().slice(0, 80);
+    if (n) est.nombres[cambio.rel] = n; else delete est.nombres[cambio.rel];
+  }
   else return { error: "cambio no válido" };
   escribirJson(f, est);
   return { ok: true, estado: est };

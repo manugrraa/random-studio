@@ -153,6 +153,14 @@ export function BrutosView({ toast }) {
   const ocupado = !!(tarea && !tarea.cerrada);
 
   const desc = useMemo(() => new Set(est.descartados), [est]);
+  // (16/11) el nombre que le ha puesto él (o el del archivo sin «IMG_»)
+  const nom = b => ((est.nombres || {})[b.rel]) || b.nombre.replace(/^IMG_/, "");
+  const [renombrando, setRenombrando] = useState(null);   // { rel, nombre } del bruto que se está renombrando
+  const renombrar = async () => {
+    if (!renombrando) return;
+    await cambiar({ tipo: "nombre", rel: renombrando.rel, nombre: renombrando.nombre });
+    setRenombrando(null);
+  };
   const enCarpeta = useMemo(() => { const m = {}; est.carpetas.forEach(c => c.clips.forEach(r => { (m[r] = m[r] || []).push(c.nombre); })); return m; }, [est]);
   const porRel = useMemo(() => { const m = {}; (dias || []).forEach(d => d.brutos.forEach(b => { m[b.rel] = b; })); return m; }, [dias]);
   const car = est.carpetas.find(c => c.id === abierta) || null;
@@ -233,6 +241,16 @@ export function BrutosView({ toast }) {
                     <button onClick={nuevaCarpeta} style={boton(true)}>Crear</button>
                     <button onClick={() => setNombrando(null)} style={boton(false)}>Cancelar</button>
                   </span>}
+              {sel.size === 1 && (renombrando
+                ? <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input autoFocus value={renombrando.nombre} onChange={e => setRenombrando({ ...renombrando, nombre: e.target.value })} placeholder="Nombre del clip (p. ej. Golf toma buena)"
+                      onKeyDown={e => { e.stopPropagation(); if (e.key === "Enter") renombrar(); if (e.key === "Escape") setRenombrando(null); }}
+                      style={{ width: 210, background: "var(--bg)", border: "1px solid rgba(212,175,55,0.5)", borderRadius: 8, padding: "6px 9px", color: "var(--text)", fontSize: 12.5 }} />
+                    <button onClick={renombrar} style={boton(true)}>Guardar</button>
+                    <button onClick={() => setRenombrando(null)} style={boton(false)}>Cancelar</button>
+                  </span>
+                : <button onClick={() => { const r = [...sel][0]; setRenombrando({ rel: r, nombre: (est.nombres || {})[r] || "" }); }} style={boton(false)}
+                    title="Un nombre tuyo para este clip (el archivo no cambia: CapCut y los montajes siguen funcionando)">Renombrar</button>)}
               {est.carpetas.filter(c => c.estado !== "montando").slice(0, 6).map(c => <button key={c.id} onClick={() => anadirA(c)} style={boton(false)} title="Añadir a esta carpeta">+ {c.nombre}</button>)}
               <button onClick={async () => { await cambiar({ tipo: "descartar", rels: [...sel] }); setSel(new Set()); }} style={boton(false, true)}>Descartar</button>
               {[...sel].some(r => desc.has(r)) && <button onClick={async () => { await cambiar({ tipo: "restaurar", rels: [...sel] }); setSel(new Set()); }} style={boton(false)}>Restaurar</button>}
@@ -258,12 +276,12 @@ export function BrutosView({ toast }) {
                     {visibles.map(b => {
                       const on = sel.has(b.rel), fuera = desc.has(b.rel), cs = enCarpeta[b.rel];
                       return (
-                        <div key={b.rel} onClick={(e) => elegir(b.rel, e)} onDoubleClick={() => setViendo(b)} title={`${b.nombre} · ${mmss(b.dur)} · ${b.mb} MB\nClic: elegir · Doble clic: verlo`}
+                        <div key={b.rel} onClick={(e) => elegir(b.rel, e)} onDoubleClick={() => setViendo(b)} title={`${nom(b)}${(est.nombres || {})[b.rel] ? " (" + b.nombre + ")" : ""} · ${mmss(b.dur)} · ${b.mb} MB\nClic: elegir · Doble clic: verlo`}
                           style={{ position: "relative", borderRadius: 10, overflow: "hidden", cursor: "pointer", aspectRatio: "9/16", background: "#000",
                             outline: on ? "2px solid var(--gold)" : "1px solid var(--border)", opacity: fuera ? 0.38 : 1 }}>
                           {b.mini && <img src={fileUrl(b.mini)} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
                           <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: "18px 6px 5px", background: "linear-gradient(transparent, rgba(0,0,0,0.85))", fontSize: 11 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span>{b.nombre.replace(/^IMG_/, "")}</span><span>{mmss(b.dur)}</span></div>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{nom(b)}</span><span>{mmss(b.dur)}</span></div>
                             {cs && <div style={{ color: "var(--gold)", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>▸ {cs.join(", ")}</div>}
                           </div>
                           <button onClick={(e) => { e.stopPropagation(); setViendo(b); }} title="Verlo"
@@ -311,7 +329,7 @@ export function BrutosView({ toast }) {
           <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
             <video src={fileUrl(viendo.ruta)} controls autoPlay style={{ maxHeight: "80vh", maxWidth: "90vw", borderRadius: 12, background: "#000" }} />
             <div style={{ display: "flex", gap: 8 }}>
-              <b style={{ alignSelf: "center", marginRight: 8 }}>{viendo.nombre} · {mmss(viendo.dur)}</b>
+              <b style={{ alignSelf: "center", marginRight: 8 }}>{nom(viendo)} · {mmss(viendo.dur)}</b>
               {viendo.rel && <button onClick={() => { elegir(viendo.rel); setViendo(null); }} style={boton(sel.has(viendo.rel))}>{sel.has(viendo.rel) ? "Elegido ✓" : "Elegir"}</button>}
               {viendo.rel && <button onClick={async () => { await cambiar({ tipo: desc.has(viendo.rel) ? "restaurar" : "descartar", rels: [viendo.rel] }); setViendo(null); }} style={boton(false, !desc.has(viendo.rel))}>{desc.has(viendo.rel) ? "Restaurar" : "Descartar"}</button>}
               <button onClick={() => setViendo(null)} style={boton(false)}>Cerrar</button>
@@ -338,7 +356,7 @@ function DetalleCarpeta({ c, porRel, ponerCar, montar, ocupado, montando, subirD
           return (
             <div key={rel} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
               {b && b.mini ? <img src={fileUrl(b.mini)} alt="" onClick={() => b && setViendo(b)} style={{ width: 22, height: 38, objectFit: "cover", borderRadius: 4, cursor: "pointer" }} /> : <span style={{ width: 22 }}>?</span>}
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: b ? "var(--text)" : "var(--red)" }} title={rel}>{rel}{b ? ` · ${mmss(b.dur)}` : " (no está)"}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: b ? "var(--text)" : "var(--red)" }} title={rel}>{b && (est.nombres || {})[rel] ? <><b>{est.nombres[rel]}</b> <span style={{ color: "var(--text-3)" }}>{rel}</span></> : rel}{b ? ` · ${mmss(b.dur)}` : " (no está)"}</span>
               <button onClick={() => mover(k, -1)} disabled={k === 0} style={{ color: "var(--text-3)", opacity: k === 0 ? .3 : 1 }}>↑</button>
               <button onClick={() => mover(k, 1)} disabled={k === c.clips.length - 1} style={{ color: "var(--text-3)", opacity: k === c.clips.length - 1 ? .3 : 1 }}>↓</button>
               <button onClick={() => ponerCar({ clips: c.clips.filter(x => x !== rel) })} title="Quitar de la carpeta (el bruto no se toca)" style={{ color: "var(--red)" }}>✕</button>
