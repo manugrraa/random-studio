@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useTarea, PanelTarea } from "../clon";
 import * as M from "./modelo";
 import { crearReloj } from "./reloj";
+import { crearMotorAudio } from "./motorAudio";
 import { Vista, fileUrl } from "./Vista";
 import { LineaTiempo } from "./LineaTiempo";
 import { Biblioteca } from "./Biblioteca";
@@ -108,6 +109,10 @@ export function RandomEditor({ toast }) {
   const [biblio, setBiblio] = useState(null);
   const [tiras, setTiras] = useState({});
   const [ondas, setOndas] = useState({});
+  const ondasRef = useRef(ondas); ondasRef.current = ondas;
+  /* (16/11, fase 1 del motor nuevo) el SONIDO lo lleva un único reloj (Web Audio) y la vara va con él: lo que se oye es
+     lo que se ve, al milisegundo, y parar corta en el acto. Si no se puede (sin Web Audio), como antes. */
+  const motor = useRef(null); if(!motor.current) motor.current = crearMotorAudio();
   const [proyectos, setProyectos] = useState([]);
   const [menu, setMenu] = useState(null);
   // v3.14.1: proxies (copias ligeras para previsualizar), contador de FPS, medidor y ajustes
@@ -220,34 +225,49 @@ export function RandomEditor({ toast }) {
 
   // ---- reproducción
   const ir = t => { t = Math.max(0, Math.min(M.total(pRef.current), t)); reloj.poner(t); vista.current && vista.current.sincronizar(t, 0); };
+  // los trozos de sonido que usa el proyecto, preparados de antemano (al abrirlo y al cambiarlo, sin esperar)
+  useEffect(()=>{ const id = setTimeout(()=>motor.current.precargar(pRef.current), 400); return ()=>clearTimeout(id); },[p]);
+  // cambió el proyecto mientras suena (mover, recortar, volumen…): se vuelve a programar desde donde va
+  const pPrograma = useRef(null);
+  useEffect(()=>{ if(!jugandoRef.current || !motor.current.disponible){ pPrograma.current = p; return; }
+    if(pPrograma.current === p) return; pPrograma.current = p;
+    const id = setTimeout(()=>motor.current.reprogramar(pRef.current, ondasRef.current), 60); return ()=>clearTimeout(id); },[p]);
+  useEffect(()=>()=>motor.current.olvidar(),[]);
   const setJugando = v => { const n = typeof v === "function" ? v(jugandoRef.current) : v; jugandoRef.current = n; setJugandoE(n); };
   useEffect(()=>{
     if(!jugando){ vista.current && vista.current.sincronizar(reloj.t, 0); return; }
     let ant = null, raf;
     if(jugando > 0 && reloj.t >= M.total(pRef.current) - 0.05) reloj.poner(0);
+    const mo = motor.current, conMotor = mo.disponible;
+    if(conMotor){ mo.reproducir(pRef.current, reloj.t, jugando, ondasRef.current); pPrograma.current = pRef.current; }
     const paso = ahora => {
       const dt = ant === null ? 0 : Math.max(0, Math.min(0.1, (ahora - ant) / 1000)); ant = ahora;
-      let t = reloj.t + dt * jugandoRef.current;
+      // (16/11) con el motor de audio, la vara es el instante que ESTÁ SONANDO; sin él, el reloj de siempre
+      let t = conMotor ? (mo.tiempo() ?? reloj.t) : reloj.t + dt * jugandoRef.current;
       const tot = M.total(pRef.current);
-      if((jugandoRef.current > 0 && t >= tot) || (jugandoRef.current < 0 && t <= 0)){ ir(Math.max(0, Math.min(tot, t))); setJugando(0); return; }
+      if((jugandoRef.current > 0 && t >= tot) || (jugandoRef.current < 0 && t <= 0)){ mo.parar(); ir(Math.max(0, Math.min(tot, t))); setJugando(0); return; }
       const m = vista.current ? vista.current.sincronizar(t, jugandoRef.current) : null;
-      if(m != null && Math.abs(m - t) < 0.25 && m >= reloj.t - 0.02) t = m;     // manda el fotograma que se ve
+      if(!conMotor && m != null && Math.abs(m - t) < 0.25 && m >= reloj.t - 0.02) t = m;     // manda el fotograma que se ve
       reloj.poner(t);
       raf = requestAnimationFrame(paso);
     };
     raf = requestAnimationFrame(paso);
-    return ()=>cancelAnimationFrame(raf);
+    return ()=>{ cancelAnimationFrame(raf); if(conMotor) mo.parar(); };
   },[jugando]);
   /* parar: la vara se queda EXACTAMENTE en el fotograma que se estaba viendo (y la imagen no se mueve),
      en la rejilla de fotogramas del vídeo. Devuelve ese tiempo (las flechas cuentan desde él). */
   const detener = () => {
     if(!jugandoRef.current) return reloj.t;
-    const m = vista.current && vista.current.mostrado ? vista.current.mostrado() : null;
-    const t = M.cuantiza(m != null && Math.abs(m - reloj.t) < 0.5 ? m : reloj.t, fpsRef.current);
+    // (16/11) con el motor: el instante que sonaba al pulsar (el sonido se corta en el acto); sin él, el fotograma que se veía
+    const ts = motor.current.disponible ? motor.current.parar() : null;
+    const m = ts == null && vista.current && vista.current.mostrado ? vista.current.mostrado() : null;
+    const t = M.cuantiza(ts != null ? ts : (m != null && Math.abs(m - reloj.t) < 0.5 ? m : reloj.t), fpsRef.current);
     setJugando(0); ir(t);
     return t;
   };
   const jugar = () => { if(jugandoRef.current) detener(); else setJugando(1); };
+  // (16/11) gancho para las pruebas automáticas (modo de pruebas del Studio): medir sincronía y parada sin tocar la pantalla
+  useEffect(()=>{ window.__redPrueba = { abrir: n => abrir(n), jugar: v => setJugando(v || 1), detener, t: () => reloj.t, motor: motor.current, vista, p: () => pRef.current }; });
   // 8/11 (skimming): el visor enseña otro instante sin mover el cabezal (null = vuelve al cabezal); uno por fotograma
   const skimPend = useRef(null);
   const verEn = t => { const prim = skimPend.current === null; skimPend.current = t == null ? -1 : t; if(!prim) return;
@@ -718,7 +738,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
   const elegidos = todos.filter(c=>sel.has(c.id));
   const uno = elegidos.length === 1 ? elegidos[0] : null;
   const esVideo = !!(uno && (p.pistas.find(x=>x.id===uno.pista) || {}).tipo === "video");
-  const vistaEl = <Vista ref={vista} proyecto={p} guias={guias} proxies={proxiesVista} reloj={reloj} sel={sel}
+  const vistaEl = <Vista ref={vista} sinAudio={motor.current.disponible} proyecto={p} guias={guias} proxies={proxiesVista} reloj={reloj} sel={sel}
     onElegirTexto={estable("eleg", id=>setSel(new Set([id])))} onGesto={estable("gesto", alGesto)} subs={subsInfo} cambiarClip={estable("cc", cambiarClip)} editarMascara={pestInsp==="mascara"} ondas={ondas}/>;
   const menuEl = menu && createPortal(
     <div onMouseDown={()=>setMenu(null)} style={{position:"fixed",inset:0,zIndex:2000}}>

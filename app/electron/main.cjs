@@ -1003,6 +1003,7 @@ require("./carpetas.cjs");
 require("./contador.cjs");
 // v3.40 (Carental): perfiles locales (sin Google) y brutos para montar con el clon
 require("./brutos.cjs");
+require("./audio.cjs");          // (16/11) RandomEditor: el sonido del visor en trozos para el reloj de Web Audio
 require("./redes.cjs");          // (5/11) Instagram y TikTok: preparar y subir la copia del vídeo
 require("./vigilante.cjs");      // (5/11) vigilante de seguridad: Defender, TeamViewer, Tailscale y escritorio remoto
 require("./recopilaciones.cjs"); // (5/11) recopilaciones de 12 historias: grupo, ideas, intro/outro, miniatura y montaje

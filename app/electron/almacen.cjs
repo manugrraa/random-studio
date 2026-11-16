@@ -35,7 +35,7 @@ const CARPETAS = [
   { clave: "descargas", nombre: "Descargas del Convertidor" }, { clave: "entregas", nombre: "Shorts de historias" },
 ];
 const VIDEO = /\.(mp4|mov|mkv|webm|avi|m4v)$/i;
-const CACHES_TRABAJO = ["random_editor/proxies", "random_editor/ondas", "random_editor/tiras", "random_editor/tmp", "random_editor/luts",
+const CACHES_TRABAJO = ["random_editor/audio", "random_editor/proxies", "random_editor/ondas", "random_editor/tiras", "random_editor/tmp", "random_editor/luts",
   "random_editor/efectos", "random_editor/mascaras", "random_editor/textos", "temp", "ranking_tmp", "muestras17"];
 const norm = (p) => path.resolve(p).toLowerCase();
 const partes = (rel) => String(rel).split(/[\\/]/).filter(Boolean);

@@ -28,8 +28,20 @@ function ponerVolumen(el, v) {
 }
 
 // (8/11, optimización) memo: con el zoom o la selección de la línea de tiempo el visor no se recalcula entero
-export const Vista = React.memo(forwardRef(function Vista({ proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip, editarMascara, ondas }, ref) {
+export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, guias, proxies, reloj, sel, onElegirTexto, onGesto, subs, cambiarClip, editarMascara, ondas }, ref) {
   const ondasRef = useRef(ondas); ondasRef.current = ondas;
+  /* (16/11, motor nuevo) con el motor de audio (sinAudio) el sonido no sale de aquí: los vídeos van MUDOS y siguen al reloj
+     del sonido; las desviaciones pequeñas se corrigen variando un poco su velocidad (sin saltos) y solo saltan si se van
+     más de 0,25 s. */
+  const sinARef = useRef(sinAudio); sinARef.current = !!sinAudio;
+  const seguir = (v, objetivo, base, adelante) => {
+    const d = v.currentTime - objetivo;
+    if(!adelante || !sinARef.current){ return false; }
+    if(Math.abs(d) > 0.25){ saltar(v, objetivo); v.playbackRate = base; return true; }
+    const corr = Math.abs(d) > 0.015 ? Math.max(-0.08, Math.min(0.08, -d * 1.5)) : 0;
+    v.playbackRate = Math.max(0.0625, Math.min(16, base * (1 + corr)));
+    return true;
+  };
   // 31/10 (v3.18): escala de la pantalla (px de pantalla por px del lienzo), para mover/escalar el vídeo
   const lienzo = useRef(null), kRef = useRef(0.3);
   const [k, setK] = useState(0.3);
@@ -113,10 +125,13 @@ export const Vista = React.memo(forwardRef(function Vista({ proyecto, guias, pro
       if(vs[i].dataset.clip !== c.id && vs[1-i].dataset.clip === c.id) i = activo.current = 1 - i;
       const v = vs[i], o = vs[1-i];
       const local = cargar(v, c, t);
-      if(Math.abs(v.currentTime - local) > (adelante ? 0.2 : 0.005) || (!adelante && v._pend != null)) saltar(v, local);
-      v.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c.velocidad || 1)));
+      const base = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c.velocidad || 1)));
+      if(!seguir(v, local, base, adelante)){
+        if(Math.abs(v.currentTime - local) > (adelante ? 0.2 : 0.005) || (!adelante && v._pend != null)) saltar(v, local);
+        v.playbackRate = base;
+      }
       v.preservesPitch = !c.tono;
-      ponerVolumen(v, c.voz && c.voz.ruta ? 0 : volumenEn(c, t, v1.muda));
+      if(sinARef.current){ v.muted = true; } else { v.muted = false; ponerVolumen(v, c.voz && c.voz.ruta ? 0 : volumenEn(c, t, v1.muda)); }
       // (mover, escalar, girar y opacidad, con sus fotogramas clave)
       v.style.transform = transformCss(c, t - c.en, kRef.current);
       aplicar(v, c, t); o.style.opacity = 0;
@@ -143,9 +158,13 @@ export const Vista = React.memo(forwardRef(function Vista({ proyecto, guias, pro
       aplicar(el, c2, t);
       if(el.tagName === "VIDEO"){
         const lc = local(c2, t);
-        if(Math.abs(el.currentTime - lc) > (adelante ? 0.2 : 0.01)) { try { el.currentTime = lc + 0.001; } catch(e){} }
-        el.playbackRate = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c2.velocidad || 1)));
-        el.preservesPitch = !c2.tono; ponerVolumen(el, c2.voz && c2.voz.ruta ? 0 : volumenEn(c2, t, false));
+        const base2 = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c2.velocidad || 1)));
+        if(!seguir(el, lc, base2, adelante)){
+          if(Math.abs(el.currentTime - lc) > (adelante ? 0.2 : 0.01)) { try { el.currentTime = lc + 0.001; } catch(e){} }
+          el.playbackRate = base2;
+        }
+        el.preservesPitch = !c2.tono;
+        if(sinARef.current) el.muted = true; else { el.muted = false; ponerVolumen(el, c2.voz && c2.voz.ruta ? 0 : volumenEn(c2, t, false)); }
         if(adelante && el.paused) el.play().catch(()=>{});
         if(!adelante && !el.paused) el.pause();
       }
@@ -160,6 +179,8 @@ export const Vista = React.memo(forwardRef(function Vista({ proyecto, guias, pro
         let m = 0; for(let i = Math.max(0, Math.floor((s0 - 0.35) / dt)); i <= Math.min(od.length - 1, Math.ceil((s0 + 0.03) / dt)); i++) m = Math.max(m, od[i]);
         habla = m * (cv.vol ?? 1) > 0.06; } }
     const vistos = new Set();
+    // (16/11) con el motor de audio, aquí no suena nada (lo programa el motor al milisegundo)
+    if(sinARef.current){ Object.values(auds.current).forEach(a=>{ if(!a.paused) a.pause(); }); return medido; }
     pr.pistas.filter(pi=>pi.tipo==="audio" || pi.tipo==="video").forEach(pi=>{
       const esV = pi.tipo === "video", id = esV ? "voz_" + pi.id : pi.id;
       vistos.add(id);
