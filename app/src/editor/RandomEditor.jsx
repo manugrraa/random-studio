@@ -269,7 +269,7 @@ export function RandomEditor({ toast }) {
   };
   const jugar = () => { if(jugandoRef.current) detener(); else setJugando(1); };
   // (16/11) gancho para las pruebas automáticas (modo de pruebas del Studio): medir sincronía y parada sin tocar la pantalla
-  useEffect(()=>{ window.__redPrueba = { abrir: n => abrir(n), ir: t => { setJugando(0); ir(t); }, jugar: v => setJugando(v || 1), detener, t: () => reloj.t, motor: motor.current, vista, p: () => pRef.current }; });
+  useEffect(()=>{ window.__redPrueba = { abrir: n => abrir(n), ir: t => { setJugando(0); ir(t); }, zoom: setZoom, gesto: alGesto, elegir: ids => setSel(new Set(ids)), jugar: v => setJugando(v || 1), detener, t: () => reloj.t, motor: motor.current, vista, p: () => pRef.current }; });
   // 8/11 (skimming): el visor enseña otro instante sin mover el cabezal (null = vuelve al cabezal); uno por fotograma
   const skimPend = useRef(null);
   const verEn = t => { const prim = skimPend.current === null; skimPend.current = t == null ? -1 : t; if(!prim) return;
@@ -1038,9 +1038,9 @@ const CSS = `
 .rd-app { position:fixed; inset:0; display:flex; flex-direction:column; background:#0e0e0e; color:#eaeaea; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; }
 .rd-barra { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #222; background:#141414; flex-wrap:wrap; }
 .rd-medio-fila { display:grid; grid-template-columns: minmax(250px, 22%) minmax(0,1fr) minmax(220px, 18%); gap:6px; padding:6px; height:52vh; min-height:300px; }
-.rd-panel { background:#151515; border:1px solid #232323; border-radius:8px; min-height:0; overflow:hidden; }
+.rd-panel { background:#151515; border:1px solid #232323; border-radius:8px; min-height:0; overflow:hidden; contain:layout paint; }
 .rd-herr { display:flex; align-items:center; gap:4px; padding:5px 10px; border-top:1px solid #222; border-bottom:1px solid #222; background:#141414; }
-.rd-linea { flex:1; min-height:0; display:flex; overflow:hidden; }
+.rd-linea { flex:1; min-height:0; display:flex; overflow:hidden; contain:layout paint; }
 .rd-ico { display:inline-flex; align-items:center; justify-content:center; width:32px; height:30px; border-radius:6px; border:1px solid transparent; color:#cfcfcf; background:transparent; cursor:pointer; flex-shrink:0; font-size:12px; }
 .rd-ico:hover:not(:disabled) { background:#252525; color:#fff; }
 .rd-ico.on { background:rgba(212,175,55,0.18); color:var(--gold); border-color:rgba(212,175,55,0.45); }

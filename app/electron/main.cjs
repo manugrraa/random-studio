@@ -1003,7 +1003,17 @@ require("./carpetas.cjs");
 require("./contador.cjs");
 // v3.40 (Carental): perfiles locales (sin Google) y brutos para montar con el clon
 require("./brutos.cjs");
-require("./audio.cjs");          // (16/11) RandomEditor: el sonido del visor en trozos para el reloj de Web Audio
+require("./audio.cjs");
+// (16/11) solo en el modo de pruebas: perfil de CPU de una ventana (para medir la fluidez del editor sin adivinar)
+if (process.env.STUDIO_CAPTURA) ipcMain.handle("prueba-perfil", async (e, accion) => {
+  const d = e.sender.debugger;
+  if (accion === "metricas") { if (!d.isAttached()) d.attach("1.3"); await d.sendCommand("Performance.enable"); const { metrics } = await d.sendCommand("Performance.getMetrics"); return Object.fromEntries(metrics.filter(m => /Duration$|^LayoutCount$|^RecalcStyleCount$|^Nodes$/.test(m.name)).map(m => [m.name, m.value])); }
+  if (accion === "iniciar") { if (!d.isAttached()) d.attach("1.3"); await d.sendCommand("Profiler.enable"); await d.sendCommand("Profiler.setSamplingInterval", { interval: 200 }); await d.sendCommand("Profiler.start"); return true; }
+  const { profile } = await d.sendCommand("Profiler.stop");
+  const porId = new Map(profile.nodes.map(n => [n.id, n])); const propio = new Map();
+  const dts = profile.timeDeltas || []; (profile.samples || []).forEach((id, i) => { const n = porId.get(id); const k = (n.callFrame.functionName || "(anónima)") + " " + (n.callFrame.url || "").split("/").pop() + ":" + n.callFrame.lineNumber; propio.set(k, (propio.get(k) || 0) + (dts[i] || 0) / 1000); });
+  return [...propio.entries()].sort((a, b) => b[1] - a[1]).slice(0, 30).map(([k, ms]) => [k, Math.round(ms)]);
+});          // (16/11) RandomEditor: el sonido del visor en trozos para el reloj de Web Audio
 require("./redes.cjs");          // (5/11) Instagram y TikTok: preparar y subir la copia del vídeo
 require("./vigilante.cjs");      // (5/11) vigilante de seguridad: Defender, TeamViewer, Tailscale y escritorio remoto
 require("./recopilaciones.cjs"); // (5/11) recopilaciones de 12 historias: grupo, ideas, intro/outro, miniatura y montaje

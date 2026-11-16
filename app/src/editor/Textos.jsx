@@ -65,6 +65,10 @@ export function CapaTextos({ proyecto, reloj, sel, onElegir, onGesto }) {
   useEffect(()=>{ const el = caja.current; if(!el) return; const ro = new ResizeObserver(()=>setEsc(el.clientWidth / W)); ro.observe(el); setEsc(el.clientWidth / W); return ()=>ro.disconnect(); },[W]);
   // de arriba abajo en la línea de tiempo = de encima a debajo: se pintan al revés
   const textos = useMemo(()=>[...proyecto.pistas].reverse().filter(p=>p.tipo==="texto" && !p.muda).flatMap(p=>p.clips),[proyecto]);
+  /* (16/11, fase 4: fluidez) lo que cambia el TAMAÑO de los textos (su texto y su estilo): medir el ancho de cada texto obliga
+     al navegador a recalcular la página, y se hacía con cualquier cambio del proyecto (p. ej. en cada fotograma al arrastrar
+     un clip de audio). Ahora solo si cambia algo de esto. */
+  const firmaTam = useMemo(()=>textos.map(c=>c.id + "|" + (c.texto || "") + "|" + JSON.stringify(c.estilo || {})).join("||"), [textos]);
   const tRef = useRef(textos); tRef.current = textos;
   // (8/11) y otra vez cuando acaba de cargar una fuente (si no, un texto medido con la de reserva se salía)
   const [fuentesListas, setFuentesListas] = useState(0);
@@ -91,7 +95,7 @@ export function CapaTextos({ proyecto, reloj, sel, onElegir, onGesto }) {
       }
     });
     mostrar(reloj.t);
-  },[textos, esc, fuentesListas]);       // (8/11, fallo de fluidez: se medía cada texto en CADA fotograma de la reproducción)
+  },[firmaTam, esc, fuentesListas]);       // (8/11, fallo de fluidez: se medía cada texto en CADA fotograma de la reproducción)
   const pRef = useRef(proyecto); pRef.current = proyecto;
   const arrastrar = (e, c) => {
     if(e.button !== 0) return;

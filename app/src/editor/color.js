@@ -74,8 +74,19 @@ export function salida(e) {
 const fila = m => [0,1,2].map(i=>`${m[i*3].toFixed(5)} ${m[i*3+1].toFixed(5)} ${m[i*3+2].toFixed(5)} 0 0`).join(" ") + " 0 0 0 1 0";
 
 // el filtro SVG (para la previsualización)
+/* (16/11, fase 4: fluidez) en CACHÉ: el perfil de CPU sacó que el visor recalculaba la curva de 256 puntos de cada clip con
+   color en cada fotograma al arrastrar o mover la vara (lo que más tiempo se comía). Solo se rehace si cambia su color. */
+const CACHE_FILTROS = new Map();
 export function svgFiltro(id, c) {
-  const e = colorDe(c), t = tabla(e, 256).join(" ");
+  const e = colorDe(c), k = id + "|" + JSON.stringify(e);
+  const ya = CACHE_FILTROS.get(k); if(ya) return ya;
+  if(CACHE_FILTROS.size > 2000) CACHE_FILTROS.clear();
+  const s = svgFiltroCalc(id, e);
+  CACHE_FILTROS.set(k, s);
+  return s;
+}
+function svgFiltroCalc(id, e) {
+  const t = tabla(e, 256).join(" ");
   return `<filter id="${id}" color-interpolation-filters="sRGB" x="0" y="0" width="1" height="1">`
     + `<feColorMatrix type="matrix" values="${fila(entrada(e))}"/>`
     + `<feComponentTransfer><feFuncR type="table" tableValues="${t}"/><feFuncG type="table" tableValues="${t}"/><feFuncB type="table" tableValues="${t}"/></feComponentTransfer>`

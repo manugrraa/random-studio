@@ -264,11 +264,13 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
   useImperativeHandle(ref, ()=>({ sincronizar, soltar, activoV, mostrado }));
   useEffect(()=>()=>{ Object.values(auds.current).forEach(a=>{ try { a.pause(); a.src=""; } catch(e){} }); },[]);
   const [W, H] = [proyecto.ancho, proyecto.alto];
+  // (16/11, fase 4) los filtros de color, solo cuando cambian las pistas (no en cada fotograma de la vara)
+  const filtrosHtml = React.useMemo(()=>proyecto.pistas.filter(x=>x.tipo==="video").flatMap(x=>x.clips).filter(conColor).map(c=>svgFiltro("rfc_" + c.id, c)).join(""), [proyecto.pistas]);
   const estiloV = {position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"contain",opacity:0,transition:"none"};
   return (
     <div ref={lienzo} data-lienzo style={{position:"relative",height:"100%",aspectRatio:`${W}/${H}`,maxWidth:"100%",maxHeight:"100%",background:"#000",boxShadow:"0 0 0 1px rgba(255,255,255,0.06)",overflow:"hidden"}}>
       {/* 31/10: el color de cada clip (filtro SVG: lo pinta la gráfica, mismas fórmulas que al exportar) */}
-      <svg width="0" height="0" style={{position:"absolute"}} dangerouslySetInnerHTML={{__html: proyecto.pistas.filter(x=>x.tipo==="video").flatMap(x=>x.clips).filter(conColor).map(c=>svgFiltro("rfc_" + c.id, c)).join("")}}/>
+      <svg width="0" height="0" style={{position:"absolute"}} dangerouslySetInnerHTML={{__html: filtrosHtml}}/>
       {/* (16/11) aquí van los reproductores del grupo (se crean y se sueltan desde el código, uno por archivo) */}
       <div ref={contV} style={{position:"absolute",inset:0}}/>
       {/* las pistas superpuestas, de abajo arriba (la primera de la lista es la de más arriba) */}
