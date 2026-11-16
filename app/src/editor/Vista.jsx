@@ -37,8 +37,10 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
   const seguir = (v, objetivo, base, adelante) => {
     const d = v.currentTime - objetivo;
     if(!adelante || !sinARef.current){ return false; }
-    if(Math.abs(d) > 0.25){ saltar(v, objetivo); v.playbackRate = base; return true; }
-    const corr = Math.abs(d) > 0.015 ? Math.max(-0.08, Math.min(0.08, -d * 1.5)) : 0;
+    // (16/11, fase 3) al entrar en un corte el vídeo nuevo arranca con retraso: si se va más de 0,12 s salta un poco por
+    // delante (lo que tarda en buscar un proxy), y lo pequeño se corrige deprisa (hasta ±25 % de velocidad; va mudo)
+    if(Math.abs(d) > 0.12){ saltar(v, objetivo + (v.paused ? 0 : 0.04 * base)); v.playbackRate = base; return true; }
+    const corr = Math.abs(d) > 0.008 ? Math.max(-0.25, Math.min(0.25, -d * 4)) : 0;
     v.playbackRate = Math.max(0.0625, Math.min(16, base * (1 + corr)));
     return true;
   };
@@ -70,7 +72,7 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
     el.style.webkitMaskRepeat = el.style.maskRepeat = "no-repeat";
     el.style.maskMode = "luminance";        // (blanco = se ve, como la imagen de la exportación; no la transparencia)
   };
-  const A = useRef(null), B = useRef(null), activo = useRef(0);
+
   const auds = useRef({});
   const pRef = useRef(proyecto); pRef.current = proyecto;
   const xRef = useRef(proxies); xRef.current = proxies || {};
@@ -83,6 +85,41 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
     v.dataset.clip = c.id;
     return local(c, t);
   };
+  /* (16/11, fase 3 del motor nuevo) un GRUPO de reproductores, uno por archivo (y dos por archivo, por los cortes
+     seguidos del mismo), que se quedan cargados: volver a un clip ya visto solo busca su fotograma (los proxies son todo
+     fotogramas completos: instantáneo) en vez de cargar el vídeo de cero (~0,3-1 s con 2 reproductores). Hasta 10;
+     se suelta el que lleve más tiempo sin usarse. */
+  const contV = useRef(null), pool = useRef(new Map()), visible = useRef(null);
+  const MAX_POOL = 10;
+  const vigilar = v => {            // el instante exacto de cada fotograma que se pinta (requestVideoFrameCallback)
+    if(!v.requestVideoFrameCallback || v._rvfc) return;
+    const cb = (ahora, md) => { v._visto = { t: md.mediaTime, at: performance.now(), clip: v.dataset.clip }; v._rvfc = v.requestVideoFrameCallback(cb); };
+    v._rvfc = v.requestVideoFrameCallback(cb);
+  };
+  const reproductor = (f, ranura) => {
+    const key = f + "#" + ranura;
+    let v = pool.current.get(key);
+    if(v){ pool.current.delete(key); pool.current.set(key, v); return v; }
+    v = document.createElement("video");
+    v.playsInline = true; v.preload = "auto"; v.muted = true;
+    Object.assign(v.style, {position:"absolute",inset:"0",width:"100%",height:"100%",objectFit:"contain",opacity:"0",transition:"none"});
+    v.addEventListener("seeked", alBuscar);
+    v.addEventListener("loadedmetadata", () => { if(visible.current === v || !visible.current) setNatural([v.videoWidth, v.videoHeight]); });
+    v.addEventListener("loadeddata", () => { v._rvfc = null; vigilar(v); });
+    v.src = fileUrl(f); v.dataset.src = f;
+    if(contV.current) contV.current.appendChild(v);
+    vigilar(v);
+    pool.current.set(key, v);
+    while(pool.current.size > MAX_POOL){
+      const [k0, v0] = pool.current.entries().next().value;
+      if(v0 === visible.current){ pool.current.delete(k0); pool.current.set(k0, v0); continue; }
+      pool.current.delete(k0);
+      try { v0.pause(); v0.removeAttribute("src"); v0.load(); v0.remove(); } catch(e){}
+    }
+    return v;
+  };
+  // la ranura de cada clip de la principal: su posición par/impar (dos cortes seguidos del mismo archivo no comparten)
+  const ranuraDe = (cs, c) => cs.findIndex(x=>x.id === c.id) % 2;
   // saltar sin encolar: si el vídeo aún está buscando el anterior, se apunta solo el último destino
   // (arrastrando la vara se pedían decenas de saltos seguidos y se quedaba atrás)
   // (+1 ms: con el tiempo justo del fotograma, Chromium a veces enseña el anterior por redondeo)
@@ -94,18 +131,11 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
   /* 28/10, él: "la vara no se para precisa cuando le doy al espacio". El reloj iba por su cuenta y el
      vídeo, a su ritmo: al pausar, la vara (y la imagen) saltaban hasta 200 ms. Ahora cada reproductor
      apunta el instante EXACTO del fotograma que acaba de pintar en pantalla, y la vara va con él. */
-  useEffect(()=>{
-    const ids = [];
-    [A.current, B.current].forEach(v=>{
-      if(!v || !v.requestVideoFrameCallback) return;
-      const cb = (ahora, md) => { v._visto = { t: md.mediaTime, at: performance.now(), clip: v.dataset.clip }; ids.push([v, v.requestVideoFrameCallback(cb)]); };
-      ids.push([v, v.requestVideoFrameCallback(cb)]);
-    });
-    return ()=>ids.forEach(([v, id])=>{ try { v.cancelVideoFrameCallback(id); } catch(e){} });
-  },[]);
+  // (16/11) el grupo de reproductores se suelta entero al cerrar el visor
+  useEffect(()=>()=>{ pool.current.forEach(v=>{ try { v.pause(); v.removeAttribute("src"); v.load(); v.remove(); } catch(e){} }); pool.current.clear(); },[]);
   // el tiempo (de la línea) del fotograma que se está viendo, o null si no se sabe
   const mostrado = () => {
-    const v = [A.current, B.current][activo.current]; if(!v || !v._visto) return null;
+    const v = visible.current; if(!v || !v._visto) return null;
     const pr = pRef.current, v1 = pr.pistas.find(x=>x.id==="v1");
     const c = v1 && v1.clips.find(x=>x.id === v._visto.clip); if(!c) return null;
     return c.en + (v._visto.t - c.desde) / vel(c);
@@ -115,16 +145,15 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
     const pr = pRef.current, adelante = vel > 0;
     const v1 = pr.pistas.find(x=>x.id==="v1"), cs = v1 ? v1.clips : [];
     const c = clipEn(cs, t);
-    const vs = [A.current, B.current];
     let medido = null;
-    if(!vs[0] || !vs[1]) return null;
-    if(!c){ vs.forEach(v=>{ if(!v.paused) v.pause(); v.style.opacity = 0; }); }
+    if(!contV.current) return null;
+    if(!c){ pool.current.forEach(v=>{ if(!v.paused) v.pause(); v.style.opacity = 0; }); }
     else {
-      // ¿lo tiene ya el otro reproductor preparado? relevo
-      let i = activo.current;
-      if(vs[i].dataset.clip !== c.id && vs[1-i].dataset.clip === c.id) i = activo.current = 1 - i;
-      const v = vs[i], o = vs[1-i];
-      const local = cargar(v, c, t);
+      // (16/11) su reproductor del grupo (ya cargado si se vio antes): solo hay que buscar su fotograma
+      const v = reproductor(fuente(c), ranuraDe(cs, c));
+      v.dataset.clip = c.id; v.dataset.ruta = c.ruta;
+      if(visible.current !== v){ const o0 = visible.current; visible.current = v; if(o0){ o0.style.opacity = 0; if(!o0.paused) o0.pause(); } setNatural(n => v.videoWidth && (!n || n[0] !== v.videoWidth || n[1] !== v.videoHeight) ? [v.videoWidth, v.videoHeight] : n); }
+      const local = c.desde + (t - c.en) * (c.velocidad || 1);
       const base = Math.max(0.0625, Math.min(16, (adelante ? vel : 1) * (c.velocidad || 1)));
       if(!seguir(v, local, base, adelante)){
         if(Math.abs(v.currentTime - local) > (adelante ? 0.2 : 0.005) || (!adelante && v._pend != null)) saltar(v, local);
@@ -134,18 +163,32 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
       if(sinARef.current){ v.muted = true; } else { v.muted = false; ponerVolumen(v, c.voz && c.voz.ruta ? 0 : volumenEn(c, t, v1.muda)); }
       // (mover, escalar, girar y opacidad, con sus fotogramas clave)
       v.style.transform = transformCss(c, t - c.en, kRef.current);
-      aplicar(v, c, t); o.style.opacity = 0;
+      aplicar(v, c, t);
       if(adelante && v.paused) v.play().catch(()=>{});
       if(!adelante && !v.paused) v.pause();
-      if(!o.paused) o.pause();
       // reproduciendo, la vara la marca el fotograma que se ve (como en los editores de verdad)
       if(adelante && vel === 1 && !v.paused && v.readyState >= 2){
         const vi = v._visto;
         medido = vi && vi.clip === c.id && performance.now() - vi.at < 150 ? c.en + (vi.t - c.desde) / (c.velocidad || 1) : c.en + (v.currentTime - c.desde) / (c.velocidad || 1);
       }
-      // el siguiente, preparado en el otro (en pausa y en su primer fotograma)
+      // el siguiente, preparado en SU reproductor del grupo (en pausa y en su primer fotograma)
       const sig = cs.find(x=>x.en >= fin(c) - 1e-3 && x.id !== c.id);
-      if(sig && (o.dataset.clip !== sig.id || o.dataset.src !== fuente(sig))){ cargar(o, sig, sig.en); saltar(o, sig.desde); o.style.transform = transformCss(sig, 0, kRef.current); }
+      if(sig){ const o = reproductor(fuente(sig), ranuraDe(cs, sig));
+        // (16/11, fase 3) a 0,1 s del corte, el siguiente ya ARRANCA escondido (mudo) para llegar al corte en marcha y
+        // en su fotograma: sin el retraso de arranque que se notaba en los primeros fotogramas de cada clip
+        const falta = (fin(c) - t) / Math.max(0.0625, vel);
+        if(o !== v && adelante && sinARef.current && falta < 0.1){
+          if(o.dataset.clip !== sig.id){ o.dataset.clip = sig.id; o.dataset.ruta = sig.ruta; }
+          o._arranca = true;
+          const objetivo = sig.desde - falta * vel * (sig.velocidad || 1);
+          if(o.paused){ saltar(o, Math.max(0, objetivo)); o.playbackRate = Math.max(0.0625, Math.min(16, vel * (sig.velocidad || 1))); o.play().catch(()=>{}); }
+        } else if(o !== v && (o.dataset.clip !== sig.id || (!o._arranca && Math.abs(o.currentTime - sig.desde) > 0.02))){ o._arranca = false; o.dataset.clip = sig.id; o.dataset.ruta = sig.ruta; if(!o.paused) o.pause(); saltar(o, sig.desde); o.style.transform = transformCss(sig, 0, kRef.current); }
+        if(o !== v) o.style.transform = transformCss(sig, 0, kRef.current);
+        // los demás del grupo, quietos y escondidos (menos el siguiente, si ya está arrancando)
+        pool.current.forEach(x=>{ if(x !== v && !(x === o && o._arranca && adelante)){ if(x.style.opacity !== "0") x.style.opacity = 0; if(!x.paused) x.pause(); x._arranca = false; } });
+        if(o !== v && o.style.opacity !== "0") o.style.opacity = 0;
+      } else pool.current.forEach(x=>{ if(x !== v){ if(x.style.opacity !== "0") x.style.opacity = 0; if(!x.paused) x.pause(); x._arranca = false; } });
+      v._arranca = false;
     }
     // las superpuestas: su clip del instante, en su capa (con su sonido)
     pr.pistas.filter(pi=>pi.tipo==="video" && pi.id!=="v1").forEach(pi=>{
@@ -203,17 +246,18 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
     return medido;
   };
   const soltar = async () => {
-    if(!A.current) return;
-    [A.current, B.current, ...Object.values(auds.current)].forEach(v=>{ try { if(v){ v.pause(); v.removeAttribute("src"); v.dataset.ruta = ""; v.dataset.src = ""; v.dataset.clip = ""; v.load && v.load(); } } catch(x){} });
+    // (16/11) suelta TODO el grupo de reproductores (y los audios), para que Windows deje reemplazar los archivos
+    pool.current.forEach(v=>{ try { v.pause(); v.removeAttribute("src"); v.load(); v.remove(); } catch(x){} }); pool.current.clear(); visible.current = null;
+    Object.values(auds.current).forEach(v=>{ try { if(v){ v.pause(); v.removeAttribute("src"); v.dataset.ruta = ""; v.dataset.src = ""; v.dataset.clip = ""; v.load && v.load(); } } catch(x){} });
     await new Promise(r=>setTimeout(r, 400));     // Windows no deja reemplazar un vídeo abierto
   };
   // el reproductor que se ve (para contar sus fotogramas: el contador de FPS)
-  const activoV = () => [A.current, B.current][activo.current];
+  const activoV = () => visible.current;
   // 31/10: al cambiar el clip (moverlo, escalarlo...) con la reproducción parada, su vídeo se coloca YA
   useEffect(()=>{
     if(!reloj) return;
     const t = reloj.t, v1 = proyecto.pistas.find(x=>x.id==="v1"), c = v1 && v1.clips.find(x=>t >= x.en && t < fin(x));
-    const v = [A.current, B.current][activo.current];
+    const v = visible.current;
     if(c && v && v.dataset.clip === c.id) aplicar(v, c, t);
     proyecto.pistas.filter(pi=>pi.tipo==="video" && pi.id!=="v1").forEach(pi=>{ const el = capas.current[pi.id], c2 = clipEn(pi.clips, t); if(el && c2 && el.dataset.src) aplicar(el, c2, t); });
   },[proyecto, k]);
@@ -225,8 +269,8 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
     <div ref={lienzo} data-lienzo style={{position:"relative",height:"100%",aspectRatio:`${W}/${H}`,maxWidth:"100%",maxHeight:"100%",background:"#000",boxShadow:"0 0 0 1px rgba(255,255,255,0.06)",overflow:"hidden"}}>
       {/* 31/10: el color de cada clip (filtro SVG: lo pinta la gráfica, mismas fórmulas que al exportar) */}
       <svg width="0" height="0" style={{position:"absolute"}} dangerouslySetInnerHTML={{__html: proyecto.pistas.filter(x=>x.tipo==="video").flatMap(x=>x.clips).filter(conColor).map(c=>svgFiltro("rfc_" + c.id, c)).join("")}}/>
-      <video ref={A} playsInline preload="auto" style={estiloV} onSeeked={alBuscar} onLoadedMetadata={e=>setNatural([e.target.videoWidth, e.target.videoHeight])}/>
-      <video ref={B} playsInline preload="auto" style={estiloV} onSeeked={alBuscar} onLoadedMetadata={e=>setNatural([e.target.videoWidth, e.target.videoHeight])}/>
+      {/* (16/11) aquí van los reproductores del grupo (se crean y se sueltan desde el código, uno por archivo) */}
+      <div ref={contV} style={{position:"absolute",inset:0}}/>
       {/* las pistas superpuestas, de abajo arriba (la primera de la lista es la de más arriba) */}
       {[...proyecto.pistas].reverse().filter(pi=>pi.tipo==="video" && pi.id!=="v1").map(pi=>{
         const img = pi.clips.length > 0 && pi.clips.every(c=>IMAGEN.test(c.ruta));
@@ -240,7 +284,7 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
         // el clip ELEGIDO de la principal que se ve ahora: su recuadro para moverlo/escalarlo/girarlo
         const pv = proyecto.pistas.filter(x=>x.tipo==="video"), pc = pv.find(pi=>pi.clips.some(x=>sel && sel.has(x.id) && tv >= x.en && tv < fin(x)));
         const c = pc && pc.clips.find(x=>sel.has(x.id) && tv >= x.en && tv < fin(x));
-        const va = pc && pc.id !== "v1" ? capas.current[pc.id] : [A.current, B.current][activo.current];
+        const va = pc && pc.id !== "v1" ? capas.current[pc.id] : visible.current;
         const nat = va && (va.videoWidth || va.naturalWidth) ? [va.videoWidth || va.naturalWidth, va.videoHeight || va.naturalHeight] : natural;
         if(c && editarMascara && c.mascara) return <EditorMascara c={c} tRel={tv - c.en} W={W} H={H} k={k} onGesto={onGesto} cambiarClip={cambiarClip}/>;
         return c ? <Transformador c={c} tRel={tv - c.en} W={W} H={H} k={k} natural={nat} onGesto={onGesto} cambiarClip={cambiarClip}/> : null;

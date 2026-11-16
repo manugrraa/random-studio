@@ -269,7 +269,7 @@ export function RandomEditor({ toast }) {
   };
   const jugar = () => { if(jugandoRef.current) detener(); else setJugando(1); };
   // (16/11) gancho para las pruebas automáticas (modo de pruebas del Studio): medir sincronía y parada sin tocar la pantalla
-  useEffect(()=>{ window.__redPrueba = { abrir: n => abrir(n), jugar: v => setJugando(v || 1), detener, t: () => reloj.t, motor: motor.current, vista, p: () => pRef.current }; });
+  useEffect(()=>{ window.__redPrueba = { abrir: n => abrir(n), ir: t => { setJugando(0); ir(t); }, jugar: v => setJugando(v || 1), detener, t: () => reloj.t, motor: motor.current, vista, p: () => pRef.current }; });
   // 8/11 (skimming): el visor enseña otro instante sin mover el cabezal (null = vuelve al cabezal); uno por fotograma
   const skimPend = useRef(null);
   const verEn = t => { const prim = skimPend.current === null; skimPend.current = t == null ? -1 : t; if(!prim) return;
