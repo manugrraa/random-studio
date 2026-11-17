@@ -55,6 +55,16 @@ async function reiniciar() {
   try { await session.defaultSession.cookies.flushStore(); } catch (e) {}
   app.relaunch();
   setTimeout(() => app.quit(), 400);
+  // (17/11, él: "no se abre el RandomStudio"): el cierre se quedó a medias (sin ninguna ventana, el reinicio esperando para
+  // siempre). Si a los 10 s sigue vivo y NO queda ninguna ventana a la vista, se cierra del todo (ya está todo guardado);
+  // si hay una ventana preguntando algo (p. ej. cambios sin guardar del editor), no se fuerza: se espera su respuesta.
+  setTimeout(() => {
+    try {
+      const { BrowserWindow } = require("electron");
+      const visibles = BrowserWindow.getAllWindows().filter(w => !w.isDestroyed() && w.isVisible());
+      if (!visibles.length) { require("./registro.cjs").anotar("version", "el cierre para reiniciar se había quedado a medias: se fuerza"); app.exit(0); }
+    } catch (e) {}
+  }, 10000);
 }
 
 function dejarLista(version, archivo, sha) {
