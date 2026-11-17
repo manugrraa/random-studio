@@ -220,6 +220,26 @@ function ElegirMiniatura({ det, toast, onHecha }) {
   const [haciendo, setHaciendo] = useState(false);
   const [vista, setVista] = useState(det.miniatura);
   const conFoto = det.planos.filter(p => p.foto);
+  // (17-11, Manu: «no me deja seleccionar la miniatura que yo quiera») el fotograma exacto, parando el Short final
+  const [video, setVideo] = useState(null);
+  const vid = useRef(null);
+  useEffect(() => {
+    let vivo = true;
+    if (det.final) SF().historiasFinalVideo(det.id).then(r => vivo && setVideo(r.video)).catch(() => {});
+    else setVideo(null);
+    return () => { vivo = false; };
+  }, [det.id, det.final]);
+  const usarFotograma = async () => {
+    if (!vid.current) return;
+    setHaciendo(true);
+    try {
+      const r = await SF().historiasMiniaturaFinal(det.id, vid.current.currentTime);
+      setVista(r.miniatura); setSel(null);
+      toast(det.entregada ? "Miniatura cambiada y entregada de nuevo" : "Miniatura cambiada");
+      onHecha && onHecha();
+    } catch (e) { toast("No se pudo: " + String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")); }
+    setHaciendo(false);
+  };
   const usar = async () => {
     if (!sel) return;
     setHaciendo(true);
@@ -244,8 +264,14 @@ function ElegirMiniatura({ det, toast, onHecha }) {
           {vista ? <img src={vista} style={{ width: 150, borderRadius: 12, border: "1px solid var(--border-gold)", display: "block" }} />
             : <div style={{ width: 150, height: 266, borderRadius: 12, border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, color: "var(--text-3)", textAlign: "center", padding: 8 }}>Sale sola al montar el Short</div>}
         </div>
+        {video && <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+          <div style={{ fontSize: 11, color: "var(--text-3)" }}>Para el Short donde quieras</div>
+          <video ref={vid} src={video} controls preload="metadata" style={{ width: 170, aspectRatio: "9/16", background: "#000", borderRadius: 12, border: "1px solid var(--border)" }} />
+          <button onClick={usarFotograma} disabled={haciendo} className="grad-gold" style={{ ...botonOro, opacity: haciendo ? 0.6 : 1 }}>{haciendo ? "Guardando…" : "Usar este fotograma"}</button>
+        </div>}
         <div style={{ flex: 1, minWidth: 260 }}>
-          {conFoto.length === 0
+          {video && conFoto.length > 0 && <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 6 }}>…o elige un plano y su momento</div>}
+          {conFoto.length === 0 && video ? null : conFoto.length === 0
             ? (det.entregada && det.carpetaEntrega
                 ? <ElegirMiniaturaShort nombre={String(det.carpetaEntrega).split(/[\\/]/).pop()} toast={toast} />
                 : <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Las fotos de los planos aparecen tras la escena 3D.</div>)
@@ -366,13 +392,16 @@ function Terminadas({ lista, selId, setSelId, toast, alBorrar, otras = [], otraS
         })}
         {/* (10-11) las que hizo otro equipo y ya están aquí: elegir su miniatura y programarlas */}
         {!!otras.length && !elegir && <>
-          <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em", marginTop: 6 }}>HECHAS EN OTRO EQUIPO · {otras.length}</div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em", marginTop: 6 }}>DEL ORDENADOR Y OTROS SHORTS · {otras.length}</div>
           {otras.map(o => (
             <button key={o.nombre} onClick={() => setOtraSel(o.nombre)}
               style={{ display: "flex", gap: 8, alignItems: "center", textAlign: "left", padding: "6px 8px", borderRadius: 10,
                 border: "1px solid " + (otraSel === o.nombre ? "var(--border-gold)" : "var(--border)"), background: "var(--card)" }}>
               <div style={{ width: 26, height: 46, borderRadius: 6, overflow: "hidden", flexShrink: 0, background: "var(--card-2)" }}>{o.miniatura && <img src={o.miniatura} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: 1 }}>{o.nombre}</div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {o.recop && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>EN LA RECOPILACIÓN {o.recop}</div>}
+                <div style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.nombre}</div>
+              </div>
             </button>))}
         </>}
       </>}
@@ -403,7 +432,7 @@ function OtraTerminada({ o, toast, onCambio }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
       <div style={{ ...tarjeta, borderColor: "rgba(74,222,128,.4)" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em" }}>HECHA EN OTRO EQUIPO · {new Date(o.fecha).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em" }}>{o.recop ? "EN LA RECOPILACIÓN " + o.recop : "HECHA EN OTRO EQUIPO"} · {new Date(o.fecha).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</div>
         <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 19, margin: "4px 0 12px", lineHeight: 1.25 }}>{o.nombre}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <BotonProgramar nombre={o.nombre} toast={toast} />

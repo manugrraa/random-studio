@@ -219,6 +219,8 @@ contextBridge.exposeInMainWorld("studioFS", {
   recopAbrir: (nn) => ipcRenderer.invoke("recop-abrir", nn),
   onRecopProgreso: (cb) => { const f = (e, d) => cb(d); ipcRenderer.on("recop-progreso", f); return () => ipcRenderer.removeListener("recop-progreso", f); },
   historiasMiniaturaEntrega: (nombre, t) => ipcRenderer.invoke("historias-miniatura-entrega", nombre, t),
+  historiasMiniaturaFinal: (id, s) => ipcRenderer.invoke("historias-miniatura-final", id, s),
+  historiasFinalVideo: (id) => ipcRenderer.invoke("historias-final-video", id),
   historiasAbrir: (id, que) => ipcRenderer.invoke("historias-abrir", id, que),
   // contador de suscriptores para OBS (v3.23, contador.cjs)
   contadorAbrir: (op) => ipcRenderer.invoke("contador-abrir", op),

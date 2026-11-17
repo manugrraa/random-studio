@@ -356,6 +356,30 @@ ipcMain.handle("historias-miniatura", async (e, id, plano, t) => {
   return { ok: true, miniatura: miniDataUrl(path.join(c, "miniatura.png"), 360) };
 });
 
+/* (17-11, Manu: «no me deja seleccionar la miniatura que yo quiera») el fotograma EXACTO del Short final de esta
+ * historia (paras el vídeo donde quieras), no solo un plano y un porcentaje a ciegas; luego se vuelve a entregar */
+ipcMain.handle("historias-miniatura-final", async (e, id, segundos) => {
+  const c = carpetaDe(id), final = path.join(c, `historia${id.slice(0, 2)}_final.mp4`);
+  if (!existe(final)) throw new Error("Hace falta el vídeo final (sale al montar)");
+  const tt = Math.max(0, Number(segundos) || 0), destino = path.join(c, "miniatura.png");
+  await new Promise((ok, ko) => {
+    const p = spawn("ffmpeg", ["-v", "error", "-y", "-ss", tt.toFixed(3), "-i", final, "-frames:v", "1", "-vf", "scale=1080:1920:flags=lanczos", destino], { windowsHide: true });
+    let err = ""; p.stderr.on("data", d => err += d);
+    p.on("close", code => code === 0 ? ok() : ko(new Error(err.split("\n").filter(Boolean).slice(-1)[0] || ("ffmpeg " + code))));
+  });
+  await new Promise((ok, ko) => {
+    const p = spawn("python", [path.join(raiz(), "tools", "cadena.py"), path.relative(raiz(), c), "--solo", "entregar"], { cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir() }, windowsHide: true });
+    let out = ""; p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
+    p.on("close", code => code === 0 ? ok() : ko(new Error(out.split("\n").filter(Boolean).slice(-3).join(" | ") || ("código " + code))));
+  });
+  registro.anotar("historias", "miniatura elegida en el Short final de " + id, { segundo: tt });
+  return { ok: true, miniatura: miniDataUrl(destino, 360) };
+});
+ipcMain.handle("historias-final-video", async (e, id) => {
+  const final = path.join(carpetaDe(id), `historia${id.slice(0, 2)}_final.mp4`);
+  return { ok: true, video: existe(final) ? urlArchivo(final) : null };
+});
+
 /* (5-11, Manu: «que el portátil pueda escoger la miniatura de cualquier historia, hasta las hechas por el ordenador»)
  * Sin fotos de los planos (las tiene el equipo que la hizo, y el de paso las borra), la miniatura se elige directamente
  * en el Short entregado, que el portátil baja de Drive a Vídeos RDR\Editados\RandomHistorias\<TÍTULO>\: un fotograma
@@ -381,14 +405,22 @@ ipcMain.handle("historias-entrega-video", async (e, nombre) => {
 ipcMain.handle("historias-entregas-otras", async () => {
   const propias = new Set();
   try { for (const n of fs.readdirSync(histDir())) if (/^\d{2}_/.test(n)) { const t = titulo(path.join(histDir(), n)); if (t) propias.add(tituloArchivo(t)); } } catch (x) {}
-  const out = [];
-  let ls = []; try { ls = fs.readdirSync(listasDir(), { withFileTypes: true }); } catch (x) { return { ok: true, lista: [] }; }
-  for (const d of ls) {
-    if (!d.isDirectory() || d.name.startsWith(".") || propias.has(d.name)) continue;
-    const dir = path.join(listasDir(), d.name), a = archivosEntrega(dir);
-    if (!a.mp4) continue;
-    let fecha = 0; try { fecha = fs.statSync(a.mp4).mtimeMs; } catch (x) {}
-    out.push({ nombre: d.name, fecha, miniatura: a.png ? miniDataUrl(a.png, 60) : null });
+  const out = [], vistos = new Set();
+  // (17-11, Manu: «no me salen las historias creadas por el ordenador») también las que ya se metieron en una
+  // recopilación: se mueven a .Recopilaciones\NN\<TÍTULO>\ y antes solo se miraba la carpeta principal
+  const carpetas = [listasDir()];
+  try { for (const nn of fs.readdirSync(path.join(listasDir(), ".Recopilaciones"))) if (/^\d+$/.test(nn)) carpetas.push(path.join(listasDir(), ".Recopilaciones", nn)); } catch (x) {}
+  for (const base of carpetas) {
+    let ls = []; try { ls = fs.readdirSync(base, { withFileTypes: true }); } catch (x) { continue; }
+    const recop = base === listasDir() ? null : path.basename(base);
+    for (const d of ls) {
+      if (!d.isDirectory() || /^[._]/.test(d.name) || propias.has(d.name) || vistos.has(d.name)) continue;
+      const a = archivosEntrega(path.join(base, d.name));
+      if (!a.mp4) continue;
+      vistos.add(d.name);
+      let fecha = 0; try { fecha = fs.statSync(a.mp4).mtimeMs; } catch (x) {}
+      out.push({ nombre: d.name, fecha, recop, miniatura: a.png ? miniDataUrl(a.png, 60) : null });
+    }
   }
   out.sort((x, y) => y.fecha - x.fecha);
   return { ok: true, lista: out };
