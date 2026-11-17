@@ -669,7 +669,10 @@ function createWindow() {
     // La app es de una sola página: cualquier navegación fuera se bloquea
     if (!u.startsWith("file:")) { e.preventDefault(); if (/^https?:/i.test(u)) shell.openExternal(u); }
   });
-  mainWindow.on("closed", () => { mainWindow = null; });
+  // (17/11, él: "no me deja abrir el RandomStudio"): cerrar la ventana principal CIERRA el Studio entero. Antes la ventana
+  // invisible del contador de suscriptores (contador.cjs, mientras el RandomChat está encendido) lo mantenía vivo sin ninguna
+  // ventana, y al volver a abrirlo el nuevo cedía el sitio a ese Studio sin pantalla: no se veía nada.
+  mainWindow.on("closed", () => { mainWindow = null; if (!process.env.STUDIO_CAPTURA) app.quit(); });
   // STUDIO_CAPTURA=carpeta: abre cada pestaña de STUDIO_PESTANAS ("Clips,Directos"),
   // guarda una captura de cada una y se cierra (pruebas del clon sin tocar la pantalla)
   if (process.env.STUDIO_CAPTURA) {
@@ -736,7 +739,11 @@ function createWindow() {
 }
 
 app.on("second-instance", () => {
-  if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.focus(); }
+  // (17/11) si por lo que sea no queda ventana principal, se vuelve a crear (antes no pasaba nada y parecía que no abría)
+  if (!mainWindow || mainWindow.isDestroyed()) { mainWindow = null; createWindow(); return; }
+  if (!mainWindow.isVisible()) mainWindow.show();
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
 });
 
 // v3.14, él: "al pulsar Alt se baja un menú de la ventana del Studio... no quiero que exista"
