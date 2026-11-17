@@ -338,7 +338,10 @@ export function RandomEditor({ toast }) {
     alGesto("durante", {...pRef.current, pistas: pRef.current.pistas.map(pi=>pi.tipo!=="texto" ? pi : {...pi, clips: pi.clips.map(c=>ids.has(c.id) ? {...c, texto:v, nombre:v.split("\n")[0] || "Texto"} : c)})});
   };
   const pistaSubs = p.pistas.find(x=>x.tipo==="subtitulos");
+  // (17/11, él: "pone que la pista principal está vacía, pero no es verdad"): la biblioteca no se redibuja de más y su panel
+  // se quedaba con este botón de cuando el proyecto aún estaba vacío; ahora va por estable() y lee el proyecto actual
   const generarSubs = async () => {
+    const v1 = pRef.current.pistas.find(x=>x.id==="v1"), pistaSubs = pRef.current.pistas.find(x=>x.tipo==="subtitulos");
     if(!v1 || !v1.clips.length){ toast("La pista principal está vacía: no hay nada que escuchar"); return; }
     if(pistaSubs && !window.confirm("Ya hay subtítulos. ¿Volver a generarlos? (los cambios a mano en sus tarjetas se pierden; Ctrl+Z los recupera)")) return;
     const r = await window.studioFS.redGuardarTmp({...pRef.current, nombre: pRef.current.nombre || "Sin título"}); if(r.error){ toast(r.error); return; }
@@ -813,17 +816,17 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
       <div className="rd-medio-fila">
         <Biblioteca medios={medios} biblio={biblio} presets={presets} onMeter={meterFijo} onArchivos={estable("arch", meterArchivos)} onTexto={estable("tex", cual=>meterTexto(cual))}
           efectos={efectos} onEfecto={estable("efe", (e, s)=>meterEfecto(e, s))} estilosTexto={estilosTexto}
-          panelVoces={<PanelVoces info={voces} generar={generarVoz} onMeter={meterVoz}/>}
+          panelVoces={<PanelVoces info={voces} generar={estable("genvoz", generarVoz)} onMeter={estable("metvoz", meterVoz)}/>}
           panelGuion={<PanelGuion proyecto={p} reloj={reloj} onIr={t=>{ setJugando(0); ir(t); }}
             onQuitar={(rangos, aviso)=>{ setJugando(0); cambiar(q=>M.quitarTramos(q, rangos)); toast(aviso + " (Ctrl+Z para deshacer)"); }}
             onDestacar={()=>{ let n = 0; cambiar(q=>{ const [r, k] = M.destacarPalabras(q); n = k; return r; }); toast(n < 0 ? "Colores de las palabras destacadas quitados" : `${n} palabra${n !== 1 ? "s" : ""} destacada${n !== 1 ? "s" : ""} en los subtítulos`); }}/>}
           panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
-            onGenerar={generarSubs} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
+            onGenerar={estable("gensubs", generarSubs)} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
             ia={subsIa} setIa={setSubsIa} contexto={subsCtx} setContexto={setSubsCtx}
             onPlantilla={pid=>cambiarPistaSubs(()=>({plantilla:pid, estilo:{}}))} onEstilo={(patch, g)=>cambiarPistaSubs(x=>({estilo:{...(x.estilo||{}), ...patch}}), g)}
             onQuitar={()=>{ cambiar(q=>({...q, pistas: q.pistas.filter(x=>x.tipo!=="subtitulos")})); toast("Subtítulos quitados (Ctrl+Z para recuperarlos)"); }}
-            onGuardarPlantilla={async nombre=>{ try { const h = await deHecho(["redsubsguardar", nombre, pistaSubs.plantilla, JSON.stringify(pistaSubs.estilo || {}), String(subsMax)]);
-              setSubsInfo(h); cambiarPistaSubs(()=>({plantilla:h.id, estilo:{}})); setSubsPid(h.id); toast(`Plantilla «${nombre}» guardada`); } catch(e){} }}
+            onGuardarPlantilla={estable("guardplant", async nombre=>{ try { const h = await deHecho(["redsubsguardar", nombre, pistaSubs.plantilla, JSON.stringify(pistaSubs.estilo || {}), String(subsMax)]);
+              setSubsInfo(h); cambiarPistaSubs(()=>({plantilla:h.id, estilo:{}})); setSubsPid(h.id); toast(`Plantilla «${nombre}» guardada`); } catch(e){} })}
             onBorrarPlantilla={async id=>{ try { setSubsInfo(await deHecho(["redsubsborrar", id])); toast("Plantilla quitada"); } catch(e){} }}/>}
           onMeterTodos={estable("todos", async r=>{ for(const m of r.clips) await meter(m, "video"); toast(`${r.clips.length} momentos al final de la principal, en tu orden`); })}/>
         <div className="rd-panel" style={{display:"flex",flexDirection:"column",minWidth:0,background:"#0b0b0b"}}>
