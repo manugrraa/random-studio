@@ -350,23 +350,56 @@ ipcMain.handle("historias-miniatura", async (e, id, plano, t) => {
     p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
     p.on("close", code => code === 0 ? ok(out) : ko(new Error(out.split("\n").filter(Boolean).slice(-3).join(" | ") || ("código " + code))));
   });
+  const final = path.join(c, `historia${id.slice(0, 2)}_final.mp4`);
+  // (17-11, Manu: «he seleccionado esa miniatura y no me deja ponerla») si el vídeo final no está en la carpeta de la
+  // historia (lo montó el otro equipo), el momento del plano se saca del Short entregado, con los tiempos de la historia
+  const ent = !existe(final) ? shortEntregado(c) : null;
+  if (ent && ent.mp4) {
+    let seg = null;
+    try { const [a0, b0] = leerJson(path.join(c, "tiempos.json"), {}).shots[plano]; seg = a0 + tt * (b0 - a0); } catch (x) {}
+    if (seg != null) return fotogramaAMiniatura(id, c, ent, seg);
+  }
   await correr([path.join(raiz(), "tools", "miniatura.py"), path.relative(raiz(), c), "--plano", plano, "--t", String(tt)]);
-  if (existe(path.join(c, `historia${id.slice(0, 2)}_final.mp4`)))
+  if (existe(final))
     await correr([path.join(raiz(), "tools", "cadena.py"), path.relative(raiz(), c), "--solo", "entregar"]);
+  else if (ent && ent.dir) fs.copyFileSync(path.join(c, "miniatura.png"), ent.png || path.join(ent.dir, path.basename(ent.dir) + " - miniatura.png"));
   return { ok: true, miniatura: miniDataUrl(path.join(c, "miniatura.png"), 360) };
 });
 
-/* (17-11, Manu: «no me deja seleccionar la miniatura que yo quiera») el fotograma EXACTO del Short final de esta
- * historia (paras el vídeo donde quieras), no solo un plano y un porcentaje a ciegas; luego se vuelve a entregar */
+/* (17-11) el Short entregado de una historia de este equipo (en Editados\RandomHistorias o ya en una recopilación) */
+function shortEntregado(c) {
+  const t = titulo(c);
+  if (!t) return null;
+  const dir = dirEntrega(t), a = archivosEntrega(dir);
+  return a.mp4 ? { dir, mp4: a.mp4, png: a.png } : null;
+}
+const ffFotograma = (video, seg, destino) => new Promise((ok, ko) => {
+  const p = spawn("ffmpeg", ["-v", "error", "-y", "-ss", Math.max(0, seg).toFixed(3), "-i", video, "-frames:v", "1", "-vf", "scale=1080:1920:flags=lanczos", destino], { windowsHide: true });
+  let err = ""; p.stderr.on("data", d => err += d);
+  p.on("close", code => code === 0 && existe(destino) ? ok() : ko(new Error(err.split("\n").filter(Boolean).slice(-1)[0] || ("ffmpeg " + code))));
+});
+/** fotograma del Short ENTREGADO → su miniatura (en la carpeta del Short y en la de la historia) */
+async function fotogramaAMiniatura(id, c, ent, seg) {
+  const destino = ent.png || path.join(ent.dir, path.basename(ent.dir) + " - miniatura.png");
+  await ffFotograma(ent.mp4, seg, destino);
+  fs.copyFileSync(destino, path.join(c, "miniatura.png"));
+  registro.anotar("historias", "miniatura elegida en el Short entregado de " + id, { segundo: seg });
+  return { ok: true, miniatura: miniDataUrl(destino, 360) };
+}
+
+/* (17-11, Manu: «no me deja seleccionar la miniatura que yo quiera») el fotograma EXACTO del Short (paras el vídeo
+ * donde quieras), no solo un plano y un porcentaje a ciegas. Del vídeo final si está aquí (y se vuelve a entregar); si
+ * no (lo montó el otro equipo), del Short entregado */
 ipcMain.handle("historias-miniatura-final", async (e, id, segundos) => {
   const c = carpetaDe(id), final = path.join(c, `historia${id.slice(0, 2)}_final.mp4`);
-  if (!existe(final)) throw new Error("Hace falta el vídeo final (sale al montar)");
-  const tt = Math.max(0, Number(segundos) || 0), destino = path.join(c, "miniatura.png");
-  await new Promise((ok, ko) => {
-    const p = spawn("ffmpeg", ["-v", "error", "-y", "-ss", tt.toFixed(3), "-i", final, "-frames:v", "1", "-vf", "scale=1080:1920:flags=lanczos", destino], { windowsHide: true });
-    let err = ""; p.stderr.on("data", d => err += d);
-    p.on("close", code => code === 0 ? ok() : ko(new Error(err.split("\n").filter(Boolean).slice(-1)[0] || ("ffmpeg " + code))));
-  });
+  const tt = Math.max(0, Number(segundos) || 0);
+  if (!existe(final)) {
+    const ent = shortEntregado(c);
+    if (!ent) throw new Error("Todavía no hay vídeo de este Short en este equipo");
+    return fotogramaAMiniatura(id, c, ent, tt);
+  }
+  const destino = path.join(c, "miniatura.png");
+  await ffFotograma(final, tt, destino);
   await new Promise((ok, ko) => {
     const p = spawn("python", [path.join(raiz(), "tools", "cadena.py"), path.relative(raiz(), c), "--solo", "entregar"], { cwd: raiz(), env: { ...process.env, PYTHONIOENCODING: "utf-8", RH_ENTREGAS: listasDir() }, windowsHide: true });
     let out = ""; p.stdout.on("data", d => out += d); p.stderr.on("data", d => out += d);
@@ -376,8 +409,10 @@ ipcMain.handle("historias-miniatura-final", async (e, id, segundos) => {
   return { ok: true, miniatura: miniDataUrl(destino, 360) };
 });
 ipcMain.handle("historias-final-video", async (e, id) => {
-  const final = path.join(carpetaDe(id), `historia${id.slice(0, 2)}_final.mp4`);
-  return { ok: true, video: existe(final) ? urlArchivo(final) : null };
+  const c = carpetaDe(id), final = path.join(c, `historia${id.slice(0, 2)}_final.mp4`);
+  if (existe(final)) return { ok: true, video: urlArchivo(final) };
+  const ent = shortEntregado(c);
+  return { ok: true, video: ent ? urlArchivo(ent.mp4) : null };
 });
 
 /* (5-11, Manu: «que el portátil pueda escoger la miniatura de cualquier historia, hasta las hechas por el ordenador»)

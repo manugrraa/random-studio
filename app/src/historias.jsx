@@ -225,10 +225,12 @@ function ElegirMiniatura({ det, toast, onHecha }) {
   const vid = useRef(null);
   useEffect(() => {
     let vivo = true;
-    if (det.final) SF().historiasFinalVideo(det.id).then(r => vivo && setVideo(r.video)).catch(() => {});
+    // (del vídeo final o, si lo montó el otro equipo, del Short entregado)
+    if (det.final || det.entregada) SF().historiasFinalVideo(det.id).then(r => vivo && setVideo(r.video)).catch(() => {});
     else setVideo(null);
     return () => { vivo = false; };
-  }, [det.id, det.final]);
+  }, [det.id, det.final, det.entregada]);
+  const puedeUsar = !!(det.final || video);
   const usarFotograma = async () => {
     if (!vid.current) return;
     setHaciendo(true);
@@ -294,8 +296,8 @@ function ElegirMiniatura({ det, toast, onHecha }) {
                 <input type="range" min="0.1" max="0.9" step="0.05" value={t} onChange={e => setT(+e.target.value)} style={{ flex: 1, accentColor: "#D4AF37" }} />
                 <b style={{ color: "var(--text)", width: 36, textAlign: "right" }}>{Math.round(t * 100)}%</b>
               </label>
-              <button onClick={usar} disabled={haciendo || !det.final} className="grad-gold" style={{ ...botonOro, alignSelf: "flex-start", opacity: (haciendo || !det.final) ? 0.6 : 1 }}>
-                {haciendo ? "Haciendo la miniatura…" : det.final ? `Usar ${sel} como miniatura` : "Hace falta el vídeo final"}
+              <button onClick={usar} disabled={haciendo || !puedeUsar} className="grad-gold" style={{ ...botonOro, alignSelf: "flex-start", opacity: (haciendo || !puedeUsar) ? 0.6 : 1 }}>
+                {haciendo ? "Haciendo la miniatura…" : puedeUsar ? `Usar ${sel} como miniatura` : "Hace falta el vídeo final"}
               </button>
             </div>)}
         </div>
