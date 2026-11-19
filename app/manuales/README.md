@@ -10,7 +10,8 @@ pruebas, trampas conocidas, historial corto de versiones.
 | Apartado | Manual |
 |---|---|
 | Directos → clipear | [directos-clipear.md](directos-clipear.md) |
-| RandomEditor | (pendiente: ver memoria randomeditor-motor-nuevo) |
+| RandomEditor → subtítulos | [randomeditor-subtitulos.md](randomeditor-subtitulos.md) |
+| RandomEditor (motor, visor, línea de tiempo) | (pendiente: ver memoria randomeditor-motor-nuevo) |
 | RandomChat y alertas | (pendiente) |
 | Redes (Instagram, TikTok, YouTube) | (pendiente) |
 | Nube (Supabase, backend Vercel) | (pendiente) |
