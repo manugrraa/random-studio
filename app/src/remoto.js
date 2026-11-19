@@ -231,7 +231,9 @@ export function iniciarRemotoEscritorio(t) {
         for (const h of (eq.datos && eq.datos.historias) || []) {
           if (!h.entregada || !h.drive || !(h.drive.archivos || []).length) continue;
           const x = await s.estudioEntregaBajar(await driveTokenTrabajo(), h.drive);
-          if (x && x.bajado) toast("⬇ «" + (h.titulo || h.id) + "» (de " + eq.nombre + ") ya está en Editados\\RandomHistorias");
+          // (19-11, Manu: «se acaba de terminar una en el ordenador y en el portátil no la veo») avisa a la pestaña Historias
+          // para que la ponga en Terminadas al momento (antes solo salía al reabrir la app)
+          if (x && x.bajado) { toast("⬇ «" + (h.titulo || h.id) + "» (de " + eq.nombre + ") ya está en Editados\\RandomHistorias"); try { window.dispatchEvent(new Event("rs-entregas")); } catch (e) {} }
           else if (x && !x.ok && !fallosBajada[h.drive.carpeta]) { fallosBajada[h.drive.carpeta] = 1; toast("❌ No pude bajar «" + (h.titulo || h.id) + "» de Drive: " + (x.error || "")); }
         }
       }
@@ -525,10 +527,13 @@ async function pasarAlPortatil(pid, id, para) {
   const s = SF();
   // v3.45.11: cada paso queda escrito en el pedido (se ve en la cola y desde el otro equipo): antes, si algo fallaba, la
   // historia se quedaba «esperando» sin que nadie supiera por qué
-  const nota = (det) => pedidosApi("POST", { accion: "estado", id: Number(pid), estado: "trabajando", detalle: "➡️ pasar al otro equipo: " + det }).catch(() => {});
+  // (19-11) el último motivo vuelve como error: el detalle del pedido se pisa en la vuelta siguiente y no se veía por qué falló
+  let motivo = "";
+  const nota = (det) => { motivo = det; return pedidosApi("POST", { accion: "estado", id: Number(pid), estado: "trabajando", detalle: "➡️ pasar al otro equipo: " + det }).catch(() => {}); };
+  const no = () => ({ traspasado: false, error: motivo ? "No se pudo pasar: " + motivo : undefined });
   const c = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), consulta: true, ...(para ? { para } : {}) });
-  if (!c.pasar) { if (para) await nota("el otro equipo no está en línea o no tiene Roblox Studio/Drive"); return { traspasado: false }; }
-  if (!s.estudioRelevoPreparar || !driveConectadoTrabajo()) { await nota("este equipo no tiene Drive conectado"); return { traspasado: false }; }
+  if (!c.pasar) { if (para) await nota("el otro equipo no está en línea o no tiene Roblox Studio/Drive"); return no(); }
+  if (!s.estudioRelevoPreparar || !driveConectadoTrabajo()) { await nota("este equipo no tiene Drive conectado"); return no(); }
   // v3.45.10: la copia que ya está en Drive (se sube tras cada etapa) sirve si la historia no ha cambiado desde entonces:
   // el otro equipo la coge AL MOMENTO, sin volver a empaquetar y subir ~120 MB (él: "¿por qué no detectan los dos equipos
   // los archivos del Drive?")
@@ -544,12 +549,12 @@ async function pasarAlPortatil(pid, id, para) {
   } catch (e) {}
   await nota("empaquetando la copia…");
   const pr = await s.estudioRelevoPreparar(id, !!para);
-  if (!pr || !pr.ok) { await nota("no se pudo empaquetar: " + ((pr && pr.error) || "?")); return { traspasado: false }; }
+  if (!pr || !pr.ok) { await nota("no se pudo empaquetar: " + ((pr && pr.error) || "?")); return no(); }
   await nota("subiendo la copia a Drive…");
   const up = await s.estudioRelevoSubir(id, await driveTokenTrabajo());
-  if (!up || !up.ok) { await nota("no se pudo subir a Drive: " + ((up && up.error) || "?")); return { traspasado: false }; }
+  if (!up || !up.ok) { await nota("no se pudo subir a Drive: " + ((up && up.error) || "?")); return no(); }
   const f = await pedidosApi("POST", { accion: "fase_blender", id: Number(pid), relevo: { archivo: up.archivo, md5: up.md5, tam: up.tam }, ...(para ? { para } : {}) });
-  if (!f || !f.traspasado) await nota("el servidor no la dejó pasar: " + ((f && (f.error || (f.pasar === false ? "el otro equipo ya no está disponible" : ""))) || "?"));
+  if (!f || !f.traspasado) { await nota("el servidor no la dejó pasar: " + ((f && (f.error || (f.pasar === false ? "el otro equipo ya no está disponible" : ""))) || "?")); return no(); }
   return f;
 }
 
@@ -561,11 +566,14 @@ export async function pasarHistoria(hid, destino) {
   if (!/^\d{2}_[\w-]+$/.test(hid) || !destino) return { ok: false, error: "Faltan datos" };
   const pid = Object.keys(m).find(k => m[k].historia === hid && !m[k].fin && !m[k].traspasada);
   if (!pid) return { ok: false, error: "Esa historia no la lleva este equipo" };
+  // (19-11) también si esta historia se graba DE FONDO o va en paralelo (guion, voces, escribir): antes no se paraba y la
+  // copia fallaba al momento («Esa historia está en marcha»), como la 51 pasada a mano al portátil
+  const conElla = (t) => !!t && ((t.activa && t.id === hid) || (t.fondo && t.fondo.id === hid) || (t.ligeras || []).some(y => y.id === hid));
   const t = s.historiasTareaEstado ? await s.historiasTareaEstado() : null;
-  if (t && t.activa && t.id === hid) {
+  if (conElla(t)) {
     _parando = Date.now();                 // (no cuenta como fallo)
     await s.historiasCancelar(hid);
-    for (let i = 0; i < 30; i++) { await new Promise(r => setTimeout(r, 1000)); const t2 = await s.historiasTareaEstado(); if (!(t2 && t2.activa)) break; }
+    for (let i = 0; i < 30; i++) { await new Promise(r => setTimeout(r, 1000)); const t2 = await s.historiasTareaEstado(); if (!conElla(t2)) break; }
   }
   m[pid].ofrecida = Date.now(); m[pid].pausada = Date.now(); guardarMios(m);
   const r = await pasarAlPortatil(pid, hid, destino).catch(e => ({ error: e.message || String(e) }));
@@ -787,7 +795,9 @@ export function iniciarTrabajador(t) {
         // v3.41.6: sin una clave de ElevenLabs que funcione, las voces ni se intentan (antes fallaban cada 2 min, en bucle)
         if (sig && sig.id === "voces" && aj.elevenError) continue;
         // v3.48: con Studio grabando de fondo, las que necesitan Studio esperan y este equipo sigue con guiones y voces
-        if (sig && t && t.fondo && ["escena", "animatic", "render"].includes(sig.id)) { if (_soyDueno && !pasaDe(sig.id)) esperaStudio.push({ pid, x, h, sig }); continue; }
+        // (19-11, Manu: «solo lo hacen en el ordenador, no se pasan al portátil») en el ordenador también se OFRECEN al
+        // portátil: antes se quedaban «preparada · espera» todo el rato que el ordenador grababa otra de fondo
+        if (sig && t && t.fondo && ["escena", "animatic", "render"].includes(sig.id)) { if (!pasaDe(sig.id)) (_soyDueno ? esperaStudio : blender).push({ pid, x, h, sig }); continue; }
         if (sig && (x.quieta = (x.quieta || 0) + 1) >= 2) {
           // v3.49.2 — PRIORIDADES (Manu, 1-11): 1) las historias empezadas antes que nada nuevo; 2) el portátil anima y
           // renderiza; 3) el ordenador PREPARA TODO (guion y voces) y, «cuando acabe de preparar todo», se pone también a

@@ -755,6 +755,14 @@ export function HistoriasView({ toast }) {
   }, [toast]);
 
   const [ligeras, setLigeras] = useState([]);
+  // (19-11) los Shorts que se bajan de Drive (los termina el otro equipo) entran en Terminadas al momento, y al volver a
+  // la ventana se mira por si llegó alguno (solo lee la carpeta de entregas: nada de red)
+  useEffect(() => {
+    if (!escritorio) return;
+    const alVolver = () => { if (document.visibilityState === "visible") cargarOtras(); };
+    window.addEventListener("rs-entregas", cargarOtras); window.addEventListener("focus", alVolver); document.addEventListener("visibilitychange", alVolver);
+    return () => { window.removeEventListener("rs-entregas", cargarOtras); window.removeEventListener("focus", alVolver); document.removeEventListener("visibilitychange", alVolver); };
+  }, [escritorio, cargarOtras]);
   const selRef = useRef(selId); selRef.current = selId;
   useEffect(() => {
     if (!escritorio) return;
