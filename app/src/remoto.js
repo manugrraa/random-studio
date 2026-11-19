@@ -188,7 +188,7 @@ export function iniciarRemotoEscritorio(t) {
       fondo: t && t.fondo ? { id: t.fondo.id, titulo: ((l.historias || []).find(h => h.id === t.fondo.id) || {}).titulo || "", etapa: t.fondo.etapa, inicio: t.fondo.inicio, render: t.fondo.render } : null,
       tarea: t && t.activa ? { id: t.id, titulo: ((l.historias || []).find(h => h.id === t.id) || {}).titulo || "", tipo: t.tipo, etapa: t.etapa, inicio: t.inicio, paso: t.paso, render: t.render, accion: t.accion, acciones: (t.acciones || []).slice(-8), ultimas: (t.lineas || []).slice(-8).map(x => String(x).slice(0, 220)) } : null,
       ajustes: aj.ajustes,
-      ideas: (id.ideas || []).filter(i => i.estado !== "descartada").slice(0, 30).map(i => ({ id: i.id, titulo: i.titulo, regla: i.regla, resumen: i.resumen, estado: i.estado, temporada: i.temporada, historia: i.historia, de: i.de, comentario: i.comentario })),
+      ideas: (id.ideas || []).filter(i => i.estado !== "descartada").slice(0, 30).map(i => ({ id: i.id, tipo: i.tipo, anime: i.anime, titulo: i.titulo, regla: i.regla, resumen: i.resumen, estado: i.estado, temporada: i.temporada, historia: i.historia, de: i.de, comentario: i.comentario })),
       generandoIdeas: !!id.generando,
       // v3.40.6: el uso de Claude de este equipo (lo ve el móvil en su marcador); se lee como mucho cada 10 min
       claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,

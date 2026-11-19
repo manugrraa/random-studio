@@ -474,11 +474,29 @@ function Terminado({ det, mat, toast, onGuardada }) {
 }
 
 // ------------------------------------------------------------------ ideas
+/* (19-11, Manu: «las de anime quiero que me las marques mucho mejor») el tipo de cada idea, bien a la vista: 2 de anime,
+ * 2 de miedo y 1 aleatoria por tanda. Las ideas de antes no tienen tipo: si hablan de un anime, se marcan como anime. */
+const TIPOS_IDEA = {
+  anime: { txt: "ANIME", color: "#F472B6", fondo: "rgba(244,114,182,.14)" },
+  miedo: { txt: "MIEDO", color: "#A78BFA", fondo: "rgba(167,139,250,.14)" },
+  aleatoria: { txt: "ALEATORIA", color: "#38BDF8", fondo: "rgba(56,189,248,.12)" },
+};
+const tipoIdea = (i) => (i && TIPOS_IDEA[i.tipo]) ? i.tipo
+  : (/\banime\b|naruto|dragon ball|one piece|demon slayer|jujutsu|titan|death note|pok[eé]mon/i.test([i && i.fundamento, i && i.resumen, i && i.visual].join(" ")) ? "anime" : "");
+function TipoIdea({ i, grande }) {
+  const k = tipoIdea(i), t = TIPOS_IDEA[k];
+  if (!t) return null;
+  return <span style={{ alignSelf: "flex-start", fontSize: grande ? 12 : 10.5, fontWeight: 800, letterSpacing: ".06em", color: t.color, background: t.fondo,
+    border: "1px solid " + t.color, borderRadius: 99, padding: grande ? "3px 10px" : "2px 8px", whiteSpace: "nowrap" }}>{t.txt}{k === "anime" && i.anime ? " · " + i.anime : ""}</span>;
+}
+const bordeTipo = (i) => { const t = TIPOS_IDEA[tipoIdea(i)]; return t ? t.color : null; };
+
 function Ideas({ toast, onCreada }) {
   const [ideas, setIdeas] = useState(null);
   const [generando, setGenerando] = useState(false);
   const [pista, setPista] = useState("");
   const [filtro, setFiltro] = useState("todas");
+  const [tipoF, setTipoF] = useState("");
   const cargar = useCallback(async () => { const r = await SF().estudioIdeas(); setIdeas(r.ideas); setGenerando(r.generando); }, []);
   useEffect(() => {
     cargar();
@@ -509,7 +527,7 @@ function Ideas({ toast, onCreada }) {
     }
     setEnviando(x => { const y = { ...x }; delete y[i.id]; return y; });
   };
-  const vis = (ideas || []).filter(i => filtro === "todas" ? !["descartada", "usada"].includes(i.estado) : i.estado === filtro);
+  const vis = (ideas || []).filter(i => (filtro === "todas" ? !["descartada", "usada"].includes(i.estado) : i.estado === filtro) && (!tipoF || tipoIdea(i) === tipoF));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ ...tarjeta, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -517,17 +535,26 @@ function Ideas({ toast, onCreada }) {
           style={{ flex: "1 1 280px", fontSize: 13, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)" }} />
         <button onClick={generar} disabled={generando} className="grad-gold" style={{ ...botonOro, opacity: generando ? 0.6 : 1 }}>{generando ? "Claude está pensando…" : "💡 Generar 5 ideas"}</button>
         {generando && <div style={{ flexBasis: "100%" }}><Barra /></div>}
-        <div style={{ flexBasis: "100%", fontSize: 11.5, color: "var(--text-3)" }}>Con nuestro criterio de siempre: lo que te gustó, lo que funciona en Gelo y Custerk, fechas de temporada y tus notas de los Shorts anteriores. Se quedan guardadas.</div>
+        <div style={{ flexBasis: "100%", fontSize: 11.5, color: "var(--text-3)" }}>Cada tanda: 2 de anime, 2 de miedo (que acaban bien) y 1 aleatoria. Con nuestro criterio de siempre: lo que te gustó, lo que funciona en Gelo y Custerk, fechas de temporada y tus notas de los Shorts anteriores. Se quedan guardadas.</div>
       </div>
       <div style={{ display: "flex", gap: 6 }}>
         {[["todas", "Por mirar"], ["guardada", "⭐ Guardadas"], ["usada", "Ya creadas"], ["descartada", "Descartadas"]].map(([k, t]) => (
           <button key={k} onClick={() => setFiltro(k)} className={"rh-tab" + (filtro === k ? " on" : "")} style={{ fontSize: 12 }}>{t}</button>))}
       </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {[["", "Todos los tipos"], ...Object.entries(TIPOS_IDEA).map(([k, t]) => [k, t.txt])].map(([k, t]) => {
+          const c = TIPOS_IDEA[k], on = tipoF === k;
+          return <button key={k || "todos"} onClick={() => setTipoF(k)} style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 99, padding: "4px 12px",
+            color: c ? c.color : "var(--text-2)", border: "1px solid " + (on ? (c ? c.color : "var(--gold)") : "var(--border)"), background: on ? (c ? c.fondo : "var(--card-2)") : "transparent" }}>{t}</button>;
+        })}
+      </div>
       {!ideas && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Cargando…</div>}
       {ideas && !vis.length && <div style={{ fontSize: 13, color: "var(--text-3)" }}>Nada por aquí todavía.</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 12 }}>
         {vis.map(i => (
-          <div key={i.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 8, borderColor: i.estado === "guardada" ? "var(--border-gold)" : "var(--border)", animation: "rh-entra .3s ease both" }}>
+          <div key={i.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 8, borderColor: i.estado === "guardada" ? "var(--border-gold)" : "var(--border)",
+            borderLeft: bordeTipo(i) ? "4px solid " + bordeTipo(i) : undefined, animation: "rh-entra .3s ease both" }}>
+            <TipoIdea i={i} grande />
             <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 14.5, lineHeight: 1.3, flex: 1 }}>{i.titulo}</div>
               {i.temporada && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#F59E0B", border: "1px solid rgba(245,158,11,.5)", borderRadius: 99, padding: "2px 8px", whiteSpace: "nowrap" }}>{i.temporada}</span>}
@@ -877,6 +904,7 @@ export function HistoriasView({ toast }) {
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em" }}>HISTORIA {det.id.slice(0, 2)}{det.nPlanos ? " · " + det.nPlanos + " PLANOS" : ""}</div>
                     <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 19, margin: "4px 0 4px", lineHeight: 1.25 }}>{det.titulo || (mat.idea && mat.idea.titulo) || det.id}</div>
+                    {mat.idea && <div style={{ marginBottom: 6 }}><TipoIdea i={mat.idea} /></div>}
                     {mat.idea && <div style={{ fontSize: 12.5, color: "var(--text-3)", marginBottom: 10 }}>{mat.idea.regla}</div>}
                   </div>
                   {det.entregada && <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--green)", border: "1px solid rgba(74,222,128,0.3)", borderRadius: 999, padding: "4px 10px" }}>Entregada</span>}
@@ -1215,7 +1243,8 @@ export function HistoriasRemoto({ toast, incrustado }) {
             style={{ ...botonSec, alignSelf: "flex-start", opacity: pensando ? .5 : 1 }}>💬 Ideas de los comentarios</button>
           {!ideas.length && <div style={{ ...tarjeta, fontSize: 13, color: "var(--text-3)" }}>No hay ideas por mirar.</div>}
           {ideas.map(i => (
-            <div key={i.e.id + i.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div key={i.e.id + i.id} style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 6, borderLeft: bordeTipo(i) ? "4px solid " + bordeTipo(i) : undefined }}>
+              <TipoIdea i={i} grande />
               <b style={{ fontFamily: "'Sora'" }}>{i.titulo}</b>
               <div style={{ fontSize: 12.5, color: "var(--gold)" }}>{i.regla}</div>
               <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{i.resumen}</div>
