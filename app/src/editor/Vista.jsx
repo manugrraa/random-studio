@@ -280,7 +280,7 @@ export const Vista = React.memo(forwardRef(function Vista({ sinAudio, proyecto, 
         return img ? <img key={pi.id + "i"} ref={el=>{ capas.current[pi.id] = el; }} alt="" style={est}/>
                    : <video key={pi.id} ref={el=>{ capas.current[pi.id] = el; }} playsInline preload="auto" style={est}/>;
       })}
-      {reloj && <CapaSubtitulos proyecto={proyecto} reloj={reloj} info={subs}/>}
+      {reloj && <CapaSubtitulos proyecto={proyecto} reloj={reloj} info={subs} sel={sel} onElegir={onElegirTexto} onGesto={onGesto}/>}
       {reloj && <CapaTextos proyecto={proyecto} reloj={reloj} sel={sel} onElegir={onElegirTexto} onGesto={onGesto}/>}
       {reloj && cambiarClip && (()=>{
         // el clip ELEGIDO de la principal que se ve ahora: su recuadro para moverlo/escalarlo/girarlo

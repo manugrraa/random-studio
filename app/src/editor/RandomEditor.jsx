@@ -14,7 +14,7 @@ import { PanelTransformar, PanelVelocidad } from "./Transformar";
 import { PanelColor } from "./PanelColor";
 import { PanelMascara } from "./Mascara";
 import { PanelVoces, SeccionVoz } from "./Voz";
-import { PanelSubtitulos, InspectorSub } from "./Subtitulos";
+import { PanelSubtitulos, InspectorSub, plantillaDe } from "./Subtitulos";
 import { RecorteAudio } from "./RecorteAudio";
 import { PanelGuion } from "./Guion";
 
@@ -532,9 +532,11 @@ export function RandomEditor({ toast }) {
   const copia = x => JSON.parse(JSON.stringify(x));
   const TAMPOS = ["escala", "x", "y", "rot"];
   const copiarAtributos = () => {
-    const s = est.current.sel, c = M.todos(pRef.current).find(x=>s.has(x.id) && (x.ruta || x.tipo === "texto"));
+    const s = est.current.sel, c = M.todos(pRef.current).find(x=>s.has(x.id) && (x.ruta || x.tipo === "texto" || x.tipo === "sub"));
     if(!c){ toast("Elige el clip del que copiar"); return; }
-    portaAtrib.current = c.tipo === "texto"
+    // 19/11, él: subtítulos movibles «tanto uno solo como copiar los atributos y añadírselo a otros»: su sitio y tamaño (c.pos)
+    portaAtrib.current = c.tipo === "sub" ? { de: String(c.texto || "el subtítulo").slice(0, 30), sub: true, pos: copia(c.pos || {}) }
+      : c.tipo === "texto"
       ? { de: String(c.texto || "el texto").split("\n")[0].slice(0, 30), texto: true, estilo: copia(c.estilo || {}) }
       : { de: c.nombre || "el clip", a: Object.fromEntries(ATRIBUTOS.filter(k=>c[k] !== undefined).map(k=>[k, copia(c[k])])) };
     toast("📋 Atributos copiados de «" + portaAtrib.current.de + "»: elige otros y pulsa «Pegar atributos» (Ctrl+Alt+V) o «solo tamaño y posición» (Ctrl+Alt+Shift+V)");
@@ -546,6 +548,11 @@ export function RandomEditor({ toast }) {
     let n = 0;
     cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.bloqueada ? pi : ({...pi, clips: pi.clips.map(c=>{
       if(!s.has(c.id)) return c;
+      if(pa.sub){
+        if(c.tipo !== "sub") return c;
+        n++; const { pos, ...resto } = c;
+        return Object.keys(pa.pos).length ? {...resto, pos: copia(pa.pos)} : resto;
+      }
       if(pa.texto){
         if(c.tipo !== "texto") return c;
         n++; const e = c.estilo || {};
@@ -560,7 +567,7 @@ export function RandomEditor({ toast }) {
       }
       const x = {...c}; for(const k of ATRIBUTOS){ if(pa.a[k] === undefined) delete x[k]; else x[k] = copia(pa.a[k]); } return x;
     })}))}));
-    toast(n ? "📋 " + (solo ? "Tamaño y posición" : "Atributos") + " de «" + pa.de + "» pegados en " + n + (n > 1 ? " clips" : " clip") : pa.texto ? "Elige los textos en los que pegarlo" : "Elige los clips en los que pegarlo");
+    toast(n ? "📋 " + (solo ? "Tamaño y posición" : "Atributos") + " de «" + pa.de + "» pegados en " + n + (n > 1 ? " clips" : " clip") : pa.sub ? "Elige los subtítulos en los que pegarlo" : pa.texto ? "Elige los textos en los que pegarlo" : "Elige los clips en los que pegarlo");
   };
   // ---- el volumen con puntos clave (◆): con puntos, mover la barra cambia el del cabezal (o pone uno)
   const tRelDe = c => Math.max(0, Math.min(M.largo(c), reloj.t - c.en));
@@ -820,7 +827,7 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
           panelGuion={<PanelGuion proyecto={p} reloj={reloj} onIr={t=>{ setJugando(0); ir(t); }}
             onQuitar={(rangos, aviso)=>{ setJugando(0); cambiar(q=>M.quitarTramos(q, rangos)); toast(aviso + " (Ctrl+Z para deshacer)"); }}
             onDestacar={()=>{ let n = 0; cambiar(q=>{ const [r, k] = M.destacarPalabras(q); n = k; return r; }); toast(n < 0 ? "Colores de las palabras destacadas quitados" : `${n} palabra${n !== 1 ? "s" : ""} destacada${n !== 1 ? "s" : ""} en los subtítulos`); }}/>}
-          panelSubs={<PanelSubtitulos info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
+          panelSubs={<PanelSubtitulos onPosTodas={estable("postodas", ()=>cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.tipo!=="subtitulos" ? pi : {...pi, clips: pi.clips.map(({ pos, ...r })=>r)})})))} info={subsInfo} pista={pistaSubs} elegida={subsPid} setElegida={setSubsPid} maxPal={subsMax} setMaxPal={setSubsMax}
             onGenerar={estable("gensubs", generarSubs)} ocupado={ocupado} generando={!!(tarea && !tarea.cerrada && tarea.args[0]==="redsubs")} alGesto={alGesto} fuentes={fuentes}
             ia={subsIa} setIa={setSubsIa} contexto={subsCtx} setContexto={setSubsCtx}
             onPlantilla={pid=>cambiarPistaSubs(()=>({plantilla:pid, estilo:{}}))} onEstilo={(patch, g)=>cambiarPistaSubs(x=>({estilo:{...(x.estilo||{}), ...patch}}), g)}
@@ -875,6 +882,10 @@ Cancelar: empezar de nuevo con los clips de la recopilación.`)){
               </div>; })}
           </div>}
           {uno && uno.tipo === "sub" && <InspectorSub c={uno} alGesto={alGesto} cambiar={cambiarTarjeta}
+            base={(plantillaDe(subsInfo, pistaSubs) || {}).estilo}
+            onPos={pos=>cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.tipo!=="subtitulos" ? pi : {...pi, clips: pi.clips.map(x=>{ if(x.id!==uno.id) return x;
+              const { pos: _, ...r } = x; return pos ? {...r, pos} : r; })})}))}
+            onCopiar={copiarAtributos} onPegar={()=>pegarAtributos()} pegarDe={portaAtrib.current && portaAtrib.current.sub ? portaAtrib.current.de : null}
             onColor={(k, col)=>cambiar(q=>({...q, pistas: q.pistas.map(pi=>pi.tipo!=="subtitulos" ? pi : {...pi, clips: pi.clips.map(x=>x.id!==uno.id ? x : {...x,
               palabras: x.palabras.map((pp, j)=>j!==k ? pp : (col ? [pp[0], pp[1], pp[2], col] : [pp[0], pp[1], pp[2]]))})})}))}/>}
           {uno && uno.tipo === "texto" && <InspectorTexto c={uno} fuentes={fuentes} presets={presets} alGesto={alGesto} cambiarEstilo={cambiarEstilo} cambiarTexto={cambiarTexto} W={p.ancho} H={p.alto}

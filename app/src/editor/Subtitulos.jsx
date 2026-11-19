@@ -52,21 +52,29 @@ const muelle = u => u <= 0 ? 0.05 : u >= 1 ? 1 : Math.max(0.05, Math.exp(-7 * u)
 const pop = s => s < 0.0333 ? 0.62 + 0.27 * s / 0.0333 : s < 0.0667 ? 0.89 + 0.09 * (s - 0.0333) / 0.0334 : s < 0.1 ? 0.98 + 0.02 * (s - 0.0667) / 0.0333 : 1;
 
 // ---- en la previsualización: la palabra (o frase) que toca, con su animación, fotograma a fotograma
-export function CapaSubtitulos({ proyecto, reloj, info }) {
-  const caja = useRef(null), el = useRef(null);
+// 19/11, él: «mover los subtítulos en el eje X y en el eje Y a donde yo quiera… tanto uno solo como copiar los
+// atributos y añadírselo a otros»: cada tarjeta puede llevar su `pos` ({x, y, tam}, unidades de CapCut) encima del
+// estilo de la pista. Arrastrar el subtítulo en el visor mueve esa tarjeta (o todas las elegidas si es una de ellas).
+export const estiloTarjeta = (pl, c) => c && c.pos ? { ...pl.estilo, ...c.pos } : pl.estilo;
+export function CapaSubtitulos({ proyecto, reloj, info, sel, onElegir, onGesto }) {
+  const caja = useRef(null), el = useRef(null), guia = useRef(null);
   const [esc, setEsc] = useState(0.3);
   const W = proyecto.ancho || 1080, H = proyecto.alto || 1920;
   useEffect(()=>{ const c = caja.current; if(!c) return; const ro = new ResizeObserver(()=>setEsc(c.clientWidth / W)); ro.observe(c); setEsc(c.clientWidth / W); return ()=>ro.disconnect(); },[W]);
   const pista = proyecto.pistas.find(x=>x.tipo==="subtitulos" && !x.muda);
   const pl = plantillaDe(info, pista);
-  const items = useMemo(()=>pista && pl ? pista.clips.flatMap(c=>itemsDe(c, pl.modo)).sort((x, y)=>x.a - y.a) : [],[pista, pl && pl.modo]);
-  const ref = useRef({ items, pl }); ref.current = { items, pl };
+  const items = useMemo(()=>pista && pl ? pista.clips.flatMap(c=>itemsDe(c, pl.modo).map(it=>({...it, id: c.id, pos: c.pos}))).sort((x, y)=>x.a - y.a) : [],[pista, pl && pl.modo, pl && JSON.stringify(pl.estilo)]);
+  const ref = useRef({ items, pl, esc }); ref.current = { items, pl, esc, info, cur: ref.current.cur };
   const pintar = t => {
     const e = el.current; if(!e) return;
     const { items, pl } = ref.current;
     const it = items.find(x=>t >= x.a && t < x.b);
+    ref.current.cur = it;
     if(!it){ e.style.visibility = "hidden"; return; }
     if(e.textContent !== it.w) e.textContent = it.w;
+    { const es = ref.current.esc, ps = estiloPx(it.pos ? { ...pl.estilo, ...it.pos } : pl.estilo, ref.current.info, W, H);
+      e.style.left = ps.cx * es + "px"; e.style.top = ps.cy * es + "px"; e.style.fontSize = ps.px * es + "px";
+      e.style.webkitTextStroke = ps.borde ? `${ps.borde * 2 * es}px ${pl.estilo.color_contorno || "#000"}` : ""; }
     e.style.color = it.col || pl.estilo.color;
     const s = pl.anim === "muelle" ? muelle((t - it.a) / Math.max(0.01, it.b - it.a)) : pl.anim === "pop" ? pop(t - it.a) : pl.anim === "suave" ? suave(t - it.a) : 1;
     e.style.transform = `translate(-50%,-50%) scale(${s})${sesgo(pl.estilo)}`;
@@ -78,9 +86,36 @@ export function CapaSubtitulos({ proyecto, reloj, info }) {
   // salía con la escala de partida, fuera de sitio)
   if(!pista || !pl) return <div ref={caja} style={{position:"absolute",inset:0,pointerEvents:"none"}}/>;
   const p = estiloPx(pl.estilo, info, W, H);
+  const arrastrar = ev => {
+    const it = ref.current.cur;
+    if(ev.button !== 0 || !it || !onGesto) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const varios = sel && sel.has(it.id) && pista.clips.filter(c=>sel.has(c.id)).length > 1;
+    const ids = varios ? new Set(pista.clips.filter(c=>sel.has(c.id)).map(c=>c.id)) : new Set([it.id]);
+    if(!varios && onElegir) onElegir(it.id);
+    const base = Object.fromEntries(pista.clips.filter(c=>ids.has(c.id)).map(c=>{ const e = estiloTarjeta(pl, c); return [c.id, { x: e.x || 0, y: e.y || 0, tam: e.tam }]; }));
+    const b0 = base[it.id], x0 = ev.clientX, y0 = ev.clientY;
+    let movido = false;
+    const mover = m => {
+      const es = ref.current.esc, dx = (m.clientX - x0) / es, dy = (m.clientY - y0) / es;
+      if(!movido && Math.hypot(dx, dy) < 3 / es) return;
+      if(!movido){ movido = true; onGesto("inicio"); }
+      let ux = dx / (W / 2), uy = -dy / (H / 2);
+      if(Math.abs(b0.x + ux) < 8 / es / (W / 2)) ux = -b0.x;           // imán al centro
+      if(guia.current) guia.current.style.display = Math.abs(b0.x + ux) < 1e-9 ? "block" : "none";
+      const r = v => Math.round(v * 1000) / 1000;
+      const pr = proyecto;
+      onGesto("durante", {...pr, pistas: pr.pistas.map(pi=>pi.id !== pista.id ? pi : {...pi, clips: pi.clips.map(c=>!ids.has(c.id) ? c :
+        {...c, pos: { ...(c.pos || {}), x: r(base[c.id].x + ux), y: r(base[c.id].y + uy), ...(c.pos && c.pos.tam != null ? {} : base[c.id].tam != null ? { tam: base[c.id].tam } : {}) }})})});
+    };
+    const soltar = () => { window.removeEventListener("mousemove", mover); window.removeEventListener("mouseup", soltar);
+      if(guia.current) guia.current.style.display = "none"; if(movido) onGesto("fin"); };
+    window.addEventListener("mousemove", mover); window.addEventListener("mouseup", soltar);
+  };
   return (
     <div ref={caja} style={{position:"absolute",inset:0,pointerEvents:"none",overflow:"hidden"}}>
-      <div ref={el} style={{position:"absolute",left:p.cx * esc,top:p.cy * esc,transform:"translate(-50%,-50%)",whiteSpace:pl.modo === "palabra" ? "nowrap" : "normal",
+      <div ref={guia} style={{display:"none",position:"absolute",left:"50%",top:0,bottom:0,borderLeft:"1px solid #f472b6"}}/>
+      <div ref={el} onMouseDown={arrastrar} title="Arrástralo para moverlo (si es uno de los elegidos, se mueven todos)" style={{pointerEvents: onGesto ? "auto" : "none",cursor:"move",position:"absolute",left:p.cx * esc,top:p.cy * esc,transform:"translate(-50%,-50%)",whiteSpace:pl.modo === "palabra" ? "nowrap" : "normal",
         width:pl.modo === "palabra" ? undefined : W * 0.82 * esc,textAlign:"center",visibility:"hidden",textShadow:sombrasCss(pl.estilo, info, p.px, esc),
         fontFamily:familiaCss(pl.estilo.fuente),fontSize:p.px * esc,lineHeight:1.15,color:pl.estilo.color,
         WebkitTextStroke: p.borde ? `${p.borde * 2 * esc}px ${pl.estilo.color_contorno || "#000"}` : undefined, paintOrder:"stroke fill",
@@ -97,7 +132,7 @@ function Muestra({ pl, info }) {
     filter: pl.estilo.sombra ? `drop-shadow(${p.sdx * k}px ${p.sdy * k}px 0 rgba(0,0,0,${p.salpha}))` : undefined}}>{pl.modo === "palabra" ? "palabra" : "una frase"}</span>;
 }
 
-export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setMaxPal, onGenerar, ocupado, generando, onPlantilla, onEstilo, alGesto, onQuitar, fuentes,
+export function PanelSubtitulos({ onPosTodas, info, pista, elegida, setElegida, maxPal, setMaxPal, onGenerar, ocupado, generando, onPlantilla, onEstilo, alGesto, onQuitar, fuentes,
                                   favs = [], onFav, soloFavs, vacioFavs, onGuardarPlantilla, onBorrarPlantilla, ia, setIa, contexto, setContexto }) {
   const [nombrePl, setNombrePl] = useState(null);   // v3.43.3: el nombre de la plantilla nueva (window.prompt no existe en la app)
   if(!info) return <div style={{fontSize:12.5,color:"#888",padding:8}}>Cargando las plantillas…</div>;
@@ -142,7 +177,10 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
         <div style={{fontSize:10.5,fontWeight:700,color:"#888",letterSpacing:0.4,padding:"6px 2px 0"}}>ESTILO · {pista.clips.length} TARJETAS</div>
         <div style={fila}><span style={{fontSize:12}}>Color</span><input type="color" value={e.color || "#ffffff"} onChange={ev=>onEstilo({color:ev.target.value})}/></div>
         {desl("Tamaño", "tam", 6, 40, 0.5, v=>Number(v).toFixed(1))}
+        {desl("Horizontal (izquierda ← → derecha)", "x", -0.9, 0.9, 0.005, v=>Number(v).toFixed(3))}
         {desl("Altura (abajo ← → arriba)", "y", -0.9, 0.9, 0.005, v=>Number(v).toFixed(3))}
+        {pista.clips.some(c=>c.pos) && <button onClick={()=>onPosTodas && onPosTodas()} className="rd-btn" style={{justifyContent:"center"}}
+          title="Quita el sitio propio de cada tarjeta: vuelven todas a este">Todas a este sitio ({pista.clips.filter(c=>c.pos).length} con sitio propio)</button>}
         {desl("Contorno", "contorno", 0, 0.3, 0.005, v=>Number(v).toFixed(3))}
         <div style={fila}><span style={{fontSize:12}}>Color del contorno</span><input type="color" value={e.color_contorno || "#000000"} onChange={ev=>onEstilo({color_contorno:ev.target.value})}/></div>
         <label style={{...fila,cursor:"pointer",fontSize:12}}><span>Sombra</span><input type="checkbox" checked={!!e.sombra} onChange={ev=>onEstilo({sombra:ev.target.checked})}/></label>
@@ -171,9 +209,26 @@ export function PanelSubtitulos({ info, pista, elegida, setElegida, maxPal, setM
 
 // ---- el inspector de una tarjeta
 const COLORES_PALABRA = [[null, "Normal"], ["#00ff1d", "Verde"], ["#ff0000", "Rojo"], ["#ffdd00", "Amarillo"]];
-export function InspectorSub({ c, alGesto, cambiar, onColor }) {
+export function InspectorSub({ c, alGesto, cambiar, onColor, base, onPos, onCopiar, onPegar, pegarDe }) {
+  const e = { ...(base || {}), ...(c.pos || {}) };
+  const desl = (n, k, mn, mx, st, f) => <label style={{display:"flex",flexDirection:"column",gap:2,fontSize:11.5,color:"#aaa"}}>
+    <span style={{display:"flex",justifyContent:"space-between"}}>{n}<b style={{color:"#ddd",fontWeight:600}}>{f(e[k] || 0)}</b></span>
+    <input type="range" min={mn} max={mx} step={st} value={e[k] || 0} onPointerDown={()=>alGesto("inicio")} onPointerUp={()=>alGesto("fin")}
+      onChange={ev=>onPos({ x: e.x || 0, y: e.y || 0, tam: e.tam, [k]: Number(ev.target.value) }, true)}/></label>;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {onPos && <div style={{display:"flex",flexDirection:"column",gap:6,padding:8,borderRadius:8,background:"rgba(255,255,255,0.04)"}}>
+        <div style={{fontSize:10.5,fontWeight:700,color:"#888",letterSpacing:0.4}}>SITIO DE ESTE SUBTÍTULO {c.pos ? "· PROPIO" : "· COMO TODOS"}</div>
+        {desl("Horizontal (izquierda ← → derecha)", "x", -0.9, 0.9, 0.005, v=>Number(v).toFixed(3))}
+        {desl("Altura (abajo ← → arriba)", "y", -0.9, 0.9, 0.005, v=>Number(v).toFixed(3))}
+        {desl("Tamaño", "tam", 6, 40, 0.5, v=>Number(v).toFixed(1))}
+        <div style={{fontSize:11,color:"#888",lineHeight:1.45}}>También puedes arrastrarlo en el visor. Si eliges varios subtítulos y arrastras uno, se mueven todos.</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {c.pos && <button onClick={()=>onPos(null)} className="rd-btn" style={{flex:1,justifyContent:"center"}} title="Vuelve al sitio y tamaño de todos (los de la pestaña Subtítulos)">Como todos</button>}
+          {onCopiar && <button onClick={onCopiar} className="rd-btn" style={{flex:1,justifyContent:"center"}} title="Ctrl+Alt+C: copia su sitio y tamaño para pegarlo en otros subtítulos">Copiar atributos</button>}
+          {onPegar && pegarDe && <button onClick={onPegar} className="rd-btn" style={{flex:1,justifyContent:"center"}} title="Ctrl+Alt+V">Pegar de «{pegarDe}»</button>}
+        </div>
+      </div>}
       <textarea value={c.texto} rows={2} className="rd-input" style={{resize:"vertical",fontFamily:"inherit",lineHeight:1.4}}
         onFocus={()=>alGesto("inicio")} onBlur={()=>alGesto("fin")} onChange={ev=>cambiar(ev.target.value)}/>
       <div style={{fontSize:11.5,color:"#888",lineHeight:1.5}}>Corrige lo que se oyó mal. Con las mismas palabras, cada una conserva su momento; si cambias cuántas son, se reparten por igual. El estilo de todas, en la pestaña Subtítulos.</div>
