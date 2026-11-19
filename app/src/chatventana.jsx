@@ -95,7 +95,8 @@ function Mensaje({ m, tam, puede, onAccion, ocupado }) {
         <span style={{ fontSize: tam * 0.75, color: "var(--text-3)", marginRight: 6 }}>{hora(m.timestamp)}</span>
         {don && <span style={{ display: "inline-block", fontSize: tam * 0.8, fontWeight: 800, color: "#0e0e0e", background: "#D4AF37", borderRadius: 6, padding: "1px 7px", marginRight: 6 }}>{ICONO_DON[don.tipo] || "💰"} {don.importe || "Donación"}</span>}
         <b style={{ color: colorDe(a), marginRight: 6 }}>
-          {roles.includes("owner") ? "👑 " : roles.includes("moderator") ? "🔧 " : ""}<Partes parts={a.nameParts || [{ type: "text", text: a.name }]} alto={tam * 1.1}/>
+          {roles.includes("owner") ? "👑 " : roles.includes("moderator") ? <span title="Moderador" style={{ display: "inline-flex", verticalAlign: "-0.12em", marginRight: 4 }}>
+            <svg viewBox="0 0 24 24" width={tam * 0.95} height={tam * 0.95}><path fill="#5e84f1" d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.7C.4 7.1.9 10.1 2.9 12.1c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.4z"/></svg></span> : ""}<Partes parts={a.nameParts || [{ type: "text", text: a.name }]} alto={tam * 1.1}/>
           {/* (4/11) el verificado de YouTube, como en YouTube: un ✓ gris en un círculo detrás del nombre */}
           {roles.includes("verified") && <span title="Canal verificado" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
             width: tam * 0.95, height: tam * 0.95, borderRadius: "50%", background: "#AAAAAA", color: "#0F0F0F", fontSize: tam * 0.62,
