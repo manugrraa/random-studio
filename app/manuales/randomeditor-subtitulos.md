@@ -11,7 +11,7 @@
 - `src/editor/Subtitulos.jsx`:
   - `estiloPx` pasa de unidades de CapCut a píxeles (la misma calibración que el exportado).
   - `plantillaDe` y `estiloTarjeta(pl, c)`.
-  - `CapaSubtitulos`: el visor. Pinta fotograma a fotograma con `reloj.oir`. Al arrastrar el subtítulo se mueve esa tarjeta, o todas las elegidas si es una de ellas, con imán al centro.
+  - `CapaSubtitulos`: el visor. Pinta fotograma a fotograma con `reloj.oir`. Al arrastrar: sin elegir esa tarjeta se mueven TODAS (`pista.estilo.x/y`, y las que tienen `pos` se desplazan lo mismo); si está elegida, solo las elegidas (su `pos`). Imán al centro.
   - `PanelSubtitulos`: la pestaña con las plantillas, el estilo de todas (Horizontal, Altura…) y «Todas a este sitio».
   - `InspectorSub`: el texto, el color por palabra, y el sitio y tamaño propios (Como todos / Copiar / Pegar).
 - `src/editor/RandomEditor.jsx`:
@@ -23,3 +23,6 @@
 
 ## Pruebas
 Modo de pruebas con STUDIO_CAPTURA, STUDIO_EDITOR=1, **STUDIO_SEP="¦"** (si no, el JS se parte por las comas) y STUDIO_PESTANAS="$<js>". El JS mete la pista con `__redPrueba.gesto("inicio"|"durante"|"fin")` y lee `__redPrueba.p()`. Ejemplo: scratchpad `prueba_subs.js`.
+
+## Plantillas propias
+«Guardar como plantilla» (clon.py redsubsguardar → `subtitulos.guardar_plantilla`) guarda `pista.estilo` (sitio común x/y incluido) con el nombre que él ponga, por ejemplo «Shorts arriba». Los `pos` de cada tarjeta NO van en la plantilla.

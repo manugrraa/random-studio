@@ -90,11 +90,14 @@ export function CapaSubtitulos({ proyecto, reloj, info, sel, onElegir, onGesto }
     const it = ref.current.cur;
     if(ev.button !== 0 || !it || !onGesto) return;
     ev.preventDefault(); ev.stopPropagation();
-    const varios = sel && sel.has(it.id) && pista.clips.filter(c=>sel.has(c.id)).length > 1;
-    const ids = varios ? new Set(pista.clips.filter(c=>sel.has(c.id)).map(c=>c.id)) : new Set([it.id]);
-    if(!varios && onElegir) onElegir(it.id);
+    // (19/11, él eligió) sin elegir ese subtítulo se mueven TODOS (el sitio de la pista, el que se guarda en una
+    // plantilla); si está elegido, solo los elegidos (cada uno con su sitio propio)
+    const todos = !(sel && sel.has(it.id));
+    const ids = todos ? new Set() : new Set(pista.clips.filter(c=>sel.has(c.id)).map(c=>c.id));
     const base = Object.fromEntries(pista.clips.filter(c=>ids.has(c.id)).map(c=>{ const e = estiloTarjeta(pl, c); return [c.id, { x: e.x || 0, y: e.y || 0, tam: e.tam }]; }));
-    const b0 = base[it.id], x0 = ev.clientX, y0 = ev.clientY;
+    const comun = { x: pl.estilo.x || 0, y: pl.estilo.y || 0 };
+    const propios = Object.fromEntries(pista.clips.filter(c=>c.pos).map(c=>{ const e = estiloTarjeta(pl, c); return [c.id, { x: e.x || 0, y: e.y || 0 }]; }));
+    const b0 = todos ? comun : base[it.id], x0 = ev.clientX, y0 = ev.clientY;
     let movido = false;
     const mover = m => {
       const es = ref.current.esc, dx = (m.clientX - x0) / es, dy = (m.clientY - y0) / es;
@@ -105,6 +108,9 @@ export function CapaSubtitulos({ proyecto, reloj, info, sel, onElegir, onGesto }
       if(guia.current) guia.current.style.display = Math.abs(b0.x + ux) < 1e-9 ? "block" : "none";
       const r = v => Math.round(v * 1000) / 1000;
       const pr = proyecto;
+      // (los que tienen sitio propio se desplazan lo mismo: «todos» se mueven juntos)
+      if(todos){ onGesto("durante", {...pr, pistas: pr.pistas.map(pi=>pi.id !== pista.id ? pi : {...pi, estilo: { ...(pi.estilo || {}), x: r(comun.x + ux), y: r(comun.y + uy) },
+        clips: pi.clips.map(c=>{ const o = propios[c.id]; return o ? {...c, pos: {...c.pos, x: r(o.x + ux), y: r(o.y + uy)}} : c; })})}); return; }
       onGesto("durante", {...pr, pistas: pr.pistas.map(pi=>pi.id !== pista.id ? pi : {...pi, clips: pi.clips.map(c=>!ids.has(c.id) ? c :
         {...c, pos: { ...(c.pos || {}), x: r(base[c.id].x + ux), y: r(base[c.id].y + uy), ...(c.pos && c.pos.tam != null ? {} : base[c.id].tam != null ? { tam: base[c.id].tam } : {}) }})})});
     };
@@ -115,7 +121,7 @@ export function CapaSubtitulos({ proyecto, reloj, info, sel, onElegir, onGesto }
   return (
     <div ref={caja} style={{position:"absolute",inset:0,pointerEvents:"none",overflow:"hidden"}}>
       <div ref={guia} style={{display:"none",position:"absolute",left:"50%",top:0,bottom:0,borderLeft:"1px solid #f472b6"}}/>
-      <div ref={el} onMouseDown={arrastrar} title="Arrástralo para moverlo (si es uno de los elegidos, se mueven todos)" style={{pointerEvents: onGesto ? "auto" : "none",cursor:"move",position:"absolute",left:p.cx * esc,top:p.cy * esc,transform:"translate(-50%,-50%)",whiteSpace:pl.modo === "palabra" ? "nowrap" : "normal",
+      <div ref={el} onMouseDown={arrastrar} title="Arrástralo para moverlos todos (si lo eliges en la línea de tiempo, solo ese)" style={{pointerEvents: onGesto ? "auto" : "none",cursor:"move",position:"absolute",left:p.cx * esc,top:p.cy * esc,transform:"translate(-50%,-50%)",whiteSpace:pl.modo === "palabra" ? "nowrap" : "normal",
         width:pl.modo === "palabra" ? undefined : W * 0.82 * esc,textAlign:"center",visibility:"hidden",textShadow:sombrasCss(pl.estilo, info, p.px, esc),
         fontFamily:familiaCss(pl.estilo.fuente),fontSize:p.px * esc,lineHeight:1.15,color:pl.estilo.color,
         WebkitTextStroke: p.borde ? `${p.borde * 2 * esc}px ${pl.estilo.color_contorno || "#000"}` : undefined, paintOrder:"stroke fill",
@@ -222,7 +228,7 @@ export function InspectorSub({ c, alGesto, cambiar, onColor, base, onPos, onCopi
         {desl("Horizontal (izquierda ← → derecha)", "x", -0.9, 0.9, 0.005, v=>Number(v).toFixed(3))}
         {desl("Altura (abajo ← → arriba)", "y", -0.9, 0.9, 0.005, v=>Number(v).toFixed(3))}
         {desl("Tamaño", "tam", 6, 40, 0.5, v=>Number(v).toFixed(1))}
-        <div style={{fontSize:11,color:"#888",lineHeight:1.45}}>También puedes arrastrarlo en el visor. Si eliges varios subtítulos y arrastras uno, se mueven todos.</div>
+        <div style={{fontSize:11,color:"#888",lineHeight:1.45}}>También puedes arrastrarlo en el visor mientras esté elegido (si eliges varios, se mueven juntos). Sin elegir nada, arrastrar mueve todos.</div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {c.pos && <button onClick={()=>onPos(null)} className="rd-btn" style={{flex:1,justifyContent:"center"}} title="Vuelve al sitio y tamaño de todos (los de la pestaña Subtítulos)">Como todos</button>}
           {onCopiar && <button onClick={onCopiar} className="rd-btn" style={{flex:1,justifyContent:"center"}} title="Ctrl+Alt+C: copia su sitio y tamaño para pegarlo en otros subtítulos">Copiar atributos</button>}
