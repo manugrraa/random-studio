@@ -1,7 +1,7 @@
 import React from "react";
 const { useState, useEffect, useCallback, useRef } = React;
 import { Icons } from "./base";
-import { borrarHistoria, borrarVarias, pedidosApi, remotoApi } from "./remoto";
+import { bajarTerminada, borrarHistoria, borrarTerminadas, pedidosApi, remotoApi, sincronizarTerminadas, terminadasEstado } from "./remoto";
 import { BotonDisponible, BotonPararTodo, ColaTrabajo, NuevaPeticion } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 import { esAdmin, useRolEquipo } from "./admin";
@@ -347,65 +347,152 @@ function ElegirMiniaturaShort({ nombre, toast, plegado, onHecha }) {
     </div>);
 }
 
-// ------------------------------------------------------------------ terminadas (3-11): aparte, plegadas, y borrar varias
-function Terminadas({ lista, selId, setSelId, toast, alBorrar, otras = [], otraSel, setOtraSel }) {
-  const [abierta, setAbierta] = useState(false);
+// ------------------------------------------------------------------ terminadas (20-11): la MISMA lista en todos los equipos
+/* (20-11-2026, Manu: «que se sincronicen las historias terminadas en todos los equipos… era una lista interminable…
+ * que las que estén en una recopilación ya hecha tengan una marca para borrarlas sin miedo») su propia pestaña: la lista
+ * compartida del perfil (remoto.js, sincronizarTerminadas), en cuadrícula con su miniatura, agrupada por recopilación, con
+ * buscador y filtros. Abrir una: verla, elegir su miniatura y programarla; si el vídeo no está en este equipo, se baja de
+ * Drive. Borrar la quita de TODOS los equipos (la copia de Drive se queda). */
+const recopLista = (r) => !!r && (r.estado === "montada" || r.estado === "publicada");
+const fechaCorta = (x) => { const t = Date.parse(x || ""); return t ? new Date(t).toLocaleDateString("es-ES", { day: "numeric", month: "short" }) : ""; };
+const sinAcentos = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+function MarcaRecop({ r, grande }) {
+  const lista = recopLista(r);
+  const txt = !r ? "SIN RECOPILACIÓN" : lista ? (grande ? "EN LA RECOPILACIÓN " + r.nn + " (" + (r.estado === "publicada" ? "PUBLICADA" : "YA MONTADA") + ") · SE PUEDE BORRAR" : "RECOP. " + r.nn + " · SE PUEDE BORRAR")
+    : (grande ? "EN LA RECOPILACIÓN " + r.nn + " · TODAVÍA SIN MONTAR" : "RECOP. " + r.nn + " · SIN MONTAR");
+  const c = !r ? ["var(--text-3)", "var(--card-2)", "var(--border)"] : lista ? ["#4ADE80", "rgba(74,222,128,.14)", "rgba(74,222,128,.5)"] : ["#F59E0B", "rgba(245,158,11,.14)", "rgba(245,158,11,.5)"];
+  return <span style={{ display: "inline-block", fontSize: grande ? 11 : 9.5, fontWeight: 800, letterSpacing: ".03em", color: c[0], background: c[1], border: "1px solid " + c[2], borderRadius: 999, padding: grande ? "4px 10px" : "2px 7px", lineHeight: 1.35 }}>{txt}</span>;
+}
+function TerminadasVista({ toast, abrirHistoria, alCambiar }) {
+  const [est, setEst] = useState(() => terminadasEstado());
+  const [q, setQ] = useState("");
+  const [filtro, setFiltro] = useState("todas");
+  const [orden, setOrden] = useState("nuevas");
   const [elegir, setElegir] = useState(false);
   const [sel, setSel] = useState(() => new Set());
-  const [borrando, setBorrando] = useState(false);
-  if (!lista.length && !otras.length) return null;
-  const quitar = async (ids) => {
-    if (!ids.length) return;
-    if (!confirm("¿Borrar " + (ids.length === 1 ? "esta historia terminada" : "estas " + ids.length + " historias terminadas") + " para liberar espacio?\n\nSe borra DEL TODO su carpeta de trabajo (planos, renders, audio). Los Shorts entregados, sus miniaturas y las copias de Drive no se tocan.")) return;
-    setBorrando(true);
-    const r = await borrarVarias(ids);
-    setBorrando(false); setSel(new Set()); setElegir(false);
-    toast((r.hechas ? "🗑 " + r.hechas + " borrada(s): " + ((r.liberado || 0) / 1e9).toFixed(2) + " GB liberados" : "") + (r.error ? (r.hechas ? " · " : "❌ ") + r.error : ""));
-    alBorrar();
+  const [abierta, setAbierta] = useState(null);
+  const [ocupado, setOcupado] = useState("");
+  useEffect(() => {
+    const f = () => setEst(terminadasEstado());
+    window.addEventListener("rs-terminadas", f);
+    sincronizarTerminadas(true).then(f).catch(() => {});
+    return () => window.removeEventListener("rs-terminadas", f);
+  }, []);
+  // la lista del servidor, con lo que hay de cada una en este equipo (sin servidor, solo lo de aquí)
+  const usarServidor = !est.sinServidor && est.filas.length > 0;
+  const loc = new Map(est.locales.map(l => [l.nombre, l]));
+  const items = (usarServidor ? est.filas : est.locales).map(f => {
+    const l = loc.get(f.nombre) || {};
+    const hid = f.historia_id || l.historia_id || "";
+    return { nombre: f.nombre, fecha: f.fecha || l.fecha, mini: f.mini || l.mini, recop: usarServidor ? f.recop || null : l.recop || null, numero: hid.slice(0, 2),
+      equipo: (est.equipos || {})[f.equipo] || "", enDrive: !!((f.drive || l.drive || {}).archivos || []).length, local: !!l.local, propia: l.historia_id || null };
+  });
+  const cuenta = { todas: items.length, sin: items.filter(i => !i.recop).length, sinMontar: items.filter(i => i.recop && !recopLista(i.recop)).length, borrables: items.filter(i => recopLista(i.recop)).length };
+  const pasa = (i) => (filtro === "todas" || (filtro === "sin" && !i.recop) || (filtro === "sinMontar" && i.recop && !recopLista(i.recop)) || (filtro === "borrables" && recopLista(i.recop)))
+    && (!q.trim() || sinAcentos(i.nombre).includes(sinAcentos(q.trim())) || i.numero === q.trim());
+  const vista = items.filter(pasa).sort((a, b) => (orden === "nuevas" ? -1 : 1) * ((Date.parse(a.fecha || "") || 0) - (Date.parse(b.fecha || "") || 0)));
+  // por grupos: primero las que no están en ninguna recopilación, luego cada recopilación (la más nueva antes)
+  const grupos = [];
+  const sinR = vista.filter(i => !i.recop);
+  if (sinR.length) grupos.push({ clave: "sin", titulo: "Sin recopilación", items: sinR });
+  for (const nn of [...new Set(vista.filter(i => i.recop).map(i => i.recop.nn))].sort().reverse()) {
+    const its = vista.filter(i => i.recop && i.recop.nn === nn), r = its[0].recop;
+    grupos.push({ clave: nn, titulo: "Recopilación " + nn + " · " + (recopLista(r) ? (r.estado === "publicada" ? "publicada" : "ya montada") + ": se pueden borrar sin perder nada" : "todavía sin montar"), lista: recopLista(r), items: its });
+  }
+  const borrar = async (nombres) => {
+    if (!nombres.length) return;
+    const noListas = nombres.filter(n => !recopLista((items.find(i => i.nombre === n) || {}).recop)).length;
+    if (!confirm("¿Borrar " + (nombres.length === 1 ? "«" + nombres[0] + "»" : nombres.length + " terminadas") + "?\n\n"
+      + "Se quitan de Terminadas en TODOS los equipos y se borran su Short y su carpeta de trabajo en todos (los que estén apagados, al encenderse). La copia de Drive se queda."
+      + (noListas ? "\n\nOjo: " + (noListas === 1 ? "una no está" : noListas + " no están") + " en ninguna recopilación montada." : ""))) return;
+    setOcupado("Borrando…");
+    try { const r = await borrarTerminadas(nombres); toast(r.ok ? "Borradas en todos los equipos: " + r.borradas : "❌ " + r.error); }
+    catch (e) { toast("❌ No se pudo: " + (e.message || e)); }
+    setOcupado(""); setSel(new Set()); setElegir(false); setAbierta(null); setEst(terminadasEstado()); alCambiar && alCambiar();
   };
+  const actual = abierta && items.find(i => i.nombre === abierta);
+  const chip = (k, t) => <button key={k} onClick={() => setFiltro(k)} className={filtro === k ? "on" : ""}>{t} · {cuenta[k]}</button>;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-      <button onClick={() => setAbierta(a => !a)} style={{ ...botonSec, display: "flex", justifyContent: "space-between", color: "var(--green)" }}>
-        <span>✅ Terminadas · {lista.length + otras.length}</span><span>{abierta ? "▲" : "▼"}</span></button>
-      {abierta && <>
-        {!!lista.length && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {!elegir ? <button onClick={() => setElegir(true)} style={{ ...botonSec, padding: "6px 10px" }}>Elegir para borrar</button>
-            : <>
-              <button disabled={!sel.size || borrando} onClick={() => quitar([...sel])} style={{ ...botonSec, padding: "6px 10px", color: "var(--red)", opacity: sel.size ? 1 : .5 }}>🗑 Borrar {sel.size || ""}</button>
-              <button onClick={() => setSel(sel.size === lista.length ? new Set() : new Set(lista.map(h => h.id)))} style={{ ...botonSec, padding: "6px 10px" }}>{sel.size === lista.length ? "Ninguna" : "Todas"}</button>
-              <button onClick={() => { setElegir(false); setSel(new Set()); }} style={{ ...botonSec, padding: "6px 10px" }}>Cancelar</button>
-            </>}
-          {!elegir && <button disabled={borrando} onClick={() => quitar(lista.map(h => h.id))} style={{ ...botonSec, padding: "6px 10px", color: "var(--red)" }}>🗑 Borrar todas</button>}
-        </div>}
-        {borrando && <div style={{ fontSize: 12, color: "var(--text-3)" }}>Borrando…</div>}
-        {lista.map(h => {
-          const on = sel.has(h.id), activa = h.id === selId;
-          return (
-            <button key={h.id} onClick={() => { if (elegir) setSel(s => { const n = new Set(s); n.has(h.id) ? n.delete(h.id) : n.add(h.id); return n; }); else setSelId(h.id); }}
-              style={{ display: "flex", gap: 8, alignItems: "center", textAlign: "left", padding: "6px 8px", borderRadius: 10,
-                border: "1px solid " + (on ? "var(--red)" : activa ? "var(--border-gold)" : "var(--border)"), background: on ? "rgba(239,68,68,.08)" : "var(--card)" }}>
-              {elegir && <span style={{ width: 16, height: 16, borderRadius: 4, border: "2px solid " + (on ? "var(--red)" : "var(--border)"), background: on ? "var(--red)" : "transparent", flexShrink: 0 }} />}
-              <div style={{ width: 26, height: 46, borderRadius: 6, overflow: "hidden", flexShrink: 0, background: "var(--card-2)" }}>{h.miniatura && <img src={h.miniatura} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}</div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>HISTORIA {h.id.slice(0, 2)}</div>
-                <div style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.titulo}</div>
-              </div>
-            </button>);
-        })}
-        {/* (10-11) las que hizo otro equipo y ya están aquí: elegir su miniatura y programarlas */}
-        {!!otras.length && !elegir && <>
-          <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em", marginTop: 6 }}>DEL ORDENADOR Y OTROS SHORTS · {otras.length}</div>
-          {otras.map(o => (
-            <button key={o.nombre} onClick={() => setOtraSel(o.nombre)}
-              style={{ display: "flex", gap: 8, alignItems: "center", textAlign: "left", padding: "6px 8px", borderRadius: 10,
-                border: "1px solid " + (otraSel === o.nombre ? "var(--border-gold)" : "var(--border)"), background: "var(--card)" }}>
-              <div style={{ width: 26, height: 46, borderRadius: 6, overflow: "hidden", flexShrink: 0, background: "var(--card-2)" }}>{o.miniatura && <img src={o.miniatura} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}</div>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                {o.recop && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-3)" }}>EN LA RECOPILACIÓN {o.recop}</div>}
-                <div style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.nombre}</div>
-              </div>
-            </button>))}
-        </>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ ...tarjeta, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 18 }}>Terminadas · {items.length}</div>
+          <div style={{ fontSize: 12, color: "var(--text-3)", flex: 1, minWidth: 220 }}>La misma lista en todos los equipos. Si el vídeo no está en este equipo, se baja de Drive al abrirlo.</div>
+          <button onClick={() => { setOcupado("Mirando…"); sincronizarTerminadas(true).finally(() => { setOcupado(""); setEst(terminadasEstado()); }); }} style={{ ...botonSec, padding: "6px 10px" }}>Actualizar</button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="rs-seg">{chip("todas", "Todas")}{chip("sin", "Sin recopilación")}{chip("sinMontar", "Recopilación sin montar")}{chip("borrables", "Se pueden borrar")}</div>
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Buscar por título o número…"
+            style={{ flex: 1, minWidth: 180, fontSize: 13, padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-2)", color: "var(--text)" }} />
+          <select value={orden} onChange={e => setOrden(e.target.value)} style={{ ...botonSec, padding: "7px 8px" }}>
+            <option value="nuevas">Más nuevas primero</option><option value="antiguas">Más antiguas primero</option></select>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {!elegir ? <button onClick={() => setElegir(true)} style={{ ...botonSec, padding: "6px 10px" }}>{Icons.trash} Elegir para borrar</button> : <>
+            <button onClick={() => setSel(new Set(items.filter(i => recopLista(i.recop)).map(i => i.nombre)))} style={{ ...botonSec, padding: "6px 10px", color: "var(--green)" }}>Elegir las que se pueden borrar ({cuenta.borrables})</button>
+            <button onClick={() => setSel(sel.size ? new Set() : new Set(vista.map(i => i.nombre)))} style={{ ...botonSec, padding: "6px 10px" }}>{sel.size ? "Ninguna" : "Todas las de la vista"}</button>
+            <button disabled={!sel.size || !!ocupado} onClick={() => borrar([...sel])} style={{ ...botonSec, padding: "6px 10px", color: "var(--red)", opacity: sel.size ? 1 : .5 }}>Borrar {sel.size || ""}</button>
+            <button onClick={() => { setElegir(false); setSel(new Set()); }} style={{ ...botonSec, padding: "6px 10px" }}>Cancelar</button>
+          </>}
+          {ocupado && <span style={{ fontSize: 12, color: "var(--text-3)" }}>{ocupado}</span>}
+          {est.error && <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>(sin conexión con la lista compartida: {String(est.error).slice(0, 80)})</span>}
+          {est.sinServidor && <span style={{ fontSize: 11.5, color: "#F59E0B" }}>El servidor aún no tiene la lista compartida: se ven solo las de este equipo.</span>}
+        </div>
+      </div>
+      {!vista.length && <div style={{ ...tarjeta, fontSize: 13, color: "var(--text-3)" }}>{items.length ? "Ninguna con ese filtro." : "Todavía no hay terminadas."}</div>}
+      {grupos.map(g => (
+        <div key={g.clave} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", color: g.lista ? "#4ADE80" : g.clave === "sin" ? "var(--text-3)" : "#F59E0B" }}>{g.titulo.toUpperCase()} · {g.items.length}</div>
+            {elegir && <button onClick={() => setSel(s => { const n = new Set(s); const todas = g.items.every(i => n.has(i.nombre)); g.items.forEach(i => todas ? n.delete(i.nombre) : n.add(i.nombre)); return n; })} style={{ ...botonSec, padding: "3px 8px", fontSize: 11 }}>
+              {g.items.every(i => sel.has(i.nombre)) ? "Quitar el grupo" : "Elegir el grupo"}</button>}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(132px, 1fr))", gap: 10 }}>
+            {g.items.map(i => {
+              const on = sel.has(i.nombre);
+              return (
+                <button key={i.nombre} onClick={() => elegir ? setSel(s => { const n = new Set(s); n.has(i.nombre) ? n.delete(i.nombre) : n.add(i.nombre); return n; }) : setAbierta(i.nombre)}
+                  title={i.nombre} style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "left", padding: 6, borderRadius: 12, position: "relative",
+                    border: "1px solid " + (on ? "var(--red)" : recopLista(i.recop) ? "rgba(74,222,128,.45)" : "var(--border)"), background: on ? "rgba(239,68,68,.08)" : "var(--card)" }}>
+                  <div style={{ width: "100%", aspectRatio: "9/16", borderRadius: 8, overflow: "hidden", background: "var(--card-2)", position: "relative" }}>
+                    {i.mini && <img src={i.mini} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />}
+                    {i.numero && <span style={{ position: "absolute", top: 5, left: 5, fontSize: 10, fontWeight: 800, color: "#fff", background: "rgba(0,0,0,.6)", borderRadius: 6, padding: "1px 5px" }}>{i.numero}</span>}
+                    {elegir && <span style={{ position: "absolute", top: 5, right: 5, width: 18, height: 18, borderRadius: 5, border: "2px solid " + (on ? "var(--red)" : "#fff"), background: on ? "var(--red)" : "rgba(0,0,0,.35)" }} />}
+                  </div>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, lineHeight: 1.3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", minHeight: 30 }}>{i.nombre}</div>
+                  <div style={{ fontSize: 10, color: "var(--text-3)" }}>{[i.equipo, fechaCorta(i.fecha)].filter(Boolean).join(" · ")}{!i.local && i.enDrive ? " · en Drive" : ""}</div>
+                  {i.recop && <MarcaRecop r={i.recop} />}
+                </button>);
+            })}
+          </div>
+        </div>))}
+      {actual && <>
+        <div onClick={() => setAbierta(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 60 }} />
+        <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: "min(560px, 100vw)", background: "var(--bg-2)", borderLeft: "1px solid var(--border)", zIndex: 61, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em" }}>{[actual.numero && "HISTORIA " + actual.numero, actual.equipo && "LA HIZO " + actual.equipo.toUpperCase(), fechaCorta(actual.fecha)].filter(Boolean).join(" · ")}</div>
+              <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 19, margin: "4px 0 8px", lineHeight: 1.25 }}>{actual.nombre}</div>
+              <MarcaRecop r={actual.recop} grande />
+            </div>
+            <button onClick={() => setAbierta(null)} style={{ ...botonSec, padding: "6px 10px" }}>Cerrar</button>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-2)" }}>{actual.local ? "El vídeo está en este equipo." : actual.enDrive ? "El vídeo no está en este equipo: está en Drive." : "El vídeo solo está en el equipo que la hizo (no se subió a Drive)."}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {actual.local && <BotonProgramar nombre={actual.nombre} toast={toast} />}
+            {!actual.local && actual.enDrive && <button disabled={!!ocupado} onClick={async () => {
+              setOcupado("Bajando el vídeo de Drive…");
+              try { const r = await bajarTerminada(actual.nombre); toast(r && r.ok ? "Ya está en este equipo" : "❌ " + ((r && r.error) || "No se pudo bajar")); }
+              catch (e) { toast("❌ " + (e.message || e)); }
+              setOcupado(""); setEst(terminadasEstado());
+            }} className="grad-gold" style={botonOro}>{Icons.download} Bajar el vídeo a este equipo</button>}
+            {actual.propia && <button onClick={() => abrirHistoria(actual.propia)} style={botonSec}>Ver la historia</button>}
+            {actual.propia && actual.local && <button onClick={() => SF().historiasAbrir(actual.propia, "entrega")} style={botonSec}>Abrir la carpeta del Short</button>}
+            <button disabled={!!ocupado} onClick={() => borrar([actual.nombre])} style={{ ...botonSec, color: "var(--red)" }}>{Icons.trash} Borrar</button>
+          </div>
+          {ocupado && <div style={{ fontSize: 12, color: "var(--text-3)" }}>{ocupado}</div>}
+          {actual.local && <ElegirMiniaturaShort key={actual.nombre} nombre={actual.nombre} toast={toast} onHecha={() => sincronizarTerminadas(true).then(() => setEst(terminadasEstado()))} />}
+        </div>
       </>}
     </div>);
 }
@@ -427,22 +514,6 @@ function BotonProgramar({ nombre, toast }) {
   </>;
 }
 const nombreEntrega = (det) => det && det.carpetaEntrega ? String(det.carpetaEntrega).split(/[\\/]/).pop() : "";
-
-/* (10-11, Manu: «seleccionar las miniaturas de las historias hechas del ordenador en mi portátil») un Short que hizo
- * otro equipo y está aquí (se bajó de Drive): verlo, elegir su miniatura y programarlo */
-function OtraTerminada({ o, toast, onCambio }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
-      <div style={{ ...tarjeta, borderColor: "rgba(74,222,128,.4)" }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)", letterSpacing: ".06em" }}>{o.recop ? "EN LA RECOPILACIÓN " + o.recop : "HECHA EN OTRO EQUIPO"} · {new Date(o.fecha).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</div>
-        <div style={{ fontFamily: "'Sora'", fontWeight: 800, fontSize: 19, margin: "4px 0 12px", lineHeight: 1.25 }}>{o.nombre}</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <BotonProgramar nombre={o.nombre} toast={toast} />
-        </div>
-      </div>
-      <ElegirMiniaturaShort key={o.nombre} nombre={o.nombre} toast={toast} onHecha={onCambio} />
-    </div>);
-}
 
 // ------------------------------------------------------------------ Short terminado + nota
 function Terminado({ det, mat, toast, onGuardada }) {
@@ -726,11 +797,7 @@ export function HistoriasView({ toast }) {
   const [tarea, setTarea] = useState(null);
   const [ahora, setAhora] = useState(Date.now());
   const [informe, setInforme] = useState(null);
-  // (10-11) Shorts que hizo otro equipo y están aquí (se bajaron de Drive)
-  const [otras, setOtras] = useState([]);
-  const [otraSel, setOtraSel] = useState(null);
-  const cargarOtras = useCallback(() => { if (SF() && SF().historiasEntregasOtras) SF().historiasEntregasOtras().then(r => setOtras((r && r.lista) || [])).catch(() => {}); }, []);
-  const elegirLocal = (id) => { setOtraSel(null); setSelId(id); };
+  const elegirLocal = (id) => setSelId(id);
   const listaRef = useRef([]);
   // «Historia 07 · TÍTULO» (mientras no hay guion, el título de la idea)
   const nombreDe = (id) => { if (/^R\d{2}$/.test(id)) return "Recopilación " + id.slice(1); const h = (listaRef.current || []).find(x => x.id === id); return "Historia " + id.slice(0, 2) + (h && h.titulo ? " · «" + h.titulo + "»" : ""); };
@@ -740,7 +807,6 @@ export function HistoriasView({ toast }) {
       const r = await SF().historiasLista();
       if (!r.ok) { setError(r.error); return; }
       setLista(r.historias); listaRef.current = r.historias; setError("");
-      cargarOtras();
       // (si la elegida se borró o se renumeró, se elige otra)
       setSelId(s => (s && r.historias.some(h => h.id === s)) ? s : (r.historias[0] && r.historias[0].id));
     } catch (e) { setError(e.message || String(e)); }
@@ -755,14 +821,6 @@ export function HistoriasView({ toast }) {
   }, [toast]);
 
   const [ligeras, setLigeras] = useState([]);
-  // (19-11) los Shorts que se bajan de Drive (los termina el otro equipo) entran en Terminadas al momento, y al volver a
-  // la ventana se mira por si llegó alguno (solo lee la carpeta de entregas: nada de red)
-  useEffect(() => {
-    if (!escritorio) return;
-    const alVolver = () => { if (document.visibilityState === "visible") cargarOtras(); };
-    window.addEventListener("rs-entregas", cargarOtras); window.addEventListener("focus", alVolver); document.addEventListener("visibilitychange", alVolver);
-    return () => { window.removeEventListener("rs-entregas", cargarOtras); window.removeEventListener("focus", alVolver); document.removeEventListener("visibilitychange", alVolver); };
-  }, [escritorio, cargarOtras]);
   const selRef = useRef(selId); selRef.current = selId;
   useEffect(() => {
     if (!escritorio) return;
@@ -845,7 +903,7 @@ export function HistoriasView({ toast }) {
       {/* v3.43: el título ya está en la cabecera de la app; aquí solo las pestañas, y los botones del equipo arriba a la derecha */}
       <AccionesDeVista><BotonPararTodo toast={toast} /><BotonDisponible /></AccionesDeVista>
       <div className="rs-seg" style={{ alignSelf: "flex-start" }}>
-        {[...(admin ? [["todo", "Todos los equipos", Icons.cloud]] : []), ["proyectos", "Historias", Icons.camera], ["recop", "Recopilaciones", Icons.largo], ["cola", "Cola", Icons.tasks], ["ideas", "Ideas", Icons.sparkle], ["ajustes", "Ajustes", Icons.gear]].map(([k, t, ic]) => (
+        {[...(admin ? [["todo", "Todos los equipos", Icons.cloud]] : []), ["proyectos", "Historias", Icons.camera], ["terminadas", "Terminadas", Icons.check], ["recop", "Recopilaciones", Icons.largo], ["cola", "Cola", Icons.tasks], ["ideas", "Ideas", Icons.sparkle], ["ajustes", "Ajustes", Icons.gear]].map(([k, t, ic]) => (
           <button key={k} onClick={() => setPestana(k)} className={pestana === k ? "on" : ""}>{ic}{t}</button>))}
       </div>
 
@@ -867,6 +925,7 @@ export function HistoriasView({ toast }) {
       {pestana === "ideas" && <Ideas toast={toast} onCreada={() => cargar()} />}
       {pestana === "cola" && <ColaTrabajo toast={toast} />}
       {pestana === "recop" && <Recopilaciones toast={toast} />}
+      {pestana === "terminadas" && <TerminadasVista toast={toast} abrirHistoria={(id) => { setPestana("proyectos"); setSelId(id); }} alCambiar={cargar} />}
       {pestana === "ajustes" && <AjustesEstudio toast={toast} />}
 
       {pestana === "proyectos" && (
@@ -876,7 +935,7 @@ export function HistoriasView({ toast }) {
             <button onClick={() => setPestana("ideas")} style={{ ...botonSec, borderStyle: "dashed", padding: 12, color: "var(--gold)" }}>+ Nueva historia desde una idea</button>
             {!lista && !error && <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>Cargando…</div>}
             {(lista || []).filter(h => !h.entregada).map(h => {
-              const activa = h.id === selId && !otraSel, et = h.etapas || [];
+              const activa = h.id === selId, et = h.etapas || [];
               const hechas = et.filter(x => x.estado === "hecho").length, rev = et.find(x => x.estado === "revisar"), trab = trabajaAqui(h.id);
               return (
                 <button key={h.id} onClick={() => elegirLocal(h.id)}
@@ -899,13 +958,13 @@ export function HistoriasView({ toast }) {
                 </button>);
             })}
             {/* 3-11: las terminadas, solo aquí (plegadas), para elegir y borrar las que quieras y liberar espacio */}
-            <Terminadas lista={(lista || []).filter(h => h.entregada)} selId={otraSel ? null : selId} setSelId={elegirLocal} toast={toast} alBorrar={() => { setSelId(null); cargar(); }}
-              otras={otras} otraSel={otraSel} setOtraSel={setOtraSel} />
+            {/* (20-11) las terminadas tienen su pestaña: la misma lista en todos los equipos */}
+            <button onClick={() => setPestana("terminadas")} style={{ ...botonSec, display: "flex", justifyContent: "space-between", alignItems: "center", color: "var(--green)", marginTop: 6 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>{Icons.check}Terminadas (de todos los equipos)</span><span>›</span></button>
           </div>
 
           {/* detalle */}
-          {otraSel && otras.some(o => o.nombre === otraSel) && <OtraTerminada o={otras.find(o => o.nombre === otraSel)} toast={toast} onCambio={cargarOtras} />}
-          {!otraSel && det && etapas && mat && (
+          {det && etapas && mat && (
             <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
               <div style={{ ...tarjeta }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>

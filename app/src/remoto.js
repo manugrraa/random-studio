@@ -110,6 +110,9 @@ export function iniciarRemotoEscritorio(t) {
     const [l0, t, aj, id] = await Promise.all([s.historiasLista(), s.historiasTareaEstado(), s.estudioAjustes(), s.estudioIdeas()]);
     // sin el proyecto de historias (p. ej. el ordenador antes de prepararlo) se publica igual: así se ve que está encendido
     const l = l0 && l0.ok ? l0 : { ok: true, historias: [] };
+    // (20-11) una historia de aquí se terminó o se subió a Drive: a la lista compartida de terminadas al momento
+    const kEnt = l.historias.filter(h => h.entregada).map(h => h.id + (h.drive ? "+" : "")).join(",");
+    if (kEnt !== _kEntregadas) { const primera = _kEntregadas === null; _kEntregadas = kEnt; if (!primera) sincronizarTerminadas(true); }
     // Drive: el Short entregado (si está activado) y lo que espera revisión de voces o animatic, de uno en uno
     if (!subiendo && driveConectadoTrabajo()) {
       const lista = aj.ajustes.driveAuto && l.historias.find(h => !h.legado && h.entregada && !h.drive);
@@ -223,6 +226,8 @@ export function iniciarRemotoEscritorio(t) {
   const fallosBajada = {};                 // (el aviso de un fallo, una vez por Short)
   const bajarEntregas = async () => {
     if (bajando || !s.estudioEntregaBajar || !driveConectadoTrabajo() || Date.now() - bajadaMirada < 120000) return;
+    // (20-11) con la lista compartida de terminadas, las baja ella (sincronizarTerminadas); esto queda para el servidor viejo
+    if (_term.desde && Date.now() >= _termSinServidor) return;
     bajadaMirada = Date.now(); bajando = true;
     try {
       const r = await remotoApi("GET");
@@ -366,6 +371,8 @@ export function iniciarRemotoEscritorio(t) {
   const kitOido = {};
   alTimbre((d) => {
     if (d.que === "orden") recoger();
+    // (20-11) la lista compartida de terminadas cambió (también suena con lo que pone este equipo: solo trae lo nuevo)
+    if (d.que === "terminadas") setTimeout(() => sincronizarTerminadas(true), 1500);
     // (3-11) otro equipo publica con otra huella del kit: me pongo al día al momento
     if (d.que === "estado" && d.kit && d.de && kitOido[d.de] !== d.kit) { const primera = !(d.de in kitOido); kitOido[d.de] = d.kit; if (!primera && d.kit !== miKitHuella() && _igualarAhora) _igualarAhora("el timbre dice que " + String(d.de).slice(0, 8) + " cambió su kit"); }
   });
@@ -373,6 +380,10 @@ export function iniciarRemotoEscritorio(t) {
   // llegan al momento por el timbre: la vuelta de respaldo, cada minuto
   setInterval(publicar, 20000);
   setInterval(() => { if (!timbreConectado() || Date.now() - _recogido > 55000) recoger(); }, 20000);
+  // (20-11) la lista compartida de terminadas: al poco de arrancar, al bajar un Short y, de respaldo, cada 10 min
+  setTimeout(() => sincronizarTerminadas(true), 15000);
+  setInterval(() => sincronizarTerminadas(false), 10 * 60000);
+  try { window.addEventListener("rs-entregas", () => setTimeout(() => sincronizarTerminadas(true), 2000)); } catch (e) {}
 }
 
 // ------------------------------------------------------------------ trabajo dual
@@ -442,6 +453,145 @@ export async function enTodosLosEquipos(que) {
     }
   } catch (x) {}
   return otros;
+}
+
+/* (20-11-2026, Manu: «todos los equipos que creen historias en la misma cuenta deben tener las mismas historias
+ * terminadas») LA LISTA COMPARTIDA DE TERMINADAS. El servidor guarda una fila por Short (vídeo en Drive, miniatura en
+ * pequeño, recopilación, quién la hizo); cada equipo de escritorio:
+ *   1) trae lo que cambió desde la última vez (poco: solo lo nuevo);
+ *   2) borra aquí lo que se borró en otro equipo (carpeta de trabajo y Short; la copia de Drive se queda);
+ *   3) baja la miniatura si la cambiaron en otro equipo, y sube la suya si la cambió aquí;
+ *   4) pone en la lista lo suyo que haya cambiado (nada si no cambió nada);
+ *   5) el portátil (el que guarda todo) se baja los Shorts que le falten; los demás, solo al abrirlos.
+ * Va al arrancar, al sonar el timbre «terminadas», al terminar o bajar un Short aquí y, si no, cada 10 min. */
+const K_TERM = "rs_perfil_terminadas_v1";
+const leerTerm = () => { try { const j = JSON.parse(localStorage.getItem(K_TERM) || "null"); if (j && j.filas) return j; } catch (e) {} return { desde: null, filas: {}, firmas: {}, aplicadas: {} }; };
+let _term = leerTerm(), _termLocales = [], _termCorre = null, _termUltima = 0, _termSinServidor = 0, _termError = "";
+const _termNoBajar = new Set();
+let _kEntregadas = null;
+const guardarTerm = () => { try { localStorage.setItem(K_TERM, JSON.stringify(_term)); } catch (e) {} };
+const msDe = (x) => (x ? Date.parse(x) || 0 : 0);
+const pngDe = (f) => ((f && f.drive && f.drive.archivos) || []).find(a => /miniatura\.png$/i.test(a.nombre)) || null;
+const avisarTerm = () => { try { window.dispatchEvent(new Event("rs-terminadas")); } catch (e) {} };
+/** Lo que ve la pestaña Terminadas: la lista del servidor (sin las borradas), lo de este equipo y los nombres de los equipos. */
+export function terminadasEstado() {
+  return { filas: Object.values(_term.filas).filter(f => !f.borrada), locales: _termLocales, equipos: _term.equipos || {}, error: _termError,
+    sinServidor: Date.now() < _termSinServidor };
+}
+export function sincronizarTerminadas(ya) {
+  const s = SF();
+  if (!s || !s.terminadasLocales) return Promise.resolve();
+  if (_termCorre) return _termCorre;
+  if (!ya && Date.now() - _termUltima < 20000) return Promise.resolve();
+  _termCorre = (async () => {
+    let loc = await s.terminadasLocales().catch(() => null);
+    if (!loc || !loc.ok) return;
+    _termLocales = loc.filas;
+    if (Date.now() < _termSinServidor || !navigator.onLine) { avisarTerm(); return; }
+    // 1) lo que cambió en el servidor
+    let r;
+    try { r = await pedidosApi("POST", { accion: "terminadas", desde: _term.desde }); }
+    catch (e) {
+      // (servidor de antes, sin la lista: se vuelve a mirar dentro de una hora)
+      if (/no v[aá]lid|desconocid|400/i.test(e.message || "")) _termSinServidor = Date.now() + 3600000;
+      _termError = e.message || String(e); avisarTerm(); return;
+    }
+    _termError = "";
+    for (const f of r.filas || []) { _term.filas[f.nombre] = f; if (!_term.desde || msDe(f.actualizado) > msDe(_term.desde)) _term.desde = f.actualizado; }
+    if (r.equipos) _term.equipos = { ...(_term.equipos || {}), ...r.equipos };
+    const dt = driveConectadoTrabajo() ? await driveTokenTrabajo().catch(() => null) : null;
+    let tocado = false;
+    // 2) lo borrado en otro equipo (nunca un Short de aquí hecho DESPUÉS de borrarlo: ese vuelve a la lista)
+    for (const f of Object.values(_term.filas)) {
+      if (!f.borrada || _term.aplicadas[f.nombre] === f.borrada) continue;
+      const l = loc.filas.find(x => x.nombre === f.nombre);
+      if (l && msDe(l.fecha) > msDe(f.borrada)) continue;
+      if (l) {
+        const b = await s.terminadaBorrarLocal(f.nombre).catch(e => ({ ok: false, error: e.message }));
+        if (!b || !b.ok) { anotar("terminadas", "no pude borrar aquí «" + f.nombre + "»: " + ((b && b.error) || "?")); continue; }
+        tocado = true;
+        anotar("terminadas", "borrada aquí «" + f.nombre + "» (se borró en otro equipo)");
+      }
+      _term.aplicadas[f.nombre] = f.borrada;
+    }
+    // 3) miniaturas: bajar las que cambiaron en otro equipo (hasta 5 por vuelta) y subir las cambiadas aquí (hasta 3)
+    let bajadas = 0, subidas = 0;
+    for (const l of loc.filas) {
+      const f = _term.filas[l.nombre];
+      if (!f || f.borrada || !l.local || !dt || !f.mini_md5 || !l.mini_md5) continue;
+      const png = pngDe(f);
+      // la de la lista es más nueva y Drive ya la tiene: se baja
+      if (l.mini_md5 !== f.mini_md5 && msDe(f.mini_fecha) > msDe(l.mini_fecha)) {
+        if (png && png.md5 === f.mini_md5 && bajadas < 5) {
+          const b = await s.terminadaBajar(dt, f, true).catch(e => ({ ok: false, error: e.message }));
+          if (b && b.ok) { bajadas++; tocado = true; }
+        }
+      // la de aquí es la buena (o más nueva) y Drive tiene otra: se sube
+      } else if (f.drive && !(png && png.md5 === l.mini_md5) && subidas < 3) {
+        const u = await s.terminadaMiniSubir(dt, perfilDrive(), l.nombre).catch(e => ({ ok: false, error: e.message }));
+        if (u && u.ok) {
+          subidas++;
+          const archivos = (f.drive.archivos || []).filter(a => !(png && a.id === png.id) && a.nombre !== u.nombre);
+          l.drive = { ...f.drive, archivos: [...archivos, { id: u.id, md5: u.md5, nombre: u.nombre, tam: u.tam }] };
+        }
+      }
+    }
+    if (tocado) { const l2 = await s.terminadasLocales().catch(() => null); if (l2 && l2.ok) { const conDrive = loc.filas.filter(x => x.drive); loc = l2; for (const x of conDrive) { const y = loc.filas.find(z => z.nombre === x.nombre); if (y && !y.drive) y.drive = x.drive; } _termLocales = loc.filas; } }
+    // 4) lo de aquí que cambió (cada fila con su «firma»: solo se manda lo que no se mandó ya)
+    const poner = [];
+    for (const l of loc.filas) {
+      const f = _term.filas[l.nombre];
+      if (f && f.borrada && !(msDe(l.fecha) > msDe(f.borrada))) continue;
+      const fila = { nombre: l.nombre, fecha: l.fecha };
+      if (l.historia_id) fila.historia_id = l.historia_id;
+      if (l.drive) fila.drive = l.drive;
+      if (l.mini_md5) { fila.mini_md5 = l.mini_md5; fila.mini_fecha = l.mini_fecha; }
+      if ("recop" in l) fila.recop = l.recop;
+      const firma = JSON.stringify(fila);
+      if (_term.firmas[l.nombre] === firma && f) continue;
+      if (l.mini && (!f || !f.mini || f.mini_md5 !== l.mini_md5)) fila.mini = l.mini;
+      poner.push({ fila, firma });
+    }
+    for (let i = 0; i < poner.length; i += 30) {
+      const trozo = poner.slice(i, i + 30);
+      try { await pedidosApi("POST", { accion: "terminadas_poner", filas: trozo.map(x => x.fila) }); for (const x of trozo) _term.firmas[x.fila.nombre] = x.firma; }
+      catch (e) { _termError = e.message || String(e); break; }
+    }
+    // 5) el portátil guarda TODOS los Shorts: baja de Drive el que le falte (uno por vuelta; los demás equipos, al abrirlo)
+    // (las que no se pueden bajar, o que borraste a mano de Editados, no se reintentan hasta reiniciar la app)
+    if (loc.origen && dt && s.estudioEntregaBajar) {
+      const faltan = Object.values(_term.filas).filter(f => !f.borrada && !_termNoBajar.has(f.nombre) && f.drive && (f.drive.archivos || []).some(a => /\.mp4$/i.test(a.nombre))
+        && !loc.filas.some(l => l.nombre === f.nombre && l.local));
+      for (const falta of faltan) {
+        const x = await s.estudioEntregaBajar(dt, falta.drive).catch(e => ({ ok: false, error: e.message }));
+        if (x && x.bajado) { toast("⬇ «" + falta.nombre + "» ya está en Editados\\RandomHistorias"); try { window.dispatchEvent(new Event("rs-entregas")); } catch (e) {} setTimeout(() => sincronizarTerminadas(true), 3000); break; }
+        _termNoBajar.add(falta.nombre);
+        if (x && !x.ok) { anotar("terminadas", "no pude bajar «" + falta.nombre + "» de Drive: " + (x.error || "?")); break; }
+      }
+    }
+    guardarTerm(); avisarTerm();
+  })().catch(e => { _termError = e.message || String(e); }).finally(() => { _termCorre = null; _termUltima = Date.now(); });
+  return _termCorre;
+}
+/** Bajar el vídeo de una terminada a este equipo (al abrirla aquí). */
+export async function bajarTerminada(nombre) {
+  const f = _term.filas[nombre], s = SF();
+  if (!f || !f.drive) return { ok: false, error: "Ese Short no está en Drive" };
+  if (!driveConectadoTrabajo()) return { ok: false, error: "Conecta Drive en este equipo (Ajustes)" };
+  const r = await s.terminadaBajar(await driveTokenTrabajo(), f, false);
+  if (r && r.ok) { _termUltima = 0; await sincronizarTerminadas(true); }
+  return r;
+}
+/** Borrar terminadas en TODOS los equipos: la lista del servidor las marca y cada equipo las borra al enterarse. */
+export async function borrarTerminadas(nombres) {
+  const ns = [...new Set((nombres || []).filter(Boolean))];
+  if (!ns.length) return { ok: false, error: "Nada que borrar" };
+  await pedidosApi("POST", { accion: "terminadas_borrar", nombres: ns });
+  anotar("terminadas", "borradas en todos los equipos: " + ns.join(" · ").slice(0, 300));
+  _termUltima = 0;
+  await sincronizarTerminadas(true);
+  const quedan = ns.filter(n => _termLocales.some(l => l.nombre === n));
+  return { ok: !quedan.length, borradas: ns.length, error: quedan.length ? "No se pudieron borrar aquí: " + quedan.join(", ") + " (mira si están trabajando)" : "" };
 }
 
 /** Borra una historia de ESTE equipo (a su papelera) y la quita de la cola compartida para que se pueda volver a pedir. */

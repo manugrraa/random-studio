@@ -200,6 +200,11 @@ contextBridge.exposeInMainWorld("studioFS", {
   historiasMiniatura: (id, plano, t) => ipcRenderer.invoke("historias-miniatura", id, plano, t),
   historiasEntregaVideo: (nombre) => ipcRenderer.invoke("historias-entrega-video", nombre),
   historiasEntregasOtras: () => ipcRenderer.invoke("historias-entregas-otras"),
+  // (20-11) la lista compartida de terminadas (todos los equipos)
+  terminadasLocales: () => ipcRenderer.invoke("terminadas-locales"),
+  terminadaBajar: (token, fila, soloMini) => ipcRenderer.invoke("terminada-bajar", token, fila, !!soloMini),
+  terminadaMiniSubir: (token, perfil, nombre) => ipcRenderer.invoke("terminada-mini-subir", token, perfil, nombre),
+  terminadaBorrarLocal: (nombre) => ipcRenderer.invoke("terminada-borrar-local", nombre),
   vigilanteSistema: () => ipcRenderer.invoke("vigilante-sistema"),
   // (5/11) recopilaciones (recopilaciones.cjs)
   recopLista: () => ipcRenderer.invoke("recop-lista"),

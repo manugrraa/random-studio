@@ -460,6 +460,148 @@ ipcMain.handle("historias-entregas-otras", async () => {
   out.sort((x, y) => y.fecha - x.fecha);
   return { ok: true, lista: out };
 });
+
+/* (20-11-2026, Manu: «todos los equipos, la misma base de datos de historias terminadas») LISTA COMPARTIDA DE TERMINADAS.
+ * Aquí está lo de ESTE equipo: sus Shorts (en las entregas o dentro de una recopilación) y sus historias entregadas con
+ * copia en Drive aunque el Short ya no esté (el ordenador, equipo de paso, lo borra al subirlo). remoto.js lo junta con
+ * la lista del servidor (/api/pedidos «terminadas»), baja de Drive lo que haga falta y borra lo que se borró en otro. */
+const _md5s = new Map(), _minis = new Map();
+function md5De(f) {
+  const st = fs.statSync(f), k = st.mtimeMs + ":" + st.size, c = _md5s.get(f);
+  if (c && c.k === k) return c.md5;
+  const md5 = require("crypto").createHash("md5").update(fs.readFileSync(f)).digest("hex");
+  _md5s.set(f, { k, md5 });
+  return md5;
+}
+// la miniatura en pequeño (jpeg de 120 px, unos 6 KB) para la lista: se calcula una vez por versión del png
+function miniPequena(f, md5) {
+  if (_minis.has(md5)) return _minis.get(md5);
+  let d = null;
+  try { const im = nativeImage.createFromPath(f); if (!im.isEmpty()) d = "data:image/jpeg;base64," + im.resize({ width: 120, quality: "good" }).toJPEG(70).toString("base64"); } catch (e) {}
+  _minis.set(md5, d);
+  return d;
+}
+const recopsDir = () => path.join(listasDir(), ".Recopilaciones");
+function estadoRecop(nn) {
+  const c = path.join(recopsDir(), nn), j = leerJson(path.join(c, "recopilacion.json"), {}) || {};
+  if (j.estado === "publicada") return "publicada";
+  return existe(path.join(c, ".Recopilación " + nn, "Recopilación " + nn + ".mp4")) ? "montada" : "sin montar";
+}
+function shortsDeAqui() {
+  const out = [], vistos = new Set(), bases = [[listasDir(), null]];
+  try { for (const nn of fs.readdirSync(recopsDir())) if (/^\d{2}$/.test(nn)) bases.push([path.join(recopsDir(), nn), nn]); } catch (x) {}
+  for (const [base, nn] of bases) {
+    let ls = []; try { ls = fs.readdirSync(base, { withFileTypes: true }); } catch (x) { continue; }
+    for (const d of ls) {
+      if (!d.isDirectory() || /^[._]/.test(d.name) || vistos.has(d.name)) continue;
+      const dir = path.join(base, d.name), a = archivosEntrega(dir);
+      if (!a.mp4) continue;
+      vistos.add(d.name); out.push({ nombre: d.name, dir, a, nn });
+    }
+  }
+  return out;
+}
+const isoDe = (ms) => (ms ? new Date(ms).toISOString() : null);
+const driveLimpio = (d, nombre) => ({ fecha: d.fecha || null, carpeta: d.carpeta || null, nombreCarpeta: d.nombreCarpeta || nombre,
+  archivos: (d.archivos || []).map(a => ({ id: a.id || idDeDrive(a.ver), md5: a.md5 || null, nombre: a.nombre, tam: a.tam || 0 })).filter(a => a.id && a.nombre) });
+ipcMain.handle("terminadas-locales", async () => {
+  const filas = new Map(), estados = {};
+  const conRecop = existe(recopsDir());
+  for (const s of shortsDeAqui()) {
+    let fecha = 0; try { fecha = fs.statSync(s.a.mp4).mtimeMs; } catch (x) {}
+    const f = { nombre: s.nombre, fecha: isoDe(fecha), local: true, carpeta: s.dir };
+    if (s.a.png) { try { f.mini_md5 = md5De(s.a.png); f.mini_fecha = isoDe(fs.statSync(s.a.png).mtimeMs); f.mini = miniPequena(s.a.png, f.mini_md5); } catch (x) {} }
+    // la recopilación solo la dice el equipo que tiene las recopilaciones (el portátil)
+    if (conRecop) f.recop = s.nn ? { nn: s.nn, estado: estados[s.nn] || (estados[s.nn] = estadoRecop(s.nn)) } : null;
+    filas.set(s.nombre, f);
+  }
+  try {
+    for (const n of fs.readdirSync(histDir())) {
+      if (!/^\d{2}_[\w-]+$/.test(n)) continue;
+      const c = path.join(histDir(), n), t = titulo(c);
+      if (!t) continue;
+      const nombre = tituloArchivo(t), est = estudioDe(c), f = filas.get(nombre);
+      const drive = est.drive && (est.drive.archivos || []).length ? driveLimpio(est.drive, nombre) : null;
+      if (!f && !drive) continue;
+      const x = f || { nombre, fecha: drive.fecha, local: false };
+      x.historia_id = n;
+      if (drive && drive.archivos.length) x.drive = drive;
+      const mp = path.join(c, "miniatura.png");
+      if (!x.mini_md5 && existe(mp)) { try { x.mini_md5 = md5De(mp); x.mini_fecha = isoDe(fs.statSync(mp).mtimeMs); x.mini = miniPequena(mp, x.mini_md5); } catch (e) {} }
+      filas.set(nombre, x);
+    }
+  } catch (x) {}
+  return { ok: true, filas: [...filas.values()], recopAqui: conRecop, origen: esOrigen() };
+});
+
+/* Bajar de Drive un Short de la lista (al abrirlo en un equipo que no lo tiene) o solo su miniatura (la cambiaron en otro
+ * equipo). La miniatura bajada se queda con la fecha de la lista: así este equipo no cree que la suya es la nueva. */
+const bajandoTerminada = new Set();
+ipcMain.handle("terminada-bajar", async (e, token, fila, soloMini) => {
+  const nombre = path.basename(String((fila && fila.nombre) || ""));
+  if (!nombre || nombre.startsWith(".")) return { ok: false, error: "Short no válido" };
+  const d = fila.drive ? driveLimpio(fila.drive, nombre) : null;
+  if (!d || !d.archivos.length) return { ok: false, error: "Ese Short no está en Drive" };
+  if (bajandoTerminada.has(nombre)) return { ok: false, error: "Ya se está bajando" };
+  bajandoTerminada.add(nombre);
+  try {
+    const dir = dirEntrega(nombre);
+    const png = d.archivos.find(a => /miniatura\.png$/i.test(a.nombre));
+    const fechaMini = Date.parse(fila.mini_fecha || "") || Date.parse(d.fecha || "") || Date.now();
+    if (soloMini) {
+      if (!png) return { ok: false, error: "Sin miniatura en Drive" };
+      const a = archivosEntrega(dir), destino = a.png || path.join(dir, path.basename(png.nombre));
+      await drive.bajar(token, png.id, destino, fila.mini_md5 || null);
+      try { fs.utimesSync(destino, new Date(), new Date(fechaMini)); } catch (x) {}
+      // y en la carpeta de la historia, si está en este equipo
+      try { const id = fs.readdirSync(histDir()).find(n => /^\d{2}_/.test(n) && tituloArchivo(titulo(path.join(histDir(), n)) || "") === nombre); if (id) fs.copyFileSync(destino, path.join(histDir(), id, "miniatura.png")); } catch (x) {}
+      registro.anotar("terminadas", "miniatura de «" + nombre + "» bajada de Drive (la cambiaron en otro equipo)");
+      return { ok: true };
+    }
+    for (const a of d.archivos) {
+      const f = path.join(dir, path.basename(a.nombre));
+      if (existe(f)) continue;
+      // (la miniatura, con la versión que diga la lista, que puede ser más nueva que la del Short subido)
+      const esPng = png && a.id === png.id;
+      await drive.bajar(token, a.id, f, esPng ? null : (a.md5 || null));
+      if (esPng) { try { fs.utimesSync(f, new Date(), new Date(md5De(f) === fila.mini_md5 ? fechaMini : (Date.parse(d.fecha || "") || fechaMini))); } catch (x) {} }
+    }
+    try { const reg = path.join(estudioDir(), "entregas_bajadas.json"), hechas = leerJson(reg, {}), mp4 = d.archivos.find(a => /\.mp4$/i.test(a.nombre)); if (mp4) { hechas[mp4.id] = { carpeta: nombre, fecha: new Date().toISOString() }; escribirJson(reg, hechas); } } catch (x) {}
+    registro.anotar("terminadas", "«" + nombre + "» bajado de Drive para verlo en este equipo");
+    return { ok: true, carpeta: dir };
+  } catch (x) { return { ok: false, error: x.message }; }
+  finally { bajandoTerminada.delete(nombre); }
+});
+
+/** La miniatura de un Short de este equipo, a su carpeta de Drive (la sustituye): la cambiaste aquí y los demás la bajan. */
+ipcMain.handle("terminada-mini-subir", async (e, token, perfilNombre, nombre) => {
+  try {
+    const n = path.basename(String(nombre || "")), a = archivosEntrega(dirEntrega(n));
+    if (!n || n.startsWith(".") || !a.png) return { ok: false, error: "Sin miniatura en este equipo" };
+    const r = await drive.subir(token, a.png, ["RandomStudio", String(perfilNombre || "RandomHistorias"), "Historias", n]);
+    registro.anotar("terminadas", "miniatura de «" + n + "» subida a Drive para los demás equipos");
+    return { ok: true, id: r.id, md5: r.md5, nombre: r.nombre, tam: r.tam };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
+
+/* Borrar una terminada EN ESTE EQUIPO (se borró desde cualquier equipo): su carpeta de trabajo, si está aquí, y su Short
+ * (en las entregas o dentro de su recopilación). La copia de Drive se queda. Nada si está trabajando. */
+ipcMain.handle("terminada-borrar-local", async (e, nombre) => {
+  const n = path.basename(String(nombre || ""));
+  if (!n || n.startsWith(".") || n.startsWith("_")) return { ok: false, error: "Short no válido" };
+  let liberado = 0;
+  try {
+    const ids = fs.readdirSync(histDir()).filter(x => /^\d{2}_[\w-]+$/.test(x) && tituloArchivo(titulo(path.join(histDir(), x)) || "") === n);
+    for (const id of ids) {
+      if (enMarcha(id)) return { ok: false, error: "La historia " + id + " está trabajando: no se borra" };
+      liberado += borrarCarpetaTerminada(id);
+    }
+    const dir = dirEntrega(n);
+    if (existe(dir) && path.basename(dir) === n) { liberado += tamCarpeta(dir); fs.rmSync(dir, { recursive: true, force: true }); }
+    registro.anotar("terminadas", "borrada «" + n + "» en este equipo (" + Math.round(liberado / 1e6) + " MB; la copia de Drive se queda)");
+    return { ok: true, liberado };
+  } catch (x) { return { ok: false, error: x.message }; }
+});
 ipcMain.handle("historias-miniatura-entrega", async (e, nombre, t) => {
   const dir = carpetaEntregaDe(nombre), a = archivosEntrega(dir);
   if (!a.mp4) throw new Error("El Short todavía no está en este equipo (se baja de Drive solo)");
@@ -1695,6 +1837,17 @@ function tamCarpeta(d) {
   try { for (const n of fs.readdirSync(d)) { const x = path.join(d, n); const st = fs.statSync(x); t += st.isDirectory() ? tamCarpeta(x) : st.size; } } catch (e) {}
   return t;
 }
+/** La carpeta de trabajo de una terminada y sus copias de relevo, del todo (lanza si no se puede). Devuelve lo liberado. */
+function borrarCarpetaTerminada(id) {
+  const c = carpetaDe(id);
+  { const i = cola.indexOf(id); if (i >= 0) cola.splice(i, 1); }
+  let liberado = tamCarpeta(c);
+  fs.rmSync(c, { recursive: true, force: true });
+  // sus copias apartadas de relevos (historias/_relevadas/<id>-<fecha>) y el paquete de relevo local
+  try { const rel = path.join(histDir(), "_relevadas"); for (const n of fs.readdirSync(rel)) if (n.startsWith(id + "-")) { liberado += tamCarpeta(path.join(rel, n)); fs.rmSync(path.join(rel, n), { recursive: true, force: true }); } } catch (x) {}
+  try { const f = path.join(relevoDir(), id + ".tgz"); if (existe(f)) { liberado += fs.statSync(f).size; fs.unlinkSync(f); } } catch (x) {}
+  return liberado;
+}
 ipcMain.handle("estudio-borrar-terminada", async (e, id) => {
   if (!/^\d{2}_[\w-]+$/.test(String(id || ""))) return { ok: false, error: "Historia no válida" };
   let c; try { c = carpetaDe(id); } catch (x) { return { ok: false, error: x.message }; }
@@ -1703,12 +1856,8 @@ ipcMain.handle("estudio-borrar-terminada", async (e, id) => {
   const enDrive = !!(est.drive && (est.drive.archivos || []).length && est.drive.archivos.every(a => a.verificado));
   const enDisco = existe(path.join(r.carpetaEntrega, tituloArchivo(titulo(c)) + ".mp4"));
   if (!enDrive && !enDisco) return { ok: false, error: "No está terminada (su Short no está en Editados ni en Drive): no se borra" };
-  { const i = cola.indexOf(id); if (i >= 0) cola.splice(i, 1); }
-  let liberado = tamCarpeta(c);
-  try { fs.rmSync(c, { recursive: true, force: true }); } catch (x) { return { ok: false, error: "No se pudo borrar: " + x.message }; }
-  // sus copias apartadas de relevos (historias/_relevadas/<id>-<fecha>) y el paquete de relevo local
-  try { const rel = path.join(histDir(), "_relevadas"); for (const n of fs.readdirSync(rel)) if (n.startsWith(id + "-")) { liberado += tamCarpeta(path.join(rel, n)); fs.rmSync(path.join(rel, n), { recursive: true, force: true }); } } catch (x) {}
-  try { const f = path.join(relevoDir(), id + ".tgz"); if (existe(f)) { liberado += fs.statSync(f).size; fs.unlinkSync(f); } } catch (x) {}
+  let liberado;
+  try { liberado = borrarCarpetaTerminada(id); } catch (x) { return { ok: false, error: "No se pudo borrar: " + x.message }; }
   registro.anotar("historias", "borrada la terminada " + id + " (" + Math.round(liberado / 1e6) + " MB liberados; el Short sigue " + (enDisco ? "en Editados" : "") + (enDisco && enDrive ? " y " : "") + (enDrive ? "en Drive" : "") + ")");
   return { ok: true, liberado };
 });
