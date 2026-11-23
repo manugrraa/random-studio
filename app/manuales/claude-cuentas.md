@@ -1,8 +1,13 @@
 # Cuentas de Claude (desde la 4.11.0)
 
 ## Qué hace
-Manu tiene varias cuentas de Claude (Maggi, Claudie y las que vengan). Desde cualquier panel de administrador
-(Historias → Equipos: escritorio o móvil) se elige de cuál se gastan los tokens, para TODOS los equipos a la vez:
+Manu tiene varias cuentas de Claude (Maggi, Claudie y las que vengan). **Cada equipo elige la suya** (4.11.1: p. ej. el
+portátil con Maggi y el Ordenador con Claudie, o cambiarla para los vídeos de Carental):
+- desde cualquier panel de administrador (Historias → Equipos, escritorio o móvil): «Claude de» en la tarjeta de cada equipo;
+- en el propio equipo: Ajustes de RandomHistorias → «Este equipo gasta de»;
+- «Claude en todos» (arriba, junto a «Trabajar hasta») los pone todos iguales de una vez.
+Cada equipo solo puede gastar de las cuentas cuyo permiso tenga pegado (Ajustes); si eligen una que no tiene, avisa y usa otra.
+Opciones:
 - **automática (más margen)**: cada equipo usa la cuenta suya con menos gasto (lo más alto de sus ventanas de 5 h y semana).
 - **una cuenta concreta** («maggi», «claudie»…).
 
@@ -37,4 +42,6 @@ La elección viaja en la orden «ajustes» (ya existía) y en el estado de cada 
 - La sesión normal de Claude Code (`~/.claude`) solo se usa si el equipo no tiene ninguna cuenta guardada.
 
 ## Historial
-- 4.11.0 (23-11-2026, Claudie): primera versión.
+- 4.11.0 (23-11-2026, Claudie): primera versión (una elección para todos).
+- 4.11.1 (23-11-2026, Claudie): elección por equipo (tarjeta de Equipos y Ajustes); al arrancar, solo un equipo que nunca
+  eligió toma la de los demás.

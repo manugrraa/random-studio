@@ -379,7 +379,8 @@ export function iniciarRemotoEscritorio(t) {
       const [mia, g] = await Promise.all([s.claudeCuentas(), remotoApi("GET")]);
       const otra = (g.equipos || []).map(e => e.id !== g.yo && e.datos && e.datos.claudeCuentas).filter(c => c && c.cuando)
         .sort((a, b) => b.cuando - a.cuando)[0];
-      if (otra && otra.cuando > ((mia && mia.cuando) || 0)) { await s.claudeElegir(otra.elegida, otra.cuando); publicarPronto(); }
+      // (4.11.1) cada equipo elige la suya: solo un equipo que NUNCA eligió toma la de los demás como punto de partida
+      if (otra && !((mia && mia.cuando) || 0)) { await s.claudeElegir(otra.elegida, otra.cuando); publicarPronto(); }
     } catch (e) {}
   }, 25000);
   // v3.41: con el timbre, las órdenes llegan al instante; las vueltas de siempre quedan de respaldo, más espaciadas

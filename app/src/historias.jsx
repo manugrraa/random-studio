@@ -703,8 +703,17 @@ function ClaudeEstado({ a, toast, recargar }) {
             Se gasta de: <b style={{ color: "var(--gold)" }}>{cc.activa || "—"}</b>
             {" · elegida: " + (cc.elegida === "auto" ? "automática (la de más margen)" : "«" + cc.elegida + "»")}
             {cc.activa && cc.motivo && cc.motivo !== "elegida" ? " · " + cc.motivo : ""}
-            <span style={{ color: "var(--text-3)" }}> (se cambia en Historias → Equipos, para todos los equipos)</span>
           </div>
+          {/* (4.11.1) la cuenta de ESTE equipo (también se cambia desde el panel, en su tarjeta de Equipos) */}
+          {SF().claudeElegir && (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
+              Este equipo gasta de
+              <select value={cc.elegida || "auto"} onChange={async ev => { const v = ev.target.value; tras(await SF().claudeElegir(v, Date.now()), "Este equipo: Claude " + (v === "auto" ? "automática" : "de «" + v + "»")); }}
+                className="rs-input" style={{ padding: "4px 8px", width: "auto" }}>
+                <option value="auto">automática (la de más margen)</option>
+                {(cc.cuentas || []).map(c => <option key={c.nombre} value={c.nombre}>{c.nombre}</option>)}
+              </select>
+            </label>)}
           {(cc.cuentas || []).map(c => (
             <div key={c.nombre} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span className="rs-chip" style={{ fontWeight: 700, color: c.nombre === cc.activa ? "var(--gold)" : "var(--text)" }}>{c.nombre}</span>
@@ -1309,19 +1318,23 @@ export function HistoriasRemoto({ toast, incrustado }) {
               </select>
             </label>);
         })()}
-        {/* (4.11.0) de qué cuenta de Claude se gasta, en TODOS los equipos (gana la elección más nueva; «auto» = la de más margen) */}
+        {/* (4.11.0) de qué cuenta de Claude se gasta en TODOS los equipos a la vez. (4.11.1) Cada equipo elige la suya en su
+            tarjeta de Equipos; esto los pone todos iguales. Si no coinciden, sale «cada equipo la suya». */}
         {(() => {
           const cc = equipos.map(e => e.datos.claudeCuentas).filter(Boolean);
           if (!cc.length) return null;
-          const valor = (cc.slice().sort((a, b) => (b.cuando || 0) - (a.cuando || 0))[0] || {}).elegida || "auto";
-          const nombres = [...new Set(cc.flatMap(c => (c.cuentas || []).map(x => x.nombre)).concat(valor === "auto" ? [] : [valor]))].sort();
+          const distintas = new Set(cc.map(c => c.elegida || "auto"));
+          const valor = distintas.size === 1 ? [...distintas][0] : "";
+          const nombres = [...new Set(cc.flatMap(c => (c.cuentas || []).map(x => x.nombre)).concat(valor && valor !== "auto" ? [valor] : []))].sort();
           return (
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
-              Claude de
+              Claude en todos
               <select value={valor} onChange={ev => {
                 const v = ev.target.value, cuando = Date.now();
+                if (!v) return;
                 equipos.filter(e => e.datos && e.datos.historias).forEach(e => ordenA(e, "ajustes", { nuevos: { claudeCuenta: { cuenta: v, cuando } } }, v === "auto" ? "Claude: la cuenta con más margen" : "Claude: se gasta de «" + v + "»"));
               }} style={{ ...botonSec, padding: "5px 8px", fontSize: 12, appearance: "auto" }}>
+                {!valor && <option value="">cada equipo la suya</option>}
                 <option value="auto">automática (más margen)</option>
                 {nombres.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
@@ -1415,11 +1428,23 @@ export function HistoriasRemoto({ toast, incrustado }) {
                 {e.datos.claudeCuentas && (() => {
                   const c = e.datos.claudeCuentas, tiene = (c.cuentas || []).map(x => x.nombre);
                   const falta = c.elegida && c.elegida !== "auto" && !tiene.includes(c.elegida);
+                  // (4.11.1) la cuenta de ESTE equipo: las suyas y las de los demás (si elige una que no tiene, avisa)
+                  const todas = [...new Set(equipos.flatMap(x => ((x.datos.claudeCuentas || {}).cuentas || []).map(y => y.nombre)))].sort();
                   return (
-                    <div style={{ fontSize: 12.5, color: falta ? "#F59E0B" : "var(--text-2)" }}>
-                      Claude: {c.activa ? <>gasta de <b style={{ color: "var(--gold)" }}>{c.activa}</b></> : "sin cuentas guardadas (usa la sesión de Claude Code)"}
-                      {tiene.length ? " · tiene: " + tiene.join(", ") : ""}
-                      {falta ? " · NO tiene el permiso de «" + c.elegida + "»: pégalo en sus Ajustes de RandomHistorias" : c.activa && c.motivo && c.motivo !== "elegida" ? " · " + c.motivo : ""}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12.5, color: falta ? "#F59E0B" : "var(--text-2)" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        Claude de
+                        <select value={c.elegida || "auto"} disabled={!e.en_linea} onChange={ev => {
+                          const v = ev.target.value;
+                          ordenA(e, "ajustes", { nuevos: { claudeCuenta: { cuenta: v, cuando: Date.now() } } }, corto(e.nombre) + ": Claude " + (v === "auto" ? "automática" : "de «" + v + "»"));
+                        }} style={{ ...botonSec, padding: "4px 8px", fontSize: 12, appearance: "auto" }}>
+                          <option value="auto">automática (más margen)</option>
+                          {todas.map(n => <option key={n} value={n}>{n}{tiene.includes(n) ? "" : " (no la tiene)"}</option>)}
+                        </select>
+                      </label>
+                      <span>{c.activa ? <>gasta de <b style={{ color: "var(--gold)" }}>{c.activa}</b></> : "sin cuentas guardadas (usa la sesión de Claude Code)"}
+                        {tiene.length ? " · tiene: " + tiene.join(", ") : ""}
+                        {falta ? " · NO tiene el permiso de «" + c.elegida + "»: pégalo en sus Ajustes de RandomHistorias" : c.activa && c.motivo && c.motivo !== "elegida" ? " · " + c.motivo : ""}</span>
                     </div>);
                 })()}
                 <SaludEquipo e={e} ultima={equipos.map(x => x.datos.version).filter(Boolean).sort((a, b) => numV(b) - numV(a))[0]}
