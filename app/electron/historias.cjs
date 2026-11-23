@@ -1532,7 +1532,7 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
     if (typeof nuevos.driveAuto === "boolean") a.driveAuto = nuevos.driveAuto;
     if (typeof nuevos.equipoDePaso === "boolean") a.equipoDePaso = nuevos.equipoDePaso;
     // (4.11.0) la cuenta de Claude elegida desde un panel de administrador (va en la orden «ajustes», que ya conoce el servidor)
-    if (nuevos.claudeCuenta && typeof nuevos.claudeCuenta === "object") { try { claude.elegir(nuevos.claudeCuenta.cuenta, nuevos.claudeCuenta.cuando); } catch (x) {} }
+    if (nuevos.claudeCuenta && typeof nuevos.claudeCuenta === "object") { try { claude.elegir(nuevos.claudeCuenta.cuenta, nuevos.claudeCuenta.cuando, nuevos.claudeCuenta.paso); } catch (x) {} }
     if (typeof nuevos.hasta === "string" && (nuevos.hasta === "" || ETAPAS.some(x => x.id === nuevos.hasta))) {
       if (a.hasta !== nuevos.hasta) registro.anotar("equipo", "TRABAJAR HASTA: " + (nuevos.hasta || "el final (todas las etapas)"));
       a.hasta = nuevos.hasta;

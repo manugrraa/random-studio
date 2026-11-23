@@ -1326,19 +1326,29 @@ export function HistoriasRemoto({ toast, incrustado }) {
           const distintas = new Set(cc.map(c => c.elegida || "auto"));
           const valor = distintas.size === 1 ? [...distintas][0] : "";
           const nombres = [...new Set(cc.flatMap(c => (c.cuentas || []).map(x => x.nombre)).concat(valor && valor !== "auto" ? [valor] : []))].sort();
-          return (
+          // (23-11) interruptor para todos: si la cuenta elegida se queda sin límite, ¿pasa a otra o espera? (apagado = espera)
+          const pasoTodos = cc.every(c => c.paso === true);
+          return (<>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)" }} title="Si la cuenta elegida se queda sin límite: encendido = sigue con otra cuenta; apagado = espera a que se renueve (no gasta de otra)">
+              <input type="checkbox" checked={pasoTodos} onChange={ev => {
+                const p = ev.target.checked, cuando = Date.now();
+                equipos.filter(e => e.datos && e.datos.claudeCuentas).forEach(e => ordenA(e, "ajustes", { nuevos: { claudeCuenta: { cuenta: e.datos.claudeCuentas.elegida || "auto", cuando, paso: p } } },
+                  p ? "Si se acaba el límite, sigue con otra cuenta" : "Si se acaba el límite, espera (no gasta de otra cuenta)"));
+              }} style={{ accentColor: "#D4AF37" }} />
+              Si se acaba, pasar a otra cuenta
+            </label>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
               Claude en todos
               <select value={valor} onChange={ev => {
                 const v = ev.target.value, cuando = Date.now();
                 if (!v) return;
-                equipos.filter(e => e.datos && e.datos.historias).forEach(e => ordenA(e, "ajustes", { nuevos: { claudeCuenta: { cuenta: v, cuando } } }, v === "auto" ? "Claude: la cuenta con más margen" : "Claude: se gasta de «" + v + "»"));
+                equipos.filter(e => e.datos && e.datos.historias).forEach(e => ordenA(e, "ajustes", { nuevos: { claudeCuenta: { cuenta: v, cuando, paso: pasoTodos } } }, v === "auto" ? "Claude: la cuenta con más margen" : "Claude: se gasta de «" + v + "»"));
               }} style={{ ...botonSec, padding: "5px 8px", fontSize: 12, appearance: "auto" }}>
                 {!valor && <option value="">cada equipo la suya</option>}
                 <option value="auto">automática (más margen)</option>
                 {nombres.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
-            </label>);
+            </label></>);
         })()}
         {equipos.length === 0 && <span style={{ fontSize: 12.5, color: "#F59E0B", fontWeight: 600 }}>Ningún equipo conectado: lo que pidas espera en la cola.</span>}
         {equipos.map(e => {

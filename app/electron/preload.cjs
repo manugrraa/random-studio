@@ -106,7 +106,7 @@ contextBridge.exposeInMainWorld("studioFS", {
   claudeCuentaGuardar: (nombre, token) => ipcRenderer.invoke("claude-cuenta-guardar", nombre, token),
   claudeCuentaProbar: (nombre) => ipcRenderer.invoke("claude-cuenta-probar", nombre),
   claudeCuentaRenombrar: (de, a) => ipcRenderer.invoke("claude-cuenta-renombrar", de, a),
-  claudeElegir: (cuenta, cuando) => ipcRenderer.invoke("claude-elegir", cuenta, cuando),
+  claudeElegir: (cuenta, cuando, paso) => ipcRenderer.invoke("claude-elegir", cuenta, cuando, paso),
   // v3.30: el estudio de Historias (ideas, etapas, revisiones y notas)
   estudioIdeas: () => ipcRenderer.invoke("estudio-ideas"),
   estudioIdeasGenerar: (n, pista, comentarios) => ipcRenderer.invoke("estudio-ideas-generar", n, pista, comentarios),

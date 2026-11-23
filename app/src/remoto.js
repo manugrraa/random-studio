@@ -76,7 +76,7 @@ async function ejecutar(o) {
     case "instalar_cuda": return s.instalarCuda ? s.instalarCuda() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
     case "pasar": return pasarHistoria(String(a.id || ""), String(a.a || ""));
     // (4.11.0) con qué cuenta de Claude se gasta (la elige cualquier panel de administrador; gana la más nueva)
-    case "claude_cuenta": return s.claudeElegir ? s.claudeElegir(String(a.cuenta || ""), Number(a.cuando) || Date.now()) : { ok: false, error: "Este equipo necesita la versión 4.11.0" };
+    case "claude_cuenta": return s.claudeElegir ? s.claudeElegir(String(a.cuenta || ""), Number(a.cuando) || Date.now(), typeof a.paso === "boolean" ? a.paso : undefined) : { ok: false, error: "Este equipo necesita la versión 4.11.0" };
   }
   throw new Error("Orden desconocida");
 }
@@ -380,7 +380,7 @@ export function iniciarRemotoEscritorio(t) {
       const otra = (g.equipos || []).map(e => e.id !== g.yo && e.datos && e.datos.claudeCuentas).filter(c => c && c.cuando)
         .sort((a, b) => b.cuando - a.cuando)[0];
       // (4.11.1) cada equipo elige la suya: solo un equipo que NUNCA eligió toma la de los demás como punto de partida
-      if (otra && !((mia && mia.cuando) || 0)) { await s.claudeElegir(otra.elegida, otra.cuando); publicarPronto(); }
+      if (otra && !((mia && mia.cuando) || 0)) { await s.claudeElegir(otra.elegida, otra.cuando, typeof otra.paso === "boolean" ? otra.paso : undefined); publicarPronto(); }
     } catch (e) {}
   }, 25000);
   // v3.41: con el timbre, las órdenes llegan al instante; las vueltas de siempre quedan de respaldo, más espaciadas

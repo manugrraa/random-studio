@@ -57,8 +57,8 @@ const NOMBRE_CUENTA = /^[a-z0-9][a-z0-9-]{1,19}$/;
 const archivoCuenta = (c) => path.join(app.getPath("userData"), "claude-" + c + ".token");
 const cfgArchivo = () => path.join(app.getPath("userData"), "claude-cuentas.json");
 function leerCfg() {
-  try { const j = JSON.parse(fs.readFileSync(cfgArchivo(), "utf8")); return { elegida: j.elegida || "auto", cuando: Number(j.cuando) || 0, limites: j.limites || {}, migrada: j.migrada || "" }; }
-  catch (e) { return { elegida: "auto", cuando: 0, limites: {}, migrada: "" }; }
+  try { const j = JSON.parse(fs.readFileSync(cfgArchivo(), "utf8")); return { elegida: j.elegida || "auto", cuando: Number(j.cuando) || 0, limites: j.limites || {}, migrada: j.migrada || "", paso: j.paso === true }; }
+  catch (e) { return { elegida: "auto", cuando: 0, limites: {}, migrada: "", paso: false }; }
 }
 function guardarCfg(c) { try { fs.writeFileSync(cfgArchivo(), JSON.stringify(c, null, 1)); } catch (e) {} }
 /** El claude.token de antes pasa a ser la cuenta «maggi» (la del plan con el que se pegó; se puede renombrar en Ajustes). */
@@ -88,6 +88,9 @@ function cuentaActiva() {
   const cfg = leerCfg(), hay = cuentasAqui();
   if (!hay.length) return { cuenta: "", motivo: "sin cuentas guardadas" };
   if (cfg.elegida !== "auto" && hay.includes(cfg.elegida) && libre(cfg, cfg.elegida)) return { cuenta: cfg.elegida, motivo: "elegida" };
+  // (23-11, Manu: «que se pueda activar y desactivar: no nos interesa gastar de Maggi») con el PASO apagado (por defecto),
+  // la elegida sin límite ESPERA a su hora en vez de gastar de otra cuenta
+  if (cfg.elegida !== "auto" && hay.includes(cfg.elegida) && !cfg.paso) return { cuenta: cfg.elegida, motivo: "«" + cfg.elegida + "» sin límite: espera (el paso a otra cuenta está apagado)" };
   const conMargen = hay.filter(c => libre(cfg, c)).sort((a, b) => gastado(a) - gastado(b));
   const motivo = cfg.elegida === "auto" ? "automática: la de más margen"
     : !hay.includes(cfg.elegida) ? "este equipo no tiene el permiso de «" + cfg.elegida + "»"
@@ -227,16 +230,16 @@ function guardarCuenta(nombre, token) {
 function resumenCuentas() {
   const cfg = leerCfg(), a = cuentaActiva();
   const ahora = Date.now();
-  return { elegida: cfg.elegida, cuando: cfg.cuando, activa: a.cuenta, motivo: a.motivo, migrada: cfg.migrada || "",
+  return { elegida: cfg.elegida, cuando: cfg.cuando, paso: !!cfg.paso, activa: a.cuenta, motivo: a.motivo, migrada: cfg.migrada || "",
     cuentas: cuentasAqui().map(c => ({ nombre: c, limiteHasta: Number(cfg.limites[c]) > ahora ? Number(cfg.limites[c]) : 0 })) };
 }
 /** La elección que llega de un panel de administrador (o de otro equipo al arrancar): gana la más nueva. */
-function elegir(cuenta, cuando) {
+function elegir(cuenta, cuando, paso) {
   const c = String(cuenta || "").trim().toLowerCase();
   if (c !== "auto" && !NOMBRE_CUENTA.test(c)) throw new Error("Cuenta de Claude no válida");
   const cfg = leerCfg(), t = Number(cuando) || Date.now();
   if (t < cfg.cuando) return { ok: true, ...resumenCuentas(), vieja: true };
-  cfg.elegida = c; cfg.cuando = t; guardarCfg(cfg);
+  cfg.elegida = c; cfg.cuando = t; if (typeof paso === "boolean") cfg.paso = paso; guardarCfg(cfg);
   registro.anotar("claude", "ELEGIDA la cuenta de Claude «" + c + "»" + (c !== "auto" && !cuentasAqui().includes(c) ? " (este equipo NO tiene su permiso: usa otra)" : ""));
   estado.cuando = 0; activaAnotada();
   return { ok: true, ...resumenCuentas() };
@@ -266,7 +269,7 @@ ipcMain.handle("claude-cuenta-renombrar", async (e, de, a) => {
   registro.anotar("claude", "la cuenta «" + x + "» se llama ahora «" + y + "»");
   return { ok: true, ...resumenCuentas() };
 });
-ipcMain.handle("claude-elegir", async (e, cuenta, cuando) => { try { return elegir(cuenta, cuando); } catch (x) { return { ok: false, error: x.message }; } });
+ipcMain.handle("claude-elegir", async (e, cuenta, cuando, paso) => { try { return elegir(cuenta, cuando, paso); } catch (x) { return { ok: false, error: x.message }; } });
 app.whenReady().then(() => { migrar(); activaAnotada(); setTimeout(() => comprobar(false), 15000); });   // se comprueba sola al poco de arrancar
 
 /** v3.40.4: ¿se paró por el LÍMITE de uso de Claude (o porque estaba saturado)? Devuelve la hora (ms) a la que conviene
@@ -284,6 +287,7 @@ function limiteDe(texto, cuenta) {
     estado.cuando = 0;
     activaAnotada();
   }
+  if (!cfg.paso && cfg.elegida !== "auto") return hasta;            // (23-11) paso apagado: se espera a la elegida
   return cuentasAqui().some(c => c !== cuenta && libre(cfg, c)) ? Date.now() + 60000 : hasta;
 }
 function limiteReal(texto) {
