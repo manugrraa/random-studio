@@ -17,7 +17,19 @@ const ORIGEN = process.env.RANDOMCHAT_DIR || "E:\\A RdeRandom\\RandomChat";
 const DEST = path.join(APP, "chat");
 
 if (!fs.existsSync(path.join(ORIGEN, "src", "server.js"))) {
-  console.log("chat: no encuentro " + ORIGEN + " (se deja la copia que hubiera)");
+  // (4.11.0, publicar desde cualquier equipo) sin el RandomChat aquí (solo lo tiene el portátil), se toma el que lleva la
+  // versión de RandomStudio instalada en este equipo: si no, la versión que salga de aquí quitaría el chat a todos
+  {   // (siempre de la instalada: una copia vieja que quedara en app/chat podría ir por detrás)
+    try {
+      const { sacarDeInstalada } = await import("./equipo.mjs");
+      const r = await sacarDeInstalada("chat", APP);
+      console.log("chat: no está " + ORIGEN + ": " + r.n + " archivos tomados de la versión instalada (" + r.asar + ")");
+    } catch (e) {
+      console.error("chat: no está " + ORIGEN + " ni lo pude sacar de la versión instalada: " + e.message);
+      console.error("chat: una versión sin el chat se lo quitaría a todos los equipos. Pon RANDOMCHAT_DIR o compila en el portátil.");
+      process.exit(1);
+    }
+  }
   process.exit(0);
 }
 

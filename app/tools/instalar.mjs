@@ -11,8 +11,12 @@ import { fileURLToPath } from "url";
 
 const raiz = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const origen = path.join(raiz, "release", "win-unpacked");
-const CARPETA = process.env.RANDOMSTUDIO_CARPETA || "E:\\A RdeRandom\\RandomStudio";
-const destino = path.join(CARPETA, "App");
+// (4.11.0) en CUALQUIER equipo: la carpeta de la app instalada aquí (ver equipo.mjs: RANDOMSTUDIO_APP, RANDOMSTUDIO_CARPETA,
+// la del RandomStudio abierto o la del portátil). Los accesos directos van en la carpeta de encima.
+import { carpetaApp } from "./equipo.mjs";
+const destino = carpetaApp();
+const CARPETA = process.env.RANDOMSTUDIO_CARPETA || path.dirname(destino);
+console.log("instalar: RandomStudio de este equipo en " + destino);
 const exe = path.join(destino, "RandomStudio.exe");
 const version = JSON.parse(fs.readFileSync(path.join(raiz, "package.json"), "utf8")).version;
 const electronVersion = JSON.parse(fs.readFileSync(path.join(raiz, "node_modules", "electron", "package.json"), "utf8")).version;
@@ -26,6 +30,8 @@ if (Number(abiertas) > 0) {
   // enseña «Hay una versión nueva · Actualizar ahora» (electron/actualizar.cjs hace el cambio al reiniciarse)
   // el .exe cambia en cada build (lleva la huella del código), así que se compara la versión de Electron apuntada al instalar
   let instalado = ""; try { instalado = fs.readFileSync(path.join(destino, "electron-version.txt"), "utf8").trim(); } catch (e) {}
+  // (4.11.0) un equipo instalado a mano (sin electron-version.txt): se le pregunta al propio .exe
+  if (!instalado) { try { instalado = execSync(`"${exe}" -p process.versions.electron`, { encoding: "utf8", env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } }).trim(); } catch (e) {} }
   if (instalado && instalado === electronVersion) {
     // v3.35: la versión nueva se deja APARTE (no se toca la instalada); la app la carga al pulsar «Actualizar ahora»
     const dirV = path.join(destino, "versiones"), archivo = `RandomStudio-${version}.asar`;

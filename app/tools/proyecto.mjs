@@ -17,7 +17,10 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const APP = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const ORIGEN = process.env.RH_ORIGEN || "E:\\A RdeRandom\\RandomHistorias";
+/* (4.11.0, publicar desde cualquier equipo) el proyecto de historias DE VERDAD de este equipo: RH_ORIGEN, o el del portátil,
+ * o el que usa RandomStudio en el Ordenador. «De verdad» = tiene el kit de Roblox (una carpeta creada vacía no vale). */
+const tieneKit = (d) => { try { return fs.readdirSync(path.join(d, "roblox", "pueblo")).some(f => f.endsWith(".luau")); } catch (e) { return false; } };
+const ORIGEN = process.env.RH_ORIGEN || ["E:\\A RdeRandom\\RandomHistorias", "C:\\RandomStudio\\Datos\\RandomHistorias"].find(tieneKit) || "E:\\A RdeRandom\\RandomHistorias";
 const DEST = path.join(APP, "proyecto");
 // (v3.47.1) sin kit/ de Blender (Manu, 3-11: solo Roblox Studio); con el kit de Roblox (pueblo en Luau y sus herramientas)
 const QUE = [["tools", /\.py$/], [path.join("tools", "estudio"), /\.md$/], [path.join("tools", "roblox"), /\.(py|md)$/],
@@ -30,6 +33,21 @@ const QUE = [["tools", /\.py$/], [path.join("tools", "estudio"), /\.md$/], [path
 const MEMORIA = path.join(os.homedir(), ".claude", "projects", "E--A-RdeRandom-RandomHistorias", "memory");
 const MEM_NO = /^(randomstudio-integracion|publicar-version-equipos|entorno-appdata-desviado|disco-c-lleno|optimizar-tokens|sesiones-coordinar-compilados)\.md$/;
 
+/* (4.11.0) en un equipo que NO es el origen del kit (no tiene .origen_kit), la versión lleva el proyecto de la versión
+ * instalada (el que hizo el portátil): el kit lo manda el portátil, y el de aquí puede ir por detrás o llevar pruebas
+ * locales. RH_KIT_LOCAL=1 fuerza a usar el de aquí. */
+if (!fs.existsSync(path.join(ORIGEN, ".origen_kit")) && process.env.RH_KIT_LOCAL !== "1") {
+  try {
+    const { sacarDeInstalada } = await import("./equipo.mjs");
+    const r = await sacarDeInstalada("proyecto", APP);
+    console.log("proyecto: este equipo no es el origen del kit: " + r.n + " archivos del proyecto tomados de la versión instalada (" + r.asar + ")");
+    process.exit(0);
+  } catch (e) {
+    console.error("proyecto: este equipo no es el origen del kit y no pude sacar el proyecto de la versión instalada: " + e.message);
+    console.error("proyecto: compila en el portátil o pon RH_KIT_LOCAL=1 si de verdad quieres el kit de este equipo.");
+    process.exit(1);
+  }
+}
 if (!fs.existsSync(path.join(ORIGEN, "tools"))) {
   console.log("proyecto: no encuentro " + ORIGEN + " (se deja la copia que hubiera)");
   process.exit(0);
@@ -131,5 +149,9 @@ if (fs.existsSync(path.join(MEMORIA, "MEMORY.md"))) {
   meter(path.join("_memoria", "MEMORY.md"), Buffer.from(idx, "utf8"));
 }
 fs.writeFileSync(path.join(DEST, "manifiesto.json"), JSON.stringify({ fecha: new Date().toISOString(), archivos }, null, 1));
-fs.writeFileSync(path.join(ORIGEN, ".origen_kit"), "Este equipo es el ORIGEN del kit: RandomStudio nunca sobrescribe aquí tools/ ni roblox/.\n");
+// (4.11.0) la marca de ORIGEN del kit solo la lleva el portátil: compilar en otro equipo NO lo convierte en origen (si no,
+// dejaría de recibir el kit y empezaría a mandarlo). Para hacer origen a un equipo nuevo, se crea a mano.
+const MARCA = path.join(ORIGEN, ".origen_kit");
+if (!fs.existsSync(MARCA) && process.env.RH_HACER_ORIGEN === "1") fs.writeFileSync(MARCA, "Este equipo es el ORIGEN del kit: RandomStudio nunca sobrescribe aquí tools/ ni roblox/.\n");
+console.log("proyecto: kit tomado de " + ORIGEN + (fs.existsSync(MARCA) ? " (origen del kit)" : " (este equipo NO es el origen del kit: no se marca)"));
 console.log(`proyecto: ${Object.keys(archivos).length} archivos (kit de Roblox, guías, plantilla de ${buena || "la que hay"} y memoria) copiados dentro de RandomStudio`);

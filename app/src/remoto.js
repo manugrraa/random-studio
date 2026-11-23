@@ -75,6 +75,8 @@ async function ejecutar(o) {
     case "instalar_git": return s.instalarGit ? s.instalarGit() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
     case "instalar_cuda": return s.instalarCuda ? s.instalarCuda() : { ok: false, error: "Este equipo necesita la versión nueva de RandomStudio" };
     case "pasar": return pasarHistoria(String(a.id || ""), String(a.a || ""));
+    // (4.11.0) con qué cuenta de Claude se gasta (la elige cualquier panel de administrador; gana la más nueva)
+    case "claude_cuenta": return s.claudeElegir ? s.claudeElegir(String(a.cuenta || ""), Number(a.cuando) || Date.now()) : { ok: false, error: "Este equipo necesita la versión 4.11.0" };
   }
   throw new Error("Orden desconocida");
 }
@@ -195,6 +197,8 @@ export function iniciarRemotoEscritorio(t) {
       generandoIdeas: !!id.generando,
       // v3.40.6: el uso de Claude de este equipo (lo ve el móvil en su marcador); se lee como mucho cada 10 min
       claudeUso: s.claudeUso ? await s.claudeUso(false).catch(() => null) : null,
+      // (4.11.0) las cuentas de Claude de este equipo (solo nombres y límites, nunca permisos), la elegida y la que usa
+      claudeCuentas: aj.claudeCuentas || null,
       // v3.41.3: la base que sube el portátil (los demás la bajan) y el último fallo de este equipo (se ve en «Equipos»)
       base: _base, kitVivo: _kitVivo, ultimoFallo: _ultimoFallo,
       // v3.45.4: los módulos del kit creados en este equipo (los demás bajan los que les falten); 3-11: todo el kit compartido
@@ -367,6 +371,17 @@ export function iniciarRemotoEscritorio(t) {
   };
 
   publicar(); recoger();
+  /* (4.11.0) un equipo que estaba apagado (o es nuevo) cuando se eligió la cuenta de Claude: al arrancar toma la elección
+   * más nueva de los demás equipos (una sola consulta, ligera). Lo de después le llega como orden. */
+  setTimeout(async () => {
+    if (!s.claudeCuentas || !s.claudeElegir) return;
+    try {
+      const [mia, g] = await Promise.all([s.claudeCuentas(), remotoApi("GET")]);
+      const otra = (g.equipos || []).map(e => e.id !== g.yo && e.datos && e.datos.claudeCuentas).filter(c => c && c.cuando)
+        .sort((a, b) => b.cuando - a.cuando)[0];
+      if (otra && otra.cuando > ((mia && mia.cuando) || 0)) { await s.claudeElegir(otra.elegida, otra.cuando); publicarPronto(); }
+    } catch (e) {}
+  }, 25000);
   // v3.41: con el timbre, las órdenes llegan al instante; las vueltas de siempre quedan de respaldo, más espaciadas
   const kitOido = {};
   alTimbre((d) => {

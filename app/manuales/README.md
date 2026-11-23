@@ -11,6 +11,7 @@ pruebas, trampas conocidas, historial corto de versiones.
 |---|---|
 | Directos → clipear | [directos-clipear.md](directos-clipear.md) |
 | RandomEditor → subtítulos | [randomeditor-subtitulos.md](randomeditor-subtitulos.md) |
+| Cuentas de Claude (de cuál se gasta) | [claude-cuentas.md](claude-cuentas.md) |
 | RandomEditor (motor, visor, línea de tiempo) | (pendiente: ver memoria randomeditor-motor-nuevo) |
 | RandomChat y alertas | (pendiente) |
 | Redes (Instagram, TikTok, YouTube) | (pendiente) |

@@ -5,7 +5,7 @@ import { bajarTerminada, borrarHistoria, borrarTerminadas, pedidosApi, remotoApi
 import { BotonDisponible, BotonPararTodo, ColaTrabajo, NuevaPeticion } from "./cola";
 import { driveConectado, driveConectar, driveDesconectar, driveToken } from "./datos";
 import { esAdmin, useRolEquipo } from "./admin";
-import { UsoClaude, usoDeEquipos } from "./uso_claude";
+import { UsoClaude, UsoCuentas, usoDeEquipos } from "./uso_claude";
 import { alTimbre } from "./timbre";
 import { AccionesDeVista } from "./base";
 import { VideoDrive } from "./drive_video";
@@ -650,35 +650,81 @@ function Ideas({ toast, onCreada }) {
 }
 
 // ------------------------------------------------------------------ Claude: estado real y permiso de larga duración
+/* (4.11.0) VARIAS CUENTAS DE CLAUDE en este equipo: una fila por cuenta (probar, renombrar, quitar) y el formulario para
+ * añadir otra (nombre + permiso de «claude setup-token»). Cuál se gasta se elige en el panel (Historias → Equipos), para
+ * todos los equipos a la vez. Los permisos se quedan cifrados aquí: nunca van al servidor. */
 function ClaudeEstado({ a, toast, recargar }) {
   const [token, setToken] = useState("");
-  const [probando, setProbando] = useState(false);
-  const probar = async (t) => {
-    setProbando(true);
+  const [nombre, setNombre] = useState("");
+  const [probando, setProbando] = useState("");
+  const cc = a.claudeCuentas || { cuentas: [] };
+  const hay = (cc.cuentas || []).length > 0;
+  const nuevas = SF().claudeCuentaGuardar;
+  const tras = (r, ok) => { toast(r && r.ok ? ok : "❌ " + ((r && r.error) || "No se pudo")); recargar(); };
+  const probar = async (c) => {
+    setProbando(c === undefined ? "*" : c);
+    try { tras(c === undefined ? await SF().claudeComprobar(true) : await SF().claudeCuentaProbar(c), "✅ Claude funciona" + (c ? " con «" + c + "»" : " en este equipo")); }
+    catch (e) { toast("❌ " + e.message); }
+    setProbando("");
+  };
+  const guardar = async () => {
+    const n = nombre.trim().toLowerCase() || (hay ? "" : "maggi");
+    if (!n) return toast("Ponle nombre a la cuenta (p. ej. «claudie»)");
+    setProbando("+");
     try {
-      const r = t !== undefined ? await SF().claudeToken(t) : await SF().claudeComprobar(true);
-      toast(r.ok ? "✅ Claude funciona en este equipo" : "❌ " + r.error);
-      setToken(""); recargar();
+      const r = nuevas ? await SF().claudeCuentaGuardar(n, token) : await SF().claudeToken(token);
+      tras(r, "✅ Cuenta «" + n + "» guardada" + (r && r.error ? " (" + r.error + ")" : " y funciona"));
+      if (r && r.ok) { setToken(""); setNombre(""); }
     } catch (e) { toast("❌ " + e.message); }
-    setProbando(false);
+    setProbando("");
+  };
+  const quitar = async (c) => {
+    if (!confirm("¿Quitar de ESTE equipo el permiso de la cuenta «" + c + "»?\n\nLa cuenta de Claude no se toca: solo deja de usarse aquí. Para volver a ponerla hay que pegar otra vez su permiso.")) return;
+    tras(await SF().claudeCuentaGuardar(c, ""), "Quitada «" + c + "» de este equipo");
+  };
+  const renombrar = async (c) => {
+    const y = prompt("Nuevo nombre para la cuenta «" + c + "» (p. ej. maggi, claudie):", c);
+    if (!y || y === c) return;
+    tras(await SF().claudeCuentaRenombrar(c, y), "La cuenta se llama ahora «" + y.trim().toLowerCase() + "»");
   };
   const color = !a.claudeInstalado ? "var(--red)" : a.claudeOk === false ? "var(--red)" : a.claudeOk ? "var(--green)" : "var(--text-2)";
+  const hora = (ms) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, fontWeight: 600, color }}>
           {!a.claudeInstalado ? "● No encuentro Claude Code en este equipo" : a.claudeOk === false ? "● Claude Code no puede trabajar: " + a.claudeError : a.claudeOk ? "● Claude Code funciona en este equipo" : "○ Comprobando Claude Code…"}</span>
         <span style={{ flex: 1 }} />
-        <button disabled={probando} onClick={() => probar()} style={{ ...botonSec, padding: "6px 11px", fontSize: 12 }}>{probando ? "Probando…" : "Probar"}</button>
+        <button disabled={!!probando} onClick={() => probar()} className="rs-btn sm">{probando === "*" ? "Probando…" : "Probar"}</button>
       </div>
-      {a.claudeInstalado && a.claudeOk !== true && (
+      {nuevas && hay && (
+        <div className="rs-card flat" style={{ display: "flex", flexDirection: "column", gap: 6, padding: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--text-2)" }}>
+            Se gasta de: <b style={{ color: "var(--gold)" }}>{cc.activa || "—"}</b>
+            {" · elegida: " + (cc.elegida === "auto" ? "automática (la de más margen)" : "«" + cc.elegida + "»")}
+            {cc.activa && cc.motivo && cc.motivo !== "elegida" ? " · " + cc.motivo : ""}
+            <span style={{ color: "var(--text-3)" }}> (se cambia en Historias → Equipos, para todos los equipos)</span>
+          </div>
+          {(cc.cuentas || []).map(c => (
+            <div key={c.nombre} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span className="rs-chip" style={{ fontWeight: 700, color: c.nombre === cc.activa ? "var(--gold)" : "var(--text)" }}>{c.nombre}</span>
+              {c.limiteHasta > 0 && <span style={{ fontSize: 12, color: "#F59E0B" }}>sin límite hasta las {hora(c.limiteHasta)}</span>}
+              {cc.migrada === c.nombre && <span style={{ fontSize: 12, color: "var(--text-3)" }}>(el permiso que ya había; renómbrala si no es de {c.nombre})</span>}
+              <span style={{ flex: 1 }} />
+              <button disabled={!!probando} onClick={() => probar(c.nombre)} className="rs-btn sm ghost">{probando === c.nombre ? "Probando…" : "Probar"}</button>
+              <button onClick={() => renombrar(c.nombre)} className="rs-btn sm ghost">Renombrar</button>
+              <button onClick={() => quitar(c.nombre)} className="rs-btn sm ghost">Quitar</button>
+            </div>))}
+        </div>)}
+      {a.claudeInstalado && (!hay || a.claudeOk !== true || nuevas) && (
         <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.6, background: "var(--bg-2)", border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
-          Para que Claude trabaje aquí sin caducar: abre una terminal, escribe <code style={{ color: "var(--gold)" }}>claude setup-token</code>, entra con tu cuenta
-          de Claude en el navegador y pega aquí el permiso que te da (empieza por <code>sk-ant-</code>). Se guarda cifrado en este equipo.
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="sk-ant-…" autoComplete="off"
-              style={{ flex: 1, fontSize: 13, padding: "8px 10px", borderRadius: 9, border: "1px solid var(--border)", background: "var(--card-2)", color: "var(--text)" }} />
-            <button disabled={!token.trim() || probando} onClick={() => probar(token)} className="grad-gold" style={{ ...botonOro, opacity: (!token.trim() || probando) ? .5 : 1 }}>Guardar y probar</button>
+          {hay ? "Añadir otra cuenta de Claude: " : "Para que Claude trabaje aquí sin caducar: "}abre una terminal, escribe <code style={{ color: "var(--gold)" }}>claude setup-token</code>, entra
+          en el navegador con esa cuenta de Claude y pega aquí el permiso que te da (empieza por <code>sk-ant-</code>). Se guarda cifrado en este equipo
+          y nunca sale de él. Con el mismo nombre, se sustituye.
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            {nuevas && <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder={hay ? "nombre (claudie…)" : "maggi"} autoComplete="off" className="rs-input" style={{ width: 150 }} />}
+            <input type="password" value={token} onChange={e => setToken(e.target.value)} placeholder="sk-ant-…" autoComplete="off" className="rs-input" style={{ flex: 1, minWidth: 160 }} />
+            <button disabled={!token.trim() || !!probando} onClick={guardar} className="rs-btn primary">{probando === "+" ? "Probando…" : "Guardar y probar"}</button>
           </div>
         </div>)}
     </div>);
@@ -1263,6 +1309,24 @@ export function HistoriasRemoto({ toast, incrustado }) {
               </select>
             </label>);
         })()}
+        {/* (4.11.0) de qué cuenta de Claude se gasta, en TODOS los equipos (gana la elección más nueva; «auto» = la de más margen) */}
+        {(() => {
+          const cc = equipos.map(e => e.datos.claudeCuentas).filter(Boolean);
+          if (!cc.length) return null;
+          const valor = (cc.slice().sort((a, b) => (b.cuando || 0) - (a.cuando || 0))[0] || {}).elegida || "auto";
+          const nombres = [...new Set(cc.flatMap(c => (c.cuentas || []).map(x => x.nombre)).concat(valor === "auto" ? [] : [valor]))].sort();
+          return (
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)" }}>
+              Claude de
+              <select value={valor} onChange={ev => {
+                const v = ev.target.value, cuando = Date.now();
+                equipos.filter(e => e.datos && e.datos.historias).forEach(e => ordenA(e, "ajustes", { nuevos: { claudeCuenta: { cuenta: v, cuando } } }, v === "auto" ? "Claude: la cuenta con más margen" : "Claude: se gasta de «" + v + "»"));
+              }} style={{ ...botonSec, padding: "5px 8px", fontSize: 12, appearance: "auto" }}>
+                <option value="auto">automática (más margen)</option>
+                {nombres.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>);
+        })()}
         {equipos.length === 0 && <span style={{ fontSize: 12.5, color: "#F59E0B", fontWeight: 600 }}>Ningún equipo conectado: lo que pidas espera en la cola.</span>}
         {equipos.map(e => {
           const t = e.datos.tarea, cap = e.datos.capacidad || {};
@@ -1332,6 +1396,7 @@ export function HistoriasRemoto({ toast, incrustado }) {
 
       {pestana === "equipos" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <UsoCuentas equipos={equipos} />
           {equipos.map(e => {
             const t = e.datos.tarea;
             return (
@@ -1347,6 +1412,16 @@ export function HistoriasRemoto({ toast, incrustado }) {
                     ? <button onClick={() => ordenA(e, "reanudar_todo", {}, "▶ " + corto(e.nombre) + " vuelve a trabajar")} style={{ ...botonSec, padding: "4px 10px", fontSize: 12, color: "var(--green)" }}>Reanudar este equipo</button>
                     : <button onClick={() => { if (confirm("¿Pausar solo " + corto(e.nombre) + "?\n\nDeja de coger trabajo y para lo que esté haciendo (lo hecho se queda). Los demás equipos siguen.")) ordenA(e, "parar_todo", {}, "⏸ " + corto(e.nombre) + " en pausa"); }} style={{ ...botonSec, padding: "4px 10px", fontSize: 12 }}>Pausar este equipo</button>)}
                 </div>
+                {e.datos.claudeCuentas && (() => {
+                  const c = e.datos.claudeCuentas, tiene = (c.cuentas || []).map(x => x.nombre);
+                  const falta = c.elegida && c.elegida !== "auto" && !tiene.includes(c.elegida);
+                  return (
+                    <div style={{ fontSize: 12.5, color: falta ? "#F59E0B" : "var(--text-2)" }}>
+                      Claude: {c.activa ? <>gasta de <b style={{ color: "var(--gold)" }}>{c.activa}</b></> : "sin cuentas guardadas (usa la sesión de Claude Code)"}
+                      {tiene.length ? " · tiene: " + tiene.join(", ") : ""}
+                      {falta ? " · NO tiene el permiso de «" + c.elegida + "»: pégalo en sus Ajustes de RandomHistorias" : c.activa && c.motivo && c.motivo !== "elegida" ? " · " + c.motivo : ""}
+                    </div>);
+                })()}
                 <SaludEquipo e={e} ultima={equipos.map(x => x.datos.version).filter(Boolean).sort((a, b) => numV(b) - numV(a))[0]}
                   onCuda={() => { if (confirm("¿Instalar en " + corto(e.nombre) + " las librerías de CUDA para que Whisper use su gráfica?\n\nSon ~1 GB (pip, solo para ese usuario). Tarda unos minutos.")) ordenA(e, "instalar_cuda", {}, "Instalando CUDA en " + corto(e.nombre) + "…"); }}
                   onGit={() => { if (confirm("¿Instalar Git para Windows en " + corto(e.nombre) + "?\n\nSe instala solo para ese usuario (winget, sin pedir permisos de administrador). Con Git Bash, Claude trabaja allí tan rápido como en el portátil.")) ordenA(e, "instalar_git", {}, "Instalando Git en " + corto(e.nombre) + "… (tarda un par de minutos)"); }} />

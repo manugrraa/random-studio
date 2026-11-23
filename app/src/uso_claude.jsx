@@ -65,7 +65,7 @@ export function UsoClaude({ uso, compacto, lateral }) {
   const d = propio ? u : uso;
   if (!d || (!d.ok && propio && !d.error)) return null;
   const titulo = d.ok
-    ? "Uso de Claude\n· 5 horas: " + (d.cinco ? d.cinco.pct + "% (se restablece " + cuando(d.cinco.reinicio) + ")" : "—")
+    ? "Uso de Claude" + (d.cuenta ? " (cuenta «" + d.cuenta + "»)" : "") + "\n· 5 horas: " + (d.cinco ? d.cinco.pct + "% (se restablece " + cuando(d.cinco.reinicio) + ")" : "—")
       + "\n· Semana: " + (d.semana ? d.semana.pct + "% (se restablece " + cuando(d.semana.reinicio) + ")" : "—")
       + "\n\n" + consejo(d) + (propio ? "\n\nPulsa para actualizar." : "")
     : "Uso de Claude: " + (d.error || "no disponible");
@@ -79,7 +79,7 @@ export function UsoClaude({ uso, compacto, lateral }) {
         {compacto
           ? <span style={{ fontSize: 10.5, fontWeight: 800, color: max == null ? "var(--text-3)" : color(max), margin: "0 auto", fontVariantNumeric: "tabular-nums" }}>{max == null ? "—" : max + "%"}</span>
           : <>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", textAlign: "left" }}>Uso de Claude</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", textAlign: "left" }}>Uso de Claude{d.cuenta ? <span style={{ color: "var(--text-3)", fontWeight: 500 }}> · {d.cuenta}</span> : null}</span>
               {d.ok ? <><FilaLateral nombre="5 h" v={d.cinco} /><FilaLateral nombre="Semana" v={d.semana} /></>
                 : <span style={{ fontSize: 11, color: "var(--text-3)", textAlign: "left" }}>sin datos</span>}
             </>}
@@ -95,7 +95,41 @@ export function UsoClaude({ uso, compacto, lateral }) {
     </button>);
 }
 
-/** Del estado de los equipos, el uso más reciente (todos usan la misma cuenta de Claude). */
+/** Del estado de los equipos, el uso más reciente (el de la cuenta que se está gastando). */
 export function usoDeEquipos(equipos) {
   return (equipos || []).map(e => e.datos && e.datos.claudeUso).filter(u => u && u.ok).sort((a, b) => b.cuando - a.cuando)[0] || null;
+}
+
+/** (4.11.0) El uso de CADA cuenta de Claude, juntando lo que publican los equipos (de cada cuenta, el dato más nuevo). */
+export function usoPorCuenta(equipos) {
+  const m = {};
+  for (const e of equipos || []) {
+    const u = e.datos && e.datos.claudeUso;
+    if (!u || !u.cuentas) continue;
+    for (const [n, x] of Object.entries(u.cuentas)) if (!m[n] || (u.cuando || 0) > m[n].cuando) m[n] = { ...x, cuando: u.cuando || 0 };
+  }
+  return m;
+}
+export function UsoCuentas({ equipos }) {
+  const m = usoPorCuenta(equipos);
+  const activas = new Set((equipos || []).map(e => e.datos && e.datos.claudeCuentas && e.datos.claudeCuentas.activa).filter(Boolean));
+  const nombres = Object.keys(m).sort();
+  if (!nombres.length) return null;
+  return (
+    <div className="rs-card" style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12 }}>
+      <div className="rs-kicker">Cuentas de Claude</div>
+      {nombres.map(n => {
+        const x = m[n];
+        return (
+          <div key={n} style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <b style={{ minWidth: 80, color: activas.has(n) ? "var(--gold)" : "var(--text)" }}>{n}</b>
+            {x.ok ? <><Barra nombre="5h" v={x.cinco} /><Barra nombre="Semana" v={x.semana} /></> : <span style={{ fontSize: 12, color: "var(--text-3)" }}>sin datos{x.error ? " (" + x.error + ")" : ""}</span>}
+            <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>
+              {x.limiteHasta > Date.now() ? "sin límite: vuelve " + cuando(x.limiteHasta)
+                : x.ok && x.cinco ? "5 h: se restablece " + cuando(x.cinco.reinicio) + (x.semana ? " · semana: " + cuando(x.semana.reinicio) : "") : ""}
+            </span>
+            {activas.has(n) && <span className="rs-chip" style={{ color: "var(--gold)" }}>en uso</span>}
+          </div>);
+      })}
+    </div>);
 }

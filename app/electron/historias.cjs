@@ -831,7 +831,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
   const proc = spawn(exe, args, { cwd: raiz(), env, windowsHide: true });
   const yo = { proc, id, tipo: "agente", etapa, inicio: Date.now(), lineas: [], acciones: [], accion: "Pensando…", sender, alTerminar, nPlanos: 0, ligera };
   if (ligera) ligeras.set(id, yo); else tarea = yo;
-  registro.anotar("claude", "empieza " + etapa + " de " + id + " (Claude" + (ligera ? ", en paralelo" : "") + ")", { bash: !!claude.rutaBash() });
+  registro.anotar("claude", "empieza " + etapa + " de " + id + " (Claude" + (ligera ? ", en paralelo" : "") + ", cuenta «" + (env.RS_CLAUDE_CUENTA || "sesión de Claude Code") + "»)", { bash: !!claude.rutaBash(), cuenta: env.RS_CLAUDE_CUENTA || "" });
   let resto = "", final = "", fallo = false;
   const linea = (l) => {
     yo.actividad = Date.now();          // (v3.41.8) para el vigilante: Claude sigue dando señales
@@ -876,7 +876,7 @@ function lanzarAgente(sender, id, etapa, prompt, alTerminar) {
       guardarEstudio(c, est);
     } catch (e) {}
     // v3.40.4: si se paró por el límite de Claude, se dice a qué hora reintentar (la app la retoma sola entonces)
-    const limite = ok ? 0 : claude.limiteDe(final + "\n" + err);
+    const limite = ok ? 0 : claude.limiteDe(final + "\n" + err, env.RS_CLAUDE_CUENTA);   // (4.11.0) con otra cuenta con margen: 1 min
     if (t && t.atascada) final = "Se quedó atascada " + t.atascada + " min sin avanzar (" + (t.accion || "") + "): se cortó y se reintenta sola. " + final;
     registro.anotar("claude", (ok ? "termina " : (t && t.cancelada ? "cancelada " : "FALLA ")) + etapa + " de " + id + " (" + (t ? Math.round((Date.now() - t.inicio) / 6000) / 10 : 0) + " min, " + (t ? t.acciones.length : 0) + " acciones)" + (ok ? "" : ": " + (final || err).slice(-400)), { codigo: code, limite: limite || 0 });
     // (v3.50) escena escrita: la marca que dice que solo falta comprobarla en Studio
@@ -1436,7 +1436,7 @@ y propón menos). En cada idea que salga de un comentario añade el campo "de" c
       escribirJson(ideasArchivo(), [...nuevas, ...leerIdeas()]);
       try { sender.send("estudio-ideas-listas", { ok: true, n: nuevas.length }); } catch (x) {}
     })
-    .catch(err => { const limite = claude.limiteDe(err.message); try { sender.send("estudio-ideas-listas", { ok: false, error: err.message, ...(limite ? { limite } : {}) }); } catch (x) {} })
+    .catch(err => { const limite = claude.limiteDe(err.message, err.cuenta); try { sender.send("estudio-ideas-listas", { ok: false, error: err.message, ...(limite ? { limite } : {}) }); } catch (x) {} })
     .finally(() => { ideasProc = null; });
   return { ok: true };
 });
@@ -1531,6 +1531,8 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
     if (typeof nuevos.avanzarSolo === "boolean") a.avanzarSolo = nuevos.avanzarSolo;
     if (typeof nuevos.driveAuto === "boolean") a.driveAuto = nuevos.driveAuto;
     if (typeof nuevos.equipoDePaso === "boolean") a.equipoDePaso = nuevos.equipoDePaso;
+    // (4.11.0) la cuenta de Claude elegida desde un panel de administrador (va en la orden «ajustes», que ya conoce el servidor)
+    if (nuevos.claudeCuenta && typeof nuevos.claudeCuenta === "object") { try { claude.elegir(nuevos.claudeCuenta.cuenta, nuevos.claudeCuenta.cuando); } catch (x) {} }
     if (typeof nuevos.hasta === "string" && (nuevos.hasta === "" || ETAPAS.some(x => x.id === nuevos.hasta))) {
       if (a.hasta !== nuevos.hasta) registro.anotar("equipo", "TRABAJAR HASTA: " + (nuevos.hasta || "el final (todas las etapas)"));
       a.hasta = nuevos.hasta;
@@ -1539,7 +1541,7 @@ ipcMain.handle("estudio-ajustes", async (e, nuevos) => {
   }
   const cl = claude.estadoClaude();
   return { ok: true, ajustes: ajustes(), eleven: !!claveEleven(), fish: !!claveFish(), claude: !!claude.exeClaude() && cl.ok !== false, claudeInstalado: !!claude.exeClaude(),
-    claudeOk: cl.ok, claudeError: cl.error, blender: !!studioExe(), roblox: !!studioExe(), proyecto: existe(histDir()),
+    claudeOk: cl.ok, claudeError: cl.error, claudeCuentas: claude.resumenCuentas(), blender: !!studioExe(), roblox: !!studioExe(), proyecto: existe(histDir()),
     elevenError: elevenPrueba.ok === false ? elevenPrueba.error : "", origen: esOrigen(),
     gpu: gpuNombre(), whisper: leerJson(path.join(estudioDir(), "_whisper.json"), null),
     // v3.41: la salud del equipo (Git Bash, espacio libre en el disco del proyecto y fecha del kit)

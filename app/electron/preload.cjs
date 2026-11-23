@@ -101,6 +101,12 @@ contextBridge.exposeInMainWorld("studioFS", {
   claudeComprobar: (forzar) => ipcRenderer.invoke("claude-comprobar", forzar),
   claudeToken: (token) => ipcRenderer.invoke("claude-token", token),
   claudeUso: (forzar) => ipcRenderer.invoke("claude-uso", forzar),   // v3.40.6: el marcador de uso de Claude
+  // (4.11.0) varias cuentas de Claude por equipo y la elegida (desde cualquier panel de administrador)
+  claudeCuentas: () => ipcRenderer.invoke("claude-cuentas"),
+  claudeCuentaGuardar: (nombre, token) => ipcRenderer.invoke("claude-cuenta-guardar", nombre, token),
+  claudeCuentaProbar: (nombre) => ipcRenderer.invoke("claude-cuenta-probar", nombre),
+  claudeCuentaRenombrar: (de, a) => ipcRenderer.invoke("claude-cuenta-renombrar", de, a),
+  claudeElegir: (cuenta, cuando) => ipcRenderer.invoke("claude-elegir", cuenta, cuando),
   // v3.30: el estudio de Historias (ideas, etapas, revisiones y notas)
   estudioIdeas: () => ipcRenderer.invoke("estudio-ideas"),
   estudioIdeasGenerar: (n, pista, comentarios) => ipcRenderer.invoke("estudio-ideas-generar", n, pista, comentarios),

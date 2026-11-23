@@ -30,14 +30,25 @@ export async function actualizacionApi(metodo, cuerpo) {
  * así cada versión nueva llega al ordenador aunque se instale con la app cerrada. En los demás equipos no hace nada. */
 let _publicando = false;
 let _mirada = 0;            // (10-11) última vez que se preguntó al servidor por versiones nuevas
+/* (4.11.0, publicar desde cualquier equipo) el motivo si el SERVIDOR no dejó publicar (p. ej. «solo el portátil»): entonces
+ * la versión preparada aquí se instala igual en este equipo (antes se quedaba reintentando la subida cada minuto para siempre).
+ * Un fallo de red no cuenta: se reintenta. */
+let _rechazo = "";
+const anotarVersion = (t) => { try { SF().registro && SF().registro("version", t); } catch (e) {} };
 export async function publicarSiToca() {
   if (_publicando || !SF() || !SF().actInfo) return;
   _publicando = true;
   try {
     const [v, yo] = await Promise.all([actualizacionApi("GET"), SF().actInfo()]);
     const pend = await pendientePublicable(v);
-    if (pend) await publicarVersion(pend, "", "pendiente");
-    else if (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version))) await publicarVersion(yo, "");
+    const que = pend || (yo.ok && yo.empaquetada && (!v.version || num(yo.version) > num(v.version)) ? yo : null);
+    if (que) {
+      try { await publicarVersion(que, "", pend ? "pendiente" : undefined); _rechazo = ""; anotarVersion("publicada la versión " + que.version + " para todos los equipos"); }
+      catch (e) {
+        const m = e.message || String(e);
+        if (!/fetch|network|red|timeout|5\d\d/i.test(m)) { if (_rechazo !== m) anotarVersion("el servidor NO deja publicar la " + que.version + " desde este equipo: " + m); _rechazo = m; }
+      }
+    }
   } catch (e) {} finally { _publicando = false; }
 }
 /** v3.40.3: la versión preparada en el portátil (npm run instalar con la app abierta), si es más nueva que la publicada:
@@ -110,7 +121,8 @@ export function AvisoActualizacion() {
       if (nueva.local) {
         // (portátil) primero que quede publicada para los demás
         // (14-11) con el servidor caído no hay subida que cortar: se instala igual (al arrancar la publica cuando vuelva)
-        try { const v = await actualizacionApi("GET"); if (num(v.version) < num(nueva.version)) { await publicarSiToca(); if (vivo) setAplazada(Date.now() + 60000); return; } }
+        // (4.11.0) si el servidor la rechazó (este equipo no puede publicar), se instala aquí igual
+        try { const v = await actualizacionApi("GET"); if (num(v.version) < num(nueva.version)) { await publicarSiToca(); if (!_rechazo) { if (vivo) setAplazada(Date.now() + 60000); return; } } }
         catch (e) { /* sin servidor: sigue e instala */ }
       }
       if (vivo && instalarRef.current) instalarRef.current();
